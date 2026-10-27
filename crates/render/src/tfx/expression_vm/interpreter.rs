@@ -568,8 +568,14 @@ impl<'a> InterpreterState<'a> {
                     anyhow::ensure!(element < out.len(), "Invalid output element index");
                     cached_top = self.push(out[element])?;
                 }
-                Opcode::PopOutput => {
+                Opcode::PopOutputIndex8 => {
                     let element = ptr[1] as usize;
+                    anyhow::ensure!(element < out.len(), "Invalid output element index");
+                    out[element] = cached_top;
+                    cached_top = self.pop_top();
+                }
+                Opcode::PopOutputIndex16 => {
+                    let element = u16::from_le_bytes([ptr[1], ptr[2]]) as usize;
                     anyhow::ensure!(element < out.len(), "Invalid output element index");
                     out[element] = cached_top;
                     cached_top = self.pop_top();

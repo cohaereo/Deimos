@@ -603,8 +603,14 @@ impl<'a> DecompilerState<'a> {
                     let element = ptr[1] as usize;
                     cached_top = self.push(format!("output[{element}]"))?;
                 }
-                Opcode::PopOutput => {
+                Opcode::PopOutputIndex8 => {
                     let element = ptr[1] as usize;
+                    let v = cached_top;
+                    cached_top = self.pop_top();
+                    result.cb_expressions.push((element, v, false));
+                }
+                Opcode::PopOutputIndex16 => {
+                    let element = u16::from_le_bytes([ptr[1], ptr[2]]) as usize;
                     let v = cached_top;
                     cached_top = self.pop_top();
                     result.cb_expressions.push((element, v, false));

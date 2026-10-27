@@ -91,8 +91,8 @@ pub enum Opcode {
     Unknown0x50,
     PushFromOutput,
 
-    PopOutput = 0x53,
-    PopOutputUnk,
+    PopOutputIndex8 = 0x53,
+    PopOutputIndex16,
     PopOutputMat4,
 
     PushTemp = 0x57,
@@ -196,14 +196,13 @@ impl Opcode {
             | Self::Unknown0x41
             => 1,
 
-            Self::PopOutput
+            Self::PopOutputIndex8
             | Self::PushTemp
             | Self::PopTemp
             | Self::PopSamplerState
             | Self::PushSamplerState
             | Self::PushFromOutput
             | Self::PopOutputMat4
-            | Self::PopOutputUnk
             | Self::PopTextureView
             | Self::PushGlobalChannelVector
             | Self::PushConstVec4
@@ -226,6 +225,7 @@ impl Opcode {
             | Self::PushTexTilingParams
             | Self::PushTexTileLayerCount
             | Self::Unknown0x63
+            | Self::PopOutputIndex16
             => 3,
 
             Self::PushObjectChannelVector => 5,
@@ -311,12 +311,12 @@ impl Opcode {
             | Self::Permute
             | Self::PopSamplerState
             | Self::PopOutputMat4
-            | Self::PopOutputUnk
+            | Self::PopOutputIndex16
             | Self::PopTextureView
             | Self::PopUav
             => ExpressionDataSource::STACK,
 
-            Self::PopOutput => ExpressionDataSource::empty(),
+            Self::PopOutputIndex8 => ExpressionDataSource::empty(),
             Self::PushFromOutput => ExpressionDataSource::OUTPUT,
 
             Self::PushTemp => ExpressionDataSource::TEMP,
