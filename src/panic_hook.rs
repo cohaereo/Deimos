@@ -1,7 +1,8 @@
 use std::fmt::Write;
 use std::{backtrace::Backtrace, panic::PanicHookInfo};
 
-use d3d12::AdapterIterator;
+use deimos_render::gpu::device_iterator::PhysicalDeviceIterator;
+use deimos_render::gpu::vk_api_version_string;
 use nu_ansi_term::{Color, Style};
 use sysinfo::System;
 
@@ -112,19 +113,17 @@ pub fn write_system_info<R: std::fmt::Write>(out: &mut R) {
     )
     .ok();
 
-    if let Ok(adapter_iter) = AdapterIterator::new() {
-        for (i, gpu) in adapter_iter.enumerate() {
-            let Ok(desc) = gpu.desc() else {
-                continue;
-            };
+    if let Ok(device_iter) = PhysicalDeviceIterator::new() {
+        for (i, (_dev, desc)) in device_iter.enumerate() {
             writeln!(
                 out,
-                "  GPU {}: {} (vendor: 0x{:04X}, device: 0x{:04X}), {} VRAM",
+                "  GPU {}: {} (vendor: 0x{:04X}, device: 0x{:04X}), Vulkan {}, {} VRAM",
                 i,
                 desc.description,
                 desc.vendor_id,
                 desc.device_id,
-                format_bytes(desc.dedicated_video_memory)
+                vk_api_version_string(desc.api_version),
+                format_bytes(desc.device_local_memory as usize)
             )
             .ok();
         }

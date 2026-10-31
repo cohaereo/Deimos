@@ -1,10 +1,10 @@
 use std::sync::Arc;
 
 use anyhow::Context;
+use ash::vk;
 
 use crate::gpu::{
     Gpu,
-    command_list::CommandList,
     render_target::{DepthBuffer, RenderTarget},
 };
 
@@ -20,8 +20,6 @@ pub struct Gbuffer {
 
     pub uber_depth_half: RenderTarget,
 
-    current_rtv_state: d3d12::ResourceStates,
-
     _resolution: (u32, u32),
 }
 
@@ -31,40 +29,40 @@ impl Gbuffer {
             albedo: RenderTarget::new(
                 gpu,
                 "deferred_albedo",
-                d3d12::Format::R8g8b8a8Unorm,
-                d3d12::Format::R8g8b8a8Unorm,
+                vk::Format::R8G8B8A8_UNORM,
+                vk::Format::R8G8B8A8_UNORM,
                 resolution,
             )
             .context("allocating render target")?,
             normal: RenderTarget::new(
                 gpu,
                 "deferred_normal",
-                d3d12::Format::R10g10b10a2Typeless,
-                d3d12::Format::R10g10b10a2Unorm,
+                vk::Format::A2B10G10R10_UNORM_PACK32,
+                vk::Format::A2B10G10R10_UNORM_PACK32,
                 resolution,
             )
             .context("allocating render target")?,
             normal_read: RenderTarget::new(
                 gpu,
                 "deferred_normal_read",
-                d3d12::Format::R10g10b10a2Typeless,
-                d3d12::Format::R10g10b10a2Unorm,
+                vk::Format::A2B10G10R10_UNORM_PACK32,
+                vk::Format::A2B10G10R10_UNORM_PACK32,
                 resolution,
             )
             .context("allocating render target")?,
             rt3: RenderTarget::new(
                 gpu,
                 "deferred_rt3",
-                d3d12::Format::R8g8b8a8Unorm,
-                d3d12::Format::R8g8b8a8Unorm,
+                vk::Format::R8G8B8A8_UNORM,
+                vk::Format::R8G8B8A8_UNORM,
                 resolution,
             )
             .context("allocating render target")?,
             rt4: RenderTarget::new(
                 gpu,
                 "deferred_horizontal_coordinates",
-                d3d12::Format::R32g32Float,
-                d3d12::Format::R32g32Float,
+                vk::Format::R32G32_SFLOAT,
+                vk::Format::R32G32_SFLOAT,
                 resolution,
             )
             .context("allocating render target")?,
@@ -73,36 +71,28 @@ impl Gbuffer {
             uber_depth_half: RenderTarget::new(
                 gpu,
                 "uber_depth_half",
-                d3d12::Format::R16g16Typeless,
-                d3d12::Format::R16g16Float,
+                vk::Format::R16G16_SFLOAT,
+                vk::Format::R16G16_SFLOAT,
                 ((resolution.0 / 2).min(1), (resolution.1 / 2).min(1)),
             )
             .context("allocating render target")?,
-            current_rtv_state: d3d12::ResourceStates::RENDER_TARGET,
 
             _resolution: resolution,
         })
     }
 
-    pub fn clear(&self, cmd: &d3d12::GraphicsCommandList) {
-        cmd.clear_render_target_view(self.albedo.cpu_handle(), &[0.0, 0.0, 0.0, 0.0]);
-        cmd.clear_render_target_view(self.normal.cpu_handle(), &[0.0, 0.0, 0.0, 0.0]);
-        cmd.clear_render_target_view(self.rt3.cpu_handle(), &[0.0, 0.5, 0.0, 0.0]);
-        cmd.clear_render_target_view(self.rt4.cpu_handle(), &[0.0, 0.0, 0.0, 0.0]);
-        cmd.clear_depth_stencil_view(self.depth.cpu_handle(), d3d12::ClearFlags::DEPTH, 0.0, 0);
-    }
-
-    pub fn bind(&self, cmd: &mut CommandList) {
-        cmd.set_render_targets(
-            &[&self.albedo, &self.normal, &self.rt3, &self.rt4],
-            Some(&self.depth),
-        );
+    pub fn clear(&mut self, cmd: &vk::CommandBuffer) {
+        self.albedo.clear(cmd, [0.0, 0.0, 0.0, 0.0]);
+        self.normal.clear(cmd, [0.0, 0.0, 0.0, 0.0]);
+        self.rt3.clear(cmd, [0.0, 0.5, 0.0, 0.0]);
+        self.rt4.clear(cmd, [0.0, 0.0, 0.0, 0.0]);
+        self.depth.clear(cmd, 0.0, 0);
     }
 
     pub fn transition(
         &mut self,
-        cmd: &d3d12::GraphicsCommandList,
-        new_state: d3d12::ResourceStates,
+        cmd: &vk::CommandBuffer,
+        new_state: (vk::ImageLayout, vk::PipelineStageFlags, vk::AccessFlags),
     ) {
         self.albedo.transition(cmd, new_state);
         self.normal.transition(cmd, new_state);
@@ -125,24 +115,24 @@ impl LightBuffer {
             light_diffuse: RenderTarget::new(
                 gpu,
                 "light_diffuse",
-                d3d12::Format::R11g11b10Float,
-                d3d12::Format::R11g11b10Float,
+                vk::Format::B10G11R11_UFLOAT_PACK32,
+                vk::Format::B10G11R11_UFLOAT_PACK32,
                 resolution,
             )
             .context("allocating render target")?,
             light_specular: RenderTarget::new(
                 gpu,
                 "light_specular",
-                d3d12::Format::R11g11b10Float,
-                d3d12::Format::R11g11b10Float,
+                vk::Format::B10G11R11_UFLOAT_PACK32,
+                vk::Format::B10G11R11_UFLOAT_PACK32,
                 resolution,
             )
             .context("allocating render target")?,
             light_specular_ibl: RenderTarget::new(
                 gpu,
                 "light_specular_ibl",
-                d3d12::Format::R11g11b10Float,
-                d3d12::Format::R11g11b10Float,
+                vk::Format::B10G11R11_UFLOAT_PACK32,
+                vk::Format::B10G11R11_UFLOAT_PACK32,
                 resolution,
             )
             .context("allocating render target")?,
@@ -150,46 +140,16 @@ impl LightBuffer {
         })
     }
 
-    pub fn clear(&self, cmd: &d3d12::GraphicsCommandList) {
-        cmd.clear_render_target_view(self.light_diffuse.cpu_handle(), &[0.0, 0.0, 0.0, 0.0]);
-        cmd.clear_render_target_view(self.light_specular.cpu_handle(), &[0.0, 0.0, 0.0, 0.0]);
-        cmd.clear_render_target_view(self.light_specular_ibl.cpu_handle(), &[0.0, 0.0, 0.0, 0.0]);
-    }
-
-    pub fn bind_for_lights(&self, cmd: &mut CommandList) {
-        cmd.set_render_targets(&[&self.light_diffuse, &self.light_specular], None);
-
-        cmd.set_viewports(&[d3d12::Viewport::builder()
-            .width(self.resolution.0 as f32)
-            .height(self.resolution.1 as f32)
-            .build()]);
-        cmd.set_scissor_rects(&[d3d12::Rect::builder()
-            .right(self.resolution.0 as i32)
-            .bottom(self.resolution.1 as i32)
-            .top(0)
-            .left(0)
-            .build()]);
-    }
-
-    pub fn bind_for_cubemaps(&self, cmd: &mut CommandList) {
-        cmd.set_render_targets(&[&self.light_diffuse, &self.light_specular_ibl], None);
-
-        cmd.set_viewports(&[d3d12::Viewport::builder()
-            .width(self.resolution.0 as f32)
-            .height(self.resolution.1 as f32)
-            .build()]);
-        cmd.set_scissor_rects(&[d3d12::Rect::builder()
-            .right(self.resolution.0 as i32)
-            .bottom(self.resolution.1 as i32)
-            .top(0)
-            .left(0)
-            .build()]);
+    pub fn clear(&mut self, cmd: &vk::CommandBuffer) {
+        self.light_diffuse.clear(cmd, [0.0, 0.0, 0.0, 0.0]);
+        self.light_specular.clear(cmd, [0.0, 0.0, 0.0, 0.0]);
+        self.light_specular_ibl.clear(cmd, [0.0, 0.0, 0.0, 0.0]);
     }
 
     pub fn transition(
         &mut self,
-        cmd: &d3d12::GraphicsCommandList,
-        new_state: d3d12::ResourceStates,
+        cmd: &vk::CommandBuffer,
+        new_state: (vk::ImageLayout, vk::PipelineStageFlags, vk::AccessFlags),
     ) {
         self.light_diffuse.transition(cmd, new_state);
         self.light_specular.transition(cmd, new_state);

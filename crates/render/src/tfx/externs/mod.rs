@@ -3,6 +3,7 @@ pub mod definitions;
 mod macros;
 use std::{any::TypeId, fmt::Debug, sync::Arc};
 
+use ash::vk;
 pub use container::*;
 pub use definitions::*;
 use deimos_data::tfx::ExternIndex;
@@ -10,7 +11,6 @@ use glam::{Mat4, Vec4};
 
 use crate::{
     asset::{Handle, texture::Texture},
-    gpu::alloc::descriptors::ResourceView,
     renderer::Renderer,
 };
 
@@ -89,16 +89,16 @@ impl<T: ExternAccessor> ExternAccessorExt for T {
 pub enum TextureView {
     #[default]
     None,
-    View(ResourceView),
+    View(vk::ImageView),
     Resource(Handle<Texture>),
 }
 
 impl TextureView {
-    pub fn get_srv(&self) -> Option<ResourceView> {
+    pub fn get_srv(&self) -> Option<vk::ImageView> {
         match self {
             Self::None => None,
             Self::View(resource_view) => Some(*resource_view),
-            Self::Resource(handle) => handle.get_ref(|t| t.srv),
+            Self::Resource(handle) => handle.get_ref(|t| t.view),
         }
     }
 
@@ -111,15 +111,15 @@ impl Debug for TextureView {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             Self::None => write!(f, "None"),
-            Self::View(view) => write!(f, "View({:?})", view.cpu_handle()),
+            Self::View(view) => write!(f, "View({:?})", view),
             Self::Resource(texture) => write!(f, "Resource({})", texture.hash()),
             // TextureView::Raw(_) => write!(f, "Raw"),
         }
     }
 }
 
-impl From<ResourceView> for TextureView {
-    fn from(value: ResourceView) -> Self {
+impl From<vk::ImageView> for TextureView {
+    fn from(value: vk::ImageView) -> Self {
         Self::View(value)
     }
 }
@@ -129,21 +129,6 @@ impl From<Handle<Texture>> for TextureView {
         Self::Resource(texture)
     }
 }
-
-// impl From<d3d11::ShaderResourceView> for TextureView {
-//     fn from(srv: d3d11::ShaderResourceView) -> Self {
-//         TextureView::Raw(srv)
-//     }
-// }
-
-// impl From<Option<d3d11::ShaderResourceView>> for TextureView {
-//     fn from(srv: Option<d3d11::ShaderResourceView>) -> Self {
-//         match srv {
-//             Some(srv) => TextureView::Raw(srv),
-//             None => TextureView::None,
-//         }
-//     }
-// }
 
 #[derive(Default, Clone)]
 pub enum Uav {

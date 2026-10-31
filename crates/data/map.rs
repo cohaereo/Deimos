@@ -3,7 +3,8 @@ use std::io::SeekFrom;
 use assert_offset::AssertOffsets;
 use glam::{Quat, Vec4};
 use tiger_parse::{
-    tiger_type, tiger_variant_enum, Endian, FnvHash, Padding, TigerReadable, VariantEnum,
+    tiger_type, tiger_variant_enum, Endian, FnvHash, Padding, TigerReadable, TigerReader,
+    VariantEnum,
 };
 use tiger_pkg::TagHash;
 
@@ -218,10 +219,7 @@ impl SComponentDataListPtr {
 }
 
 impl TigerReadable for SComponentDataListPtr {
-    fn read_ds_endian<R: std::io::prelude::Read + std::io::prelude::Seek>(
-        reader: &mut R,
-        endian: Endian,
-    ) -> tiger_parse::Result<Self> {
+    fn read_ds_endian(reader: &mut dyn TigerReader, endian: Endian) -> tiger_parse::Result<Self> {
         let offset_base = reader.stream_position()?;
         let offset: i64 = TigerReadable::read_ds_endian(reader, endian)?;
         if offset == 0 || offset == i64::MAX {

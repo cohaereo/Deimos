@@ -710,7 +710,7 @@ impl<P: ModelProvider> ModelListBase<P> {
                                 );
                             }
 
-                            if let Some(thumbnail) = model.thumbnail.as_ref().map(|r| r.srv()) {
+                            if let Some(thumbnail) = model.thumbnail.as_ref().map(|r| r.view()) {
                                 let srv = if let Some(hover_pos) = card_response.hover_pos() {
                                     ui.ctx().request_repaint();
                                     *card_hover_vector = (hover_pos - card_image_rect.center())

@@ -1,16 +1,19 @@
 use std::sync::Arc;
 
 use anyhow::Context;
-use d3d12::DeviceChild;
+use ash::vk;
 use deimos_data::tfx::buffers::VertexBufferHeader;
-use gpu_allocator::d3d12::{ResourceCreateDesc, ResourceType};
+use gpu_allocator::MemoryLocation;
 use tiger_parse::PackageManagerExt;
 use tiger_pkg::{TagHash, package_manager};
 
-use crate::gpu::{Gpu, alloc::resource::OwnedResource};
+use crate::gpu::{
+    Gpu,
+    alloc::{BufferAllocDesc, buffer::Buffer},
+};
 
 pub struct VertexBuffer {
-    resource: OwnedResource,
+    buffer: Buffer,
 
     pub size: u32,
     pub length: u32,
@@ -37,7 +40,7 @@ impl VertexBuffer {
         let (data, stride) = Self::get_raw_data_and_stride(hash)?;
 
         let vb = Self::load_data(gpu, &data, stride)?;
-        vb.resource
+        vb.buffer
             .resource()
             .set_debug_name(format!("vertex_buffer {hash}"));
         Ok(vb)
@@ -47,83 +50,53 @@ impl VertexBuffer {
         Self::load_data_ex(gpu, data, stride)
     }
 
-    #[profiling::function]
     pub fn load_data_ex(gpu: &Arc<Gpu>, data: &[u8], stride: u32) -> anyhow::Result<Self> {
-        let desc = d3d12::ResourceDesc::buffer(data.len() as u64);
-
-        let mut resource = gpu.allocate_resource(&ResourceCreateDesc {
-            name: "vertex_buffer",
-            memory_location: gpu_allocator::MemoryLocation::GpuOnly,
-            resource_category: gpu_allocator::d3d12::ResourceCategory::Buffer,
-            resource_desc: desc.as_ref(),
-            castable_formats: &[],
-            clear_value: None,
-            initial_state_or_layout:
-                gpu_allocator::d3d12::ResourceStateOrBarrierLayout::ResourceState(
-                    d3d12::D3D12_RESOURCE_STATE_COMMON,
-                ),
-            resource_type: &ResourceType::Placed,
+        let buffer = gpu.alloc_buffer(&BufferAllocDesc {
+            name: "generic_vertex_buffer",
+            size: data.len() as u64,
+            usage: vk::BufferUsageFlags::VERTEX_BUFFER | vk::BufferUsageFlags::TRANSFER_DST,
+            flags: vk::BufferCreateFlags::empty(),
+            location: MemoryLocation::GpuOnly,
         })?;
 
-        let mut upload_buffer = gpu.allocate_upload_buffer(data.len() as u64)?;
-        let upload_buffer_data = upload_buffer
-            .resource()
-            .map(0)
-            .context("Failed to map upload buffer")?;
+        let upload_buffer = gpu.alloc_upload_buffer(data.len() as u64)?;
         unsafe {
-            upload_buffer_data.copy_from_nonoverlapping(data.as_ptr(), data.len());
+            upload_buffer
+                .mapped_ptr()
+                .as_ptr()
+                .copy_from_nonoverlapping(data.as_ptr(), data.len());
         }
-        upload_buffer.resource().unmap(0);
 
-        gpu.cmd_scope(|cmd| {
-            upload_buffer.transition(cmd, d3d12::ResourceStates::COPY_SOURCE);
-            resource.transition(cmd, d3d12::ResourceStates::COPY_DEST);
-
-            cmd.copy_resource(upload_buffer.resource(), resource.resource());
-
-            resource.transition(cmd, d3d12::ResourceStates::COMMON);
-
-            Ok(())
-        })?;
+        let cmd = gpu.upload_command_buffer();
+        unsafe {
+            gpu.cmd_copy_buffer(
+                *cmd,
+                upload_buffer.vk_buffer(),
+                buffer.vk_buffer(),
+                &[vk::BufferCopy::default().size(data.len() as u64)],
+            );
+        }
 
         Ok(VertexBuffer {
-            resource,
+            buffer,
             size: data.len() as u32,
             length: data.len() as u32 / stride,
             stride,
         })
     }
 
-    #[profiling::function]
-    pub fn bind_single(&self, cmd: &d3d12::GraphicsCommandList, slot: u32) {
-        cmd.ia_set_vertex_buffers(
-            slot,
-            &[d3d12::VertexBufferView::new(
-                self.resource.resource().gpu_virtual_address(),
-                self.size,
-                self.stride,
-            )],
-        );
+    pub fn bind_single(&self, cmd: &vk::CommandBuffer, slot: u32) {
+        unsafe {
+            self.buffer().resource().gpu().cmd_bind_vertex_buffers(
+                *cmd,
+                slot,
+                &[self.buffer.vk_buffer()],
+                &[0],
+            );
+        }
     }
 
-    pub fn virtual_address(&self) -> d3d12::GpuVirtualAddress {
-        self.resource.resource().gpu_virtual_address()
+    pub fn buffer(&self) -> &Buffer {
+        &self.buffer
     }
-
-    pub fn view(&self) -> d3d12::VertexBufferView {
-        d3d12::VertexBufferView::new(self.virtual_address(), self.size, self.stride)
-    }
-
-    // /// # Safety
-    // ///
-    // /// The caller must ensure that the data fits within the buffer.
-    // pub unsafe fn write(&self, cmd: &DeviceContext, data: &[u8]) -> anyhow::Result<()> {
-    //     unsafe {
-    //         let m = cmd.map_unchecked(&self.buffer, 0, d3d11::MapType::WriteDiscard, false)?;
-    //         m.data.copy_from(data.as_ptr() as _, data.len());
-    //         cmd.unmap(&self.buffer, 0);
-
-    //         Ok(())
-    //     }
-    // }
 }

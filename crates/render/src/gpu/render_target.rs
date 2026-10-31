@@ -1,82 +1,75 @@
 use std::sync::Arc;
 
-use anyhow::Context;
-use d3d12::{DeviceChild, ResourceFlags};
+use ash::vk;
+use gpu_allocator::MemoryLocation;
 
 use crate::gpu::{
     Gpu,
-    alloc::{descriptors::ResourceView, resource::OwnedResource},
+    alloc::{ImageAllocDesc, image::Image},
+    command_buffer::{CommandBuffer, IMAGE_STATE_TRANSFER_DST},
 };
 
 pub struct RenderTarget {
-    pub resource: OwnedResource,
-    size: (u32, u32),
-    rtv_heap: d3d12::DescriptorHeap,
-    srv: ResourceView,
     gpu: Arc<Gpu>,
 
+    pub image: Image,
+    view: vk::ImageView,
+    size: (u32, u32),
+
     name: String,
-    format: d3d12::Format,
-    view_format: d3d12::Format,
+    format: vk::Format,
+    view_format: vk::Format,
 }
 
 impl RenderTarget {
     pub fn new(
         gpu: &Arc<Gpu>,
         name: &str,
-        format: d3d12::Format,
-        view_format: d3d12::Format,
+        format: vk::Format,
+        view_format: vk::Format,
         (width, height): (u32, u32),
     ) -> anyhow::Result<Self> {
-        let resource = gpu
-            .allocate_resource(&gpu_allocator::d3d12::ResourceCreateDesc {
-                name,
-                memory_location: gpu_allocator::MemoryLocation::GpuOnly,
-                resource_category: gpu_allocator::d3d12::ResourceCategory::RtvDsvTexture,
-                resource_desc: d3d12::ResourceDesc::new(d3d12::ResourceDimension::Texture2D)
-                    .width(width as u64)
-                    .height(height)
-                    .format(format)
-                    .flags(ResourceFlags::ALLOW_RENDER_TARGET)
-                    .as_ref(),
-                castable_formats: &[],
-                clear_value: None,
-                initial_state_or_layout:
-                    gpu_allocator::d3d12::ResourceStateOrBarrierLayout::ResourceState(
-                        d3d12::D3D12_RESOURCE_STATE_RENDER_TARGET,
-                    ),
-                resource_type: &gpu_allocator::d3d12::ResourceType::Placed,
-            })
-            .context("allocating resource")?;
-
-        resource.resource().set_debug_name(name);
-
-        let rtv_heap = gpu.create_descriptor_heap(d3d12::DescriptorHeapType::Rtv, 1, false, 0)?;
-        gpu.create_render_target_view(
-            Some(resource.resource()),
-            Some(
-                &d3d12::RenderTargetViewDesc::builder()
-                    .format(view_format)
-                    .view_dimension(d3d12::RtvDimension::Texture2D {
-                        mip_slice: 0,
-                        plane_slice: 0,
-                    })
-                    .build(),
-            ),
-            rtv_heap.cpu_descriptor_handle_for_heap_start(),
-        );
-
-        let srv = gpu.resource_heap.lock().allocate_srv(
+        let image = gpu.alloc_image(&ImageAllocDesc {
             name,
-            resource.resource(),
-            &d3d12::ShaderResourceViewDesc::texture_2d(view_format, 0, 1, 0.0, 0),
-        );
+            image_type: vk::ImageType::TYPE_2D,
+            format,
+            extent: vk::Extent3D {
+                width,
+                height,
+                depth: 1,
+            },
+            mip_levels: 1,
+            array_layers: 1,
+            samples: vk::SampleCountFlags::TYPE_1,
+            tiling: vk::ImageTiling::OPTIMAL,
+            usage: vk::ImageUsageFlags::TRANSFER_DST
+                | vk::ImageUsageFlags::COLOR_ATTACHMENT
+                | vk::ImageUsageFlags::SAMPLED,
+            sharing_mode: vk::SharingMode::EXCLUSIVE,
+            initial_layout: vk::ImageLayout::UNDEFINED,
+            location: MemoryLocation::GpuOnly,
+        })?;
+
+        let view = unsafe {
+            gpu.create_image_view(
+                &vk::ImageViewCreateInfo::default()
+                    .image(image.vk_image())
+                    .view_type(vk::ImageViewType::TYPE_2D)
+                    .format(view_format)
+                    .subresource_range(
+                        vk::ImageSubresourceRange::default()
+                            .aspect_mask(vk::ImageAspectFlags::COLOR)
+                            .layer_count(1)
+                            .level_count(1),
+                    ),
+                None,
+            )
+        }?;
 
         Ok(Self {
             gpu: gpu.clone(),
-            resource,
-            rtv_heap,
-            srv,
+            image,
+            view,
             size: (width, height),
 
             name: name.to_string(),
@@ -85,20 +78,12 @@ impl RenderTarget {
         })
     }
 
-    pub const fn output_format(&self) -> d3d12::Format {
+    pub const fn output_format(&self) -> vk::Format {
         self.view_format
     }
 
-    pub fn cpu_handle(&self) -> d3d12::CpuDescriptorHandle {
-        self.rtv_heap.cpu_descriptor_handle_for_heap_start()
-    }
-
-    pub fn gpu_handle(&self) -> d3d12::GpuDescriptorHandle {
-        self.rtv_heap.gpu_descriptor_handle_for_heap_start()
-    }
-
-    pub const fn srv(&self) -> ResourceView {
-        self.srv
+    pub const fn view(&self) -> vk::ImageView {
+        self.view
     }
 
     pub const fn resolution(&self) -> (u32, u32) {
@@ -107,10 +92,33 @@ impl RenderTarget {
 
     pub fn transition(
         &mut self,
-        cmd: &d3d12::GraphicsCommandList,
-        new_state: d3d12::ResourceStates,
+        cmd: &vk::CommandBuffer,
+        new_state: (vk::ImageLayout, vk::PipelineStageFlags, vk::AccessFlags),
     ) {
-        self.resource.transition(cmd, new_state);
+        self.image
+            .layout_barrier(*cmd, vk::ImageAspectFlags::COLOR, new_state);
+    }
+
+    pub fn clear(&mut self, cmd: &vk::CommandBuffer, color: [f32; 4]) {
+        let old_state = self.image.current_state();
+        if old_state.0 != vk::ImageLayout::TRANSFER_DST_OPTIMAL {
+            self.transition(cmd, IMAGE_STATE_TRANSFER_DST);
+        }
+
+        unsafe {
+            self.gpu.cmd_clear_color_image(
+                *cmd,
+                self.image.vk_image(),
+                vk::ImageLayout::TRANSFER_DST_OPTIMAL,
+                &vk::ClearColorValue { float32: color },
+                &[vk::ImageSubresourceRange::default()
+                    .aspect_mask(vk::ImageAspectFlags::COLOR)
+                    .layer_count(1)
+                    .level_count(1)],
+            );
+        }
+
+        self.transition(cmd, old_state);
     }
 
     /// Resize the depth buffer.
@@ -150,105 +158,87 @@ impl RenderTarget {
 
 impl Drop for RenderTarget {
     fn drop(&mut self) {
-        self.gpu.resource_heap.lock().free_srv(self.srv);
+        unsafe {
+            self.gpu.destroy_image_view(self.view, None);
+        }
     }
 }
 
 pub struct DepthBuffer {
-    pub resource: OwnedResource,
-    size: (u32, u32),
-    dsv_heap: d3d12::DescriptorHeap,
-    srv: ResourceView,
     gpu: Arc<Gpu>,
+    pub image: Image,
+    srv: vk::ImageView,
+    size: (u32, u32),
 
-    current_state: d3d12::ResourceStates,
-    output_format: d3d12::Format,
+    output_format: vk::Format,
 }
 
 impl DepthBuffer {
     pub fn new(gpu: &Arc<Gpu>, (width, height): (u32, u32)) -> anyhow::Result<Self> {
-        let resource = gpu.allocate_resource(&gpu_allocator::d3d12::ResourceCreateDesc {
+        let image = gpu.alloc_image(&ImageAllocDesc {
             name: "depth_buffer",
-            memory_location: gpu_allocator::MemoryLocation::GpuOnly,
-            resource_category: gpu_allocator::d3d12::ResourceCategory::RtvDsvTexture,
-            resource_desc: d3d12::ResourceDesc::new(d3d12::ResourceDimension::Texture2D)
-                .width(width as u64)
-                .height(height)
-                .format(d3d12::Format::R32g8x24Typeless)
-                .flags(ResourceFlags::ALLOW_DEPTH_STENCIL)
-                .as_ref(),
-            castable_formats: &[],
-            clear_value: Some(&d3d12::D3D12_CLEAR_VALUE {
-                Format: d3d12::Format::D32FloatS8x24Uint.into(),
-                Anonymous: d3d12::D3D12_CLEAR_VALUE_0 {
-                    DepthStencil: d3d12::D3D12_DEPTH_STENCIL_VALUE {
-                        Depth: 0.0,
-                        Stencil: 0,
-                    },
-                },
-            }),
-            initial_state_or_layout:
-                gpu_allocator::d3d12::ResourceStateOrBarrierLayout::ResourceState(
-                    d3d12::D3D12_RESOURCE_STATE_DEPTH_WRITE,
-                ),
-            resource_type: &gpu_allocator::d3d12::ResourceType::Placed,
+            image_type: vk::ImageType::TYPE_2D,
+            format: vk::Format::D32_SFLOAT_S8_UINT,
+            extent: vk::Extent3D {
+                width,
+                height,
+                depth: 1,
+            },
+            mip_levels: 1,
+            array_layers: 1,
+            samples: vk::SampleCountFlags::TYPE_1,
+            tiling: vk::ImageTiling::OPTIMAL,
+            usage: vk::ImageUsageFlags::DEPTH_STENCIL_ATTACHMENT
+                | vk::ImageUsageFlags::TRANSFER_DST,
+            sharing_mode: vk::SharingMode::EXCLUSIVE,
+            initial_layout: vk::ImageLayout::UNDEFINED,
+            location: MemoryLocation::GpuOnly,
         })?;
-        resource.resource().set_debug_name("depth_buffer");
 
-        let rtv_heap = gpu.create_descriptor_heap(d3d12::DescriptorHeapType::Dsv, 1, false, 0)?;
-        gpu.create_depth_stencil_view(
-            Some(resource.resource()),
-            Some(&d3d12::DepthStencilViewDesc::texture_2d(
-                d3d12::Format::D32FloatS8x24Uint,
-            )),
-            rtv_heap.cpu_descriptor_handle_for_heap_start(),
-        );
-
-        let srv = gpu.resource_heap.lock().allocate_srv(
-            "depth",
-            resource.resource(),
-            &d3d12::ShaderResourceViewDesc::texture_2d(
-                d3d12::Format::R32FloatX8x24Typeless,
-                0,
-                1,
-                0.0,
-                0,
-            ),
-        );
+        let srv = unsafe {
+            gpu.create_image_view(
+                &vk::ImageViewCreateInfo::default()
+                    .image(image.vk_image())
+                    .view_type(vk::ImageViewType::TYPE_2D)
+                    .format(vk::Format::D32_SFLOAT_S8_UINT)
+                    .subresource_range(
+                        vk::ImageSubresourceRange::default()
+                            .aspect_mask(
+                                vk::ImageAspectFlags::DEPTH | vk::ImageAspectFlags::STENCIL,
+                            )
+                            .layer_count(1)
+                            .level_count(1),
+                    ),
+                None,
+            )
+        }?;
 
         Ok(Self {
             gpu: gpu.clone(),
-            resource,
-            dsv_heap: rtv_heap,
+            image,
             srv,
             size: (width, height),
-            output_format: d3d12::Format::D32FloatS8x24Uint,
-
-            current_state: d3d12::ResourceStates::DEPTH_WRITE,
+            output_format: vk::Format::D32_SFLOAT_S8_UINT,
         })
     }
 
-    pub const fn output_format(&self) -> d3d12::Format {
+    pub const fn output_format(&self) -> vk::Format {
         self.output_format
-    }
-
-    pub fn cpu_handle(&self) -> d3d12::CpuDescriptorHandle {
-        self.dsv_heap.cpu_descriptor_handle_for_heap_start()
-    }
-
-    pub fn gpu_handle(&self) -> d3d12::GpuDescriptorHandle {
-        self.dsv_heap.gpu_descriptor_handle_for_heap_start()
     }
 
     pub fn transition(
         &mut self,
-        cmd: &d3d12::GraphicsCommandList,
-        new_state: d3d12::ResourceStates,
+        cmd: &vk::CommandBuffer,
+        new_state: (vk::ImageLayout, vk::PipelineStageFlags, vk::AccessFlags),
     ) {
-        self.resource.transition(cmd, new_state);
+        self.image.layout_barrier(
+            *cmd,
+            vk::ImageAspectFlags::DEPTH | vk::ImageAspectFlags::STENCIL,
+            new_state,
+        );
     }
 
-    pub const fn srv(&self) -> ResourceView {
+    pub const fn view(&self) -> vk::ImageView {
         self.srv
     }
 
@@ -268,13 +258,32 @@ impl DepthBuffer {
         Ok(())
     }
 
+    pub fn clear(&mut self, cmd: &vk::CommandBuffer, depth: f32, stencil: u8) {
+        let old_state = self.image.current_state();
+        if old_state.0 != vk::ImageLayout::TRANSFER_DST_OPTIMAL {
+            self.transition(cmd, IMAGE_STATE_TRANSFER_DST);
+        }
+
+        unsafe {
+            self.gpu.cmd_clear_depth_stencil_image(
+                *cmd,
+                self.image.vk_image(),
+                vk::ImageLayout::TRANSFER_DST_OPTIMAL,
+                &vk::ClearDepthStencilValue {
+                    depth,
+                    stencil: stencil as u32,
+                },
+                &[vk::ImageSubresourceRange::default()
+                    .aspect_mask(vk::ImageAspectFlags::DEPTH | vk::ImageAspectFlags::STENCIL)
+                    .layer_count(1)
+                    .level_count(1)],
+            );
+        }
+
+        self.transition(cmd, old_state);
+    }
+
     pub const fn resolution(&self) -> (u32, u32) {
         self.size
-    }
-}
-
-impl Drop for DepthBuffer {
-    fn drop(&mut self) {
-        self.gpu.resource_heap.lock().free_srv(self.srv);
     }
 }

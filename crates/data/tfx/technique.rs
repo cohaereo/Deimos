@@ -5,7 +5,7 @@ use std::{
 
 use glam::Vec4;
 use int_enum::IntEnum;
-use tiger_parse::{tiger_type, Endian, Padding, TigerReadable};
+use tiger_parse::{tiger_type, Endian, Padding, TigerReadable, TigerReader};
 use tiger_pkg::TagHash;
 
 use crate::{tag::WideHash, tfx::enums::ShaderStage};
@@ -76,8 +76,8 @@ pub enum TechniqueBindMode {
 }
 
 impl TigerReadable for TechniqueBindMode {
-    fn read_ds_endian<R: std::io::prelude::Read + std::io::prelude::Seek>(
-        reader: &mut R,
+    fn read_ds_endian(
+        reader: &mut dyn TigerReader,
         endian: tiger_parse::Endian,
     ) -> tiger_parse::Result<Self> {
         let v = u32::read_ds_endian(reader, endian)?;
@@ -180,7 +180,7 @@ bitflags::bitflags! {
 
 // TODO(cohae): tiger-parse doesnt work with bitflags, so we have to implement this manually
 impl TigerReadable for TfxScopeBits {
-    fn read_ds_endian<R: Read + Seek>(reader: &mut R, endian: Endian) -> tiger_parse::Result<Self> {
+    fn read_ds_endian(reader: &mut dyn TigerReader, endian: Endian) -> tiger_parse::Result<Self> {
         let bits: u64 = u64::read_ds_endian(reader, endian)?;
         Ok(Self::from_bits_truncate(bits))
     }

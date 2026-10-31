@@ -3,6 +3,7 @@ use std::{
     time::Instant,
 };
 
+use ash::vk;
 use deimos_data::tfx::{
     FeatureRendererSubscription, features::dynamic::RenderStageSubscription,
     geometry::AxisAlignedBBox,
@@ -11,7 +12,7 @@ use deimos_render::{
     camera::{Camera, CameraProjection},
     ecs::{s_extract_frame_packet, s_update_object_channels, s_visibility_test},
     features::decorators::DECORATOR_QUALITY,
-    gpu::{alloc::descriptors::ResourceView, render_target::RenderTarget},
+    gpu::{command_list::CommandList, render_target::RenderTarget},
     renderer::{
         Renderer,
         cascades::CascadeCalculator,
@@ -142,7 +143,7 @@ impl Scene {
     pub fn show(
         &mut self,
         ui: &mut egui::Ui,
-        egui_d3d12: &mut egui_d3d12::D3D12Renderer,
+        renderer: &mut egui_ash_renderer::Renderer,
         size: Vec2,
     ) {
         let now = Instant::now();
@@ -179,11 +180,12 @@ impl Scene {
             // let r = ui.allocate_response(size, Sense::CLICK | Sense::DRAG | Sense::HOVER);
             let r = ui
                 .image(SizedTexture {
-                    id: egui_d3d12.textures_mut().allocate_dx_temporary(
-                        self.output_srv().cpu_handle(),
-                        None,
-                        false,
-                    ),
+                    id: egui::TextureId::Managed(0),
+                    // id: egui_d3d12.textures_mut().allocate_dx_temporary(
+                    //     self.output_srv().cpu_handle(),
+                    //     None,
+                    //     false,
+                    // ),
                     size,
                 })
                 .interact(Sense::CLICK | Sense::DRAG | Sense::HOVER);
@@ -317,14 +319,14 @@ impl Scene {
                     "Bytes Allocated: {}",
                     format_bytes(memory_stats.total_bytes_used as usize)
                 ));
-                ui.monospace(format!(
-                    "Descriptor Heap: {}/{} ({:.0}%)",
-                    memory_stats.descriptor_heap_used,
-                    memory_stats.descriptor_heap_capacity,
-                    memory_stats.descriptor_heap_used as f32
-                        / memory_stats.descriptor_heap_capacity as f32
-                        * 100.0
-                ));
+                // ui.monospace(format!(
+                //     "Descriptor Heap: {}/{} ({:.0}%)",
+                //     memory_stats.descriptor_heap_used,
+                //     memory_stats.descriptor_heap_capacity,
+                //     memory_stats.descriptor_heap_used as f32
+                //         / memory_stats.descriptor_heap_capacity as f32
+                //         * 100.0
+                // ));
                 ui.separator();
                 ui.monospace(format!(
                     "Upload Ring:  {}/{} ({})",
@@ -336,56 +338,56 @@ impl Scene {
                     memory_stats.upload_ring_capacity,
                     memory_stats.upload_ring_used,
                 );
-                ui.monospace(format!(
-                    "Descriptor Ring:  {}/{}",
-                    memory_stats.descriptor_ring_used, memory_stats.descriptor_ring_capacity
-                ));
-                ui.capacity_bar(
-                    memory_stats.descriptor_ring_capacity,
-                    memory_stats.descriptor_ring_used,
-                );
+                // ui.monospace(format!(
+                //     "Descriptor Ring:  {}/{}",
+                //     memory_stats.descriptor_ring_used, memory_stats.descriptor_ring_capacity
+                // ));
+                // ui.capacity_bar(
+                //     memory_stats.descriptor_ring_capacity,
+                //     memory_stats.descriptor_ring_used,
+                // );
 
                 ui.separator();
 
-                ui.monospace(format!(
-                    "Buffers: {}",
-                    format_bytes(
-                        self.renderer
-                            .gpu
-                            .num_bytes_allocated_for_buffers
-                            .load(Ordering::Relaxed)
-                    )
-                ));
+                // ui.monospace(format!(
+                //     "Buffers: {}",
+                //     format_bytes(
+                //         self.renderer
+                //             .gpu
+                //             .num_bytes_allocated_for_buffers
+                //             .load(Ordering::Relaxed)
+                //     )
+                // ));
 
-                ui.monospace(format!(
-                    "Upload/Download Buffers: {}",
-                    format_bytes(
-                        self.renderer
-                            .gpu
-                            .num_bytes_allocated_for_transfer_buffers
-                            .load(Ordering::Relaxed)
-                    )
-                ));
+                // ui.monospace(format!(
+                //     "Upload/Download Buffers: {}",
+                //     format_bytes(
+                //         self.renderer
+                //             .gpu
+                //             .num_bytes_allocated_for_transfer_buffers
+                //             .load(Ordering::Relaxed)
+                //     )
+                // ));
 
-                ui.monospace(format!(
-                    "Render Targets: {}",
-                    format_bytes(
-                        self.renderer
-                            .gpu
-                            .num_bytes_allocated_for_render_targets
-                            .load(Ordering::Relaxed)
-                    )
-                ));
+                // ui.monospace(format!(
+                //     "Render Targets: {}",
+                //     format_bytes(
+                //         self.renderer
+                //             .gpu
+                //             .num_bytes_allocated_for_render_targets
+                //             .load(Ordering::Relaxed)
+                //     )
+                // ));
 
-                ui.monospace(format!(
-                    "Textures: {}",
-                    format_bytes(
-                        self.renderer
-                            .gpu
-                            .num_bytes_allocated_for_textures
-                            .load(Ordering::Relaxed)
-                    )
-                ));
+                // ui.monospace(format!(
+                //     "Textures: {}",
+                //     format_bytes(
+                //         self.renderer
+                //             .gpu
+                //             .num_bytes_allocated_for_textures
+                //             .load(Ordering::Relaxed)
+                //     )
+                // ));
 
                 if !memory_stats.errors.is_empty() {
                     ui.separator();
@@ -459,31 +461,32 @@ impl Scene {
 
             self.render(delta_time, resolution);
 
-            ui.interact(
-                fps_rect,
-                "frame_counter_profiler_tooltip".into(),
-                Sense::hover(),
-            )
-            .on_hover_ui(|ui| {
-                let gpu = &self.renderer.gpu;
-                ui.monospace(format!(
-                    "{} Drawcalls",
-                    gpu.num_drawcalls.load(Ordering::Relaxed)
-                ));
-                ui.monospace(format!(
-                    "{} Static Instances",
-                    gpu.num_static_instances.load(Ordering::Relaxed)
-                ));
-                let profiler_results = self.renderer.gpu.frame().profiler.get_results_string();
-                ui.add(egui::Label::new(RichText::new(profiler_results).monospace()).extend());
-            });
+            // ui.interact(
+            //     fps_rect,
+            //     "frame_counter_profiler_tooltip".into(),
+            //     Sense::hover(),
+            // )
+            // .on_hover_ui(|ui| {
+            //     let gpu = &self.renderer.gpu;
+            //     ui.monospace(format!(
+            //         "{} Drawcalls",
+            //         gpu.num_drawcalls.load(Ordering::Relaxed)
+            //     ));
+            //     ui.monospace(format!(
+            //         "{} Static Instances",
+            //         gpu.num_static_instances.load(Ordering::Relaxed)
+            //     ));
+            //     let profiler_results = self.renderer.gpu.frame().profiler.get_results_string();
+            //     ui.add(egui::Label::new(RichText::new(profiler_results).monospace()).extend());
+            // });
         });
     }
 
     #[profiling::function]
     pub fn render(&mut self, delta_time: f32, canvas_resolution: (u32, u32)) {
-        let stream = &self.renderer.gpu.frame().stream;
-        let _scope = self.renderer.gpu.profiler_scope(stream, "Scene::render");
+        let cmd = self.renderer.gpu.current_command_buffer();
+        let mut cmd = CommandList::from_native_command_list(&self.renderer.gpu, cmd);
+        // let _scope = self.renderer.gpu.profiler_scope(stream, "Scene::render");
         s_update_object_channels(&self.world);
         if let Err(e) = self
             .scene_renderer
@@ -495,9 +498,7 @@ impl Scene {
 
         let resolution = self.scene_renderer.main_view.resolution();
 
-        let mut cmd_guard = stream.acquire_cmd(&self.renderer.gpu);
-        let cmd = &mut *cmd_guard;
-        let _event = cmd.event_scope("Scene::render", (255, 255, 255));
+        let _event = cmd.event_scope("Scene::render", [1.0, 1.0, 1.0]);
 
         let mut occlusion_buffer = None;
         let mut visible_cluster_bounds = None;
@@ -505,10 +506,6 @@ impl Scene {
             && self.umbra_enabled
         {
             profiling::scope!("umbra_visibility");
-            let _scope = self
-                .renderer
-                .gpu
-                .profiler_scope(stream, "Scene::umbra_visibility");
 
             let mut query = umbra::Query::new(tome);
             let mut vis = umbra::Visibility::default();
@@ -568,10 +565,10 @@ impl Scene {
                 // exposure_time: 1.0 / 60.0,
                 // exposure_scale: 2.0,          // view.settings().exposure_scale,
                 // exposure_illum_relative: 1.0, // view.settings().exposure_illum_relative,
-                specular_tint_lookup: global_tex.specular_tint_lookup.srv.into(),
-                specular_lobe_lookup: global_tex.specular_lobe_lookup.srv.into(),
-                specular_lobe_3d_lookup: global_tex.specular_lobe_3d_lookup.srv.into(),
-                iridescence_lookup: global_tex.iridescence_lookup.srv.into(),
+                specular_tint_lookup: global_tex.specular_tint_lookup.view.into(),
+                specular_lobe_lookup: global_tex.specular_lobe_lookup.view.into(),
+                specular_lobe_3d_lookup: global_tex.specular_lobe_3d_lookup.view.into(),
+                iridescence_lookup: global_tex.iridescence_lookup.view.into(),
                 ..*ext.frame.clone()
             };
 
@@ -631,18 +628,18 @@ impl Scene {
                 0.0,
                 0.0,
             );
-            ext.deferred.deferred_depth = view.gbuffer.depth.srv().into();
-            ext.deferred.deferred_rt0 = view.gbuffer.albedo.srv().into();
-            ext.deferred.deferred_rt1 = view.gbuffer.normal.srv().into();
-            ext.deferred.deferred_rt2 = view.gbuffer.rt3.srv().into();
-            ext.deferred.light_diffuse = view.light.light_diffuse.srv().into();
-            ext.deferred.light_specular = view.light.light_specular.srv().into();
-            ext.deferred.light_specular_ibl = view.light.light_specular_ibl.srv().into();
-            ext.deferred.sky_hemisphere = self.renderer.internal.default_hemisphere.srv.into();
+            ext.deferred.deferred_depth = view.gbuffer.depth.view().into();
+            ext.deferred.deferred_rt0 = view.gbuffer.albedo.view().into();
+            ext.deferred.deferred_rt1 = view.gbuffer.normal.view().into();
+            ext.deferred.deferred_rt2 = view.gbuffer.rt3.view().into();
+            ext.deferred.light_diffuse = view.light.light_diffuse.view().into();
+            ext.deferred.light_specular = view.light.light_specular.view().into();
+            ext.deferred.light_specular_ibl = view.light.light_specular_ibl.view().into();
+            ext.deferred.sky_hemisphere = self.renderer.internal.default_hemisphere.view.into();
 
             let view = &self.scene_renderer.main_view;
-            ext.decal.depth_read = view.gbuffer.depth_read.srv().into();
-            ext.decal.normals_read = view.gbuffer.normal_read.srv().into();
+            ext.decal.depth_read = view.gbuffer.depth_read.view().into();
+            ext.decal.normals_read = view.gbuffer.normal_read.view().into();
             ext.decal.depth_constants = ext.deferred.depth_constants;
             ext.decal.unk30 = vec4(
                 resolution.0 as f32,
@@ -651,7 +648,7 @@ impl Scene {
                 1.0 / resolution.1 as f32,
             );
 
-            ext.water.unk00 = view.shaded_read.srv().into();
+            ext.water.unk00 = view.shaded_read.view().into();
             // ext.water.unk40 = Vec4::splat(fastrand::f32_inclusive());
             // ext.water.unk50 = Vec4::splat(fastrand::f32_inclusive());
             // ext.atmosphere.unk130 = Vec4::splat(fastrand::f32_inclusive());
@@ -825,14 +822,14 @@ impl Scene {
         };
 
         {
-            let _scope = self.renderer.gpu.profiler_scope(stream, "visibility_test");
+            // let _scope = self.renderer.gpu.profiler_scope(stream, "visibility_test");
             s_visibility_test(&mut self.world, &vis);
         }
 
         self.scene_renderer.frame_packet.reset();
 
         {
-            let _scope = self.renderer.gpu.profiler_scope(stream, "extract_frame");
+            // let _scope = self.renderer.gpu.profiler_scope(stream, "extract_frame");
             s_extract_frame_packet(
                 &self.world,
                 &mut self.scene_renderer,
@@ -842,8 +839,12 @@ impl Scene {
             );
         }
 
-        self.scene_renderer
-            .render(cmd, &vis, self.render_mode.into(), self.draw_sun_shadows);
+        self.scene_renderer.render(
+            &mut cmd,
+            &vis,
+            self.render_mode.into(),
+            self.draw_sun_shadows,
+        );
     }
 
     fn show_toolbar(&mut self, ui: &mut Ui) {
@@ -1243,8 +1244,8 @@ impl Scene {
         });
     }
 
-    pub const fn output_srv(&self) -> ResourceView {
-        self.scene_renderer.main_view.output.srv()
+    pub const fn output_srv(&self) -> vk::ImageView {
+        self.scene_renderer.main_view.output.view()
     }
 
     pub fn render_to_texture(&mut self, resolution: (u32, u32)) -> anyhow::Result<RenderTarget> {

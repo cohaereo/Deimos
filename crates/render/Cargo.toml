@@ -7,9 +7,11 @@ edition = "2024"
 deimos-core = { path = "../core" }
 deimos-data = { path = "../data" }
 deimos-ecs = { path = "../ecs" }
-d3d12 = { path = "../d3d12" }
+dxil2spirv = { path = "../dxil2spirv" }
 umbra = { path = "../umbra3" }
 
+ash.workspace = true
+ash-window = "0.13.0"
 ahash = "0.8.12"
 anyhow.workspace = true
 assert-offset = "0.1"
@@ -21,15 +23,16 @@ chroma-dbg = "0.1.1"
 crossbeam.workspace = true
 ddsfile = "0.5.2"
 glam.workspace = true
-gpu-allocator = { version = "0.28.0", default-features = false, features = ["d3d12", "std"] }
+gpu-allocator = { version = "0.28.0", default-features = false, features = [
+    "vulkan",
+    "std",
+] }
 hecs.workspace = true
 image = { version = "0.25.10", default-features = false }
-inline_tweak = "1.2.4"
 int-enum = "1.2.0"
 itertools.workspace = true
 lazy_static = "1"
 parking_lot.workspace = true
-petgraph = "0.8.3"
 potassium.workspace = true
 profiling.workspace = true
 rand = "0.9.0"
@@ -45,7 +48,6 @@ tiger-parse.workspace = true
 tiger-pkg.workspace = true
 tracing.workspace = true
 uuid = "1.21.0"
-windows.workspace = true
 zstd = "0.13.3"
 fastrand = "2.4.1"
 

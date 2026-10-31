@@ -1,4 +1,5 @@
 use anyhow::Context;
+use ash::vk;
 use bytemuck::{Pod, Zeroable};
 use deimos_data::tfx::{
     RenderStage, ShaderStage,
@@ -102,7 +103,7 @@ impl TerrainPatchesRenderer {
                 ImmutableBuffer::new(
                     &renderer.gpu,
                     "terrain_patch_constants",
-                    d3d12::Format::R32g32b32a32Uint,
+                    vk::Format::R32G32B32A32_UINT,
                     bytemuck::cast_slice(&[scope_terrain]),
                 )
             })
@@ -153,7 +154,11 @@ impl TerrainPatchesRenderer {
             self.index_buffer.get(),
         ) {
             index.bind(cmd);
-            cmd.ia_set_vertex_buffers(0, &[vertex0.view(), vertex1.view()]);
+            cmd.set_vertex_buffers(
+                0,
+                &[vertex0.buffer().vk_buffer(), vertex1.buffer().vk_buffer()],
+                &[0, 0],
+            );
         } else {
             return;
         }

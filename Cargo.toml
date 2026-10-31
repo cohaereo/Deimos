@@ -11,18 +11,19 @@ path = "src/main.rs"
 [workspace]
 members = [
     "crates/core",
-    "crates/d3d12",
     "crates/data",
     "crates/ecs",
-    "crates/egui-d3d12",
     "crates/egui-sdl3-platform",
     "crates/render",
+    "crates/dxil2spirv",
     "crates/umbra3",
     "crates/investment",
 ]
 
 [workspace.dependencies]
+ash = "0.38"
 anyhow = "1"
+bytemuck = "1.25"
 crossbeam = "0.8"
 egui = { version = "0.33", default-features = false, features = ["bytemuck"] }
 egui_dock = "0.18"
@@ -32,41 +33,24 @@ hecs = "0.10.5"
 parking_lot = "0.12"
 potassium = "0.4.3"
 profiling = "1"
-rayon = "1.11.0"
+rayon = "1.12.0"
 serde = { version = "1", features = ["derive"] }
-sdl3 = { version = "0.16", features = ["raw-window-handle"] }
-tiger-parse = { version = "0.7.2", git = "https://github.com/v4nguard/tiger-parse.git", features = [
+sdl3 = { version = "0.20", features = ["raw-window-handle"] }
+tiger-parse = { version = "0.8.0", git = "https://github.com/v4nguard/tiger-parse.git", features = [
     "check_types",
     "check_types_strict",
     "tiger_pkg",
     "check_types_debug",
 ] }
-tiger-pkg = { version = "0.20", features = ["global_manager_instance"] }
+tiger-pkg = { version = "0.21", features = ["global_manager_instance"] }
 tracing = { version = "0.1" }
-
-[workspace.dependencies.windows]
-version = ">=0.59, <=0.62"
-features = [
-    "Win32_Graphics_Direct3D12",
-    "Win32_Graphics_Direct3D",
-    "Win32_Graphics_Dxgi",
-    "Win32_Graphics_Dxgi_Common",
-    "Win32_Foundation",
-    "Win32_System_Console",
-    "Win32_Graphics_Direct3D_Fxc",
-    "Win32_UI_WindowsAndMessaging",
-    "Win32_Security",
-    "Win32_System_Threading",
-]
 
 [dependencies]
 deimos-core = { path = "./crates/core" }
 deimos-data = { path = "./crates/data" }
 deimos-ecs = { path = "./crates/ecs" }
 deimos-render = { path = "./crates/render" }
-d3d12 = { path = "./crates/d3d12" }
 egui-sdl3-platform = { path = "./crates/egui-sdl3-platform" }
-egui-d3d12 = { path = "./crates/egui-d3d12" }
 umbra = { path = "./crates/umbra3" }
 
 # (De)serialization
@@ -92,6 +76,7 @@ tracing.workspace = true
 tracy-client = { version = "0.18.4", optional = true }
 
 # Graphics
+ash.workspace = true
 glam.workspace = true
 sdl3.workspace = true
 
@@ -100,6 +85,7 @@ ahash = "0.8.12"
 chroma-dbg = "0.2.1"
 clap = { version = "4.5.37", features = ["derive"] }
 egui.workspace = true
+egui-ash-renderer = { version = "0.11.0", features = ["dynamic-rendering"] }
 egui_dock.workspace = true
 egui_extras = { version = "0.33", features = ["image", "svg"] }
 google_material_symbols = "0.2.9"
@@ -108,7 +94,6 @@ image = { version = "0.25", default-features = false, features = ["png"] }
 native-dialog = "0.7.0"
 nu-ansi-term = "0.50.1"
 rayon.workspace = true
-windows-registry = "0.6.1"
 
 sysinfo = { version = "0.38.4", default-features = false, features = [
     "system",

@@ -1,0 +1,3 @@
+[submodule "crates/dxil2spirv/dxil-spirv"]
+	path = crates/dxil2spirv/dxil-spirv
+	url = https://github.com/HansKristian-Work/dxil-spirv

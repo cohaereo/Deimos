@@ -1,4 +1,5 @@
 use anyhow::Context;
+use ash::vk;
 use deimos_data::tfx::ShaderStage;
 use tiger_pkg::TagHash;
 
@@ -38,7 +39,7 @@ impl ModelBuffers {
                 ImmutableBuffer::new(
                     &renderer.gpu,
                     &format!("color_buffer_{color_buffer}"),
-                    d3d12::Format::R8g8b8a8Unorm,
+                    vk::Format::R8G8B8A8_UNORM,
                     &vb_data,
                 )
                 .context("Failed to create color buffer for dynamic model")?
@@ -46,7 +47,7 @@ impl ModelBuffers {
                 ImmutableBuffer::new(
                     &renderer.gpu,
                     "color_buffer_fallback",
-                    d3d12::Format::R8g8b8a8Unorm,
+                    vk::Format::R8G8B8A8_UNORM,
                     &[255u8, 255, 255, 255],
                 )
                 .context("Failed to create color buffer for dynamic model")?
@@ -56,12 +57,16 @@ impl ModelBuffers {
 
     #[profiling::function]
     pub fn bind(&self, cmd: &mut CommandList) -> Option<()> {
-        self.index_buffer.get()?.bind(cmd);
+        self.index_buffer.get()?.bind(&cmd.cmd);
 
         if let Some(vertex1) = &self.vertex1_buffer {
-            cmd.ia_set_vertex_buffers(
+            cmd.set_vertex_buffers(
                 0,
-                &[self.vertex0_buffer.get()?.view(), vertex1.get()?.view()],
+                &[
+                    self.vertex0_buffer.get()?.buffer().vk_buffer(),
+                    vertex1.get()?.buffer().vk_buffer(),
+                ],
+                &[0, 0],
             );
         } else {
             self.vertex0_buffer.get()?.bind_single(&cmd.cmd, 0);

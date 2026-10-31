@@ -2,7 +2,7 @@ use std::ops::Range;
 
 use glam::Vec4;
 use int_enum::IntEnum;
-use tiger_parse::{tiger_type, TigerReadable};
+use tiger_parse::{tiger_type, TigerReadable, TigerReader};
 use tiger_pkg::TagHash;
 
 use crate::tfx::geometry::AxisAlignedBBox;
@@ -79,8 +79,8 @@ pub enum TerrainDetailLevel {
 }
 
 impl TigerReadable for TerrainDetailLevel {
-    fn read_ds_endian<R: std::io::Read + std::io::Seek>(
-        reader: &mut R,
+    fn read_ds_endian(
+        reader: &mut dyn TigerReader,
         endian: tiger_parse::Endian,
     ) -> tiger_parse::Result<Self> {
         let v = u8::read_ds_endian(reader, endian)?;

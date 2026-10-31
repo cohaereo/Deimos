@@ -7,7 +7,6 @@ edition = "2021"
 path = "./lib.rs"
 
 [dependencies]
-d3d12 = { path = "../d3d12" }
 deimos-core = { path = "../core" }
 
 anyhow.workspace = true

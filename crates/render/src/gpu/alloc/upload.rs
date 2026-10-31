@@ -1,44 +1,62 @@
 use std::sync::atomic::{AtomicUsize, Ordering};
 
-use d3d12::{D3D12_CONSTANT_BUFFER_DATA_PLACEMENT_ALIGNMENT, HeapFlags, HeapProperties};
+use anyhow::Context;
+use ash::vk;
 
 /// Lock-free thread-safe ring buffer for uploading data to the GPU.
-pub struct UploadRing {
-    _heap_resource: d3d12::Resource,
+pub struct UploadHeap {
     mapped_ptr: *mut u8,
+    device: ash::Device,
+    device_memory: vk::DeviceMemory,
+    buffer: vk::Buffer,
 
-    gpu_base: d3d12::GpuVirtualAddress,
+    gpu_base: vk::DeviceAddress,
     head: AtomicUsize,
     capacity: usize,
     num_allocations: AtomicUsize,
 }
 
-impl UploadRing {
-    const BLOCK_ALIGNMENT: usize = D3D12_CONSTANT_BUFFER_DATA_PLACEMENT_ALIGNMENT as usize;
+impl UploadHeap {
+    const BLOCK_ALIGNMENT: usize = 256;
 
-    pub fn new(device: &d3d12::Device, capacity: u64) -> anyhow::Result<Self> {
-        let heap_resource = device.create_committed_resource(
-            &HeapProperties::new(d3d12::HeapType::Upload),
-            HeapFlags::empty(),
-            &d3d12::ResourceDesc::buffer(capacity),
-            d3d12::ResourceStates::GENERIC_READ,
-        )?;
-
-        let gpu_base = heap_resource.gpu_virtual_address();
-        let mapped_ptr = heap_resource.map(0)?;
+    pub fn new(device: ash::Device, memory_type_index: u32, capacity: u64) -> anyhow::Result<Self> {
         unsafe {
-            mapped_ptr.write_bytes(0xCC, Self::BLOCK_ALIGNMENT);
-        }
+            let allocate_info = vk::MemoryAllocateInfo::default()
+                .allocation_size(capacity)
+                .memory_type_index(memory_type_index);
+            let device_memory = device.allocate_memory(&allocate_info, None)?;
+            let buffer = device.create_buffer(
+                &vk::BufferCreateInfo::default().size(capacity).usage(
+                    vk::BufferUsageFlags::TRANSFER_SRC
+                        | vk::BufferUsageFlags::TRANSFER_DST
+                        | vk::BufferUsageFlags::UNIFORM_BUFFER
+                        | vk::BufferUsageFlags::SHADER_DEVICE_ADDRESS,
+                ),
+                None,
+            )?;
+            device.bind_buffer_memory(buffer, device_memory, 0)?;
 
-        Ok(Self {
-            _heap_resource: heap_resource,
-            mapped_ptr,
-            gpu_base,
-            // First block is reserved for null pointer
-            head: AtomicUsize::new(Self::BLOCK_ALIGNMENT),
-            capacity: capacity as usize,
-            num_allocations: AtomicUsize::new(0),
-        })
+            let gpu_base = device
+                .get_buffer_device_address(&vk::BufferDeviceAddressInfo::default().buffer(buffer));
+            let mapped_ptr = device
+                .map_memory(device_memory, 0, capacity, vk::MemoryMapFlags::empty())
+                .context("failed to map host-visible memory")?
+                .cast::<u8>();
+
+            mapped_ptr.write_bytes(0xCC, Self::BLOCK_ALIGNMENT);
+
+            Ok(Self {
+                device,
+                mapped_ptr,
+                device_memory,
+                buffer,
+                gpu_base,
+                // First block is reserved for null pointer
+                head: AtomicUsize::new(Self::BLOCK_ALIGNMENT),
+                capacity: capacity as usize,
+                num_allocations: AtomicUsize::new(0),
+            })
+        }
     }
 
     pub fn reset(&self) {
@@ -62,7 +80,7 @@ impl UploadRing {
                 ptr: unsafe { self.mapped_ptr.add(start) },
                 len: size,
                 capacity: size_aligned,
-                gpu_va: self.gpu_base.offset(start),
+                gpu_va: self.gpu_base + start as u64,
             };
 
             unsafe {
@@ -81,7 +99,7 @@ impl UploadRing {
         })
     }
 
-    pub fn upload_bytes(&self, data: &[u8]) -> anyhow::Result<d3d12::GpuVirtualAddress> {
+    pub fn upload_bytes(&self, data: &[u8]) -> anyhow::Result<vk::DeviceAddress> {
         let slice = self.alloc_slice(data.len())?;
         unsafe {
             std::ptr::copy_nonoverlapping(data.as_ptr(), slice.ptr, data.len());
@@ -89,7 +107,7 @@ impl UploadRing {
         Ok(slice.gpu_va)
     }
 
-    pub const fn null(&self) -> d3d12::GpuVirtualAddress {
+    pub const fn null(&self) -> vk::DeviceAddress {
         self.gpu_base
     }
 
@@ -106,12 +124,22 @@ impl UploadRing {
     }
 }
 
+impl Drop for UploadHeap {
+    fn drop(&mut self) {
+        unsafe {
+            self.device.unmap_memory(self.device_memory);
+            self.device.destroy_buffer(self.buffer, None);
+            self.device.free_memory(self.device_memory, None);
+        }
+    }
+}
+
 pub struct RingSlice {
     ptr: *mut u8,
     len: usize,
     capacity: usize,
 
-    gpu_va: d3d12::GpuVirtualAddress,
+    gpu_va: vk::DeviceAddress,
 }
 
 impl RingSlice {
@@ -143,14 +171,14 @@ impl RingSlice {
         unsafe { std::slice::from_raw_parts_mut(self.ptr, self.len) }
     }
 
-    pub const fn virtual_address(&self) -> d3d12::GpuVirtualAddress {
+    pub const fn virtual_address(&self) -> vk::DeviceAddress {
         self.gpu_va
     }
 }
 
 pub struct TypedRingAllocation<T: Sized> {
     ptr: *mut T,
-    gpu_va: d3d12::GpuVirtualAddress,
+    gpu_va: vk::DeviceAddress,
 }
 
 impl<T: Sized> TypedRingAllocation<T> {
@@ -164,7 +192,7 @@ impl<T: Sized> TypedRingAllocation<T> {
         }
     }
 
-    pub const fn virtual_address(&self) -> d3d12::GpuVirtualAddress {
+    pub const fn virtual_address(&self) -> vk::DeviceAddress {
         self.gpu_va
     }
 }

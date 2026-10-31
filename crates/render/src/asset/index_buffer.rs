@@ -1,19 +1,22 @@
 use std::sync::Arc;
 
 use anyhow::Context;
-use d3d12::{DeviceChild, Format};
+use ash::vk;
 use deimos_data::tfx::buffers::IndexBufferHeader;
-use gpu_allocator::d3d12::{ResourceCreateDesc, ResourceType};
+use gpu_allocator::MemoryLocation;
 use tiger_parse::PackageManagerExt;
 use tiger_pkg::{TagHash, package_manager};
 
-use crate::gpu::{Gpu, alloc::resource::OwnedResource};
+use crate::gpu::{
+    Gpu,
+    alloc::{BufferAllocDesc, buffer::Buffer},
+};
 
 pub struct IndexBuffer {
-    pub resource: OwnedResource,
+    pub buffer: Buffer,
     /// Amount of elements in the buffer
     pub length: usize,
-    pub format: Format,
+    pub index_type: vk::IndexType,
     size: usize,
 }
 
@@ -32,7 +35,7 @@ impl IndexBuffer {
 
         let vb = Self::load_data(gpu, &data, header.is_32bit)?;
 
-        vb.resource
+        vb.buffer
             .resource()
             .set_debug_name(format!("index_bufer {hash}"));
 
@@ -40,94 +43,58 @@ impl IndexBuffer {
     }
 
     pub fn load_data(gpu: &Arc<Gpu>, data: &[u8], is_32bit: bool) -> anyhow::Result<Self> {
-        let desc = d3d12::ResourceDesc::buffer(data.len() as u64);
-        let mut resource = gpu.allocate_resource(&ResourceCreateDesc {
-            name: "index_buffer",
-            memory_location: gpu_allocator::MemoryLocation::GpuOnly,
-            resource_category: gpu_allocator::d3d12::ResourceCategory::Buffer,
-            resource_desc: desc.as_ref(),
-            castable_formats: &[],
-            clear_value: None,
-            initial_state_or_layout:
-                gpu_allocator::d3d12::ResourceStateOrBarrierLayout::ResourceState(
-                    d3d12::D3D12_RESOURCE_STATE_COMMON,
-                ),
-            resource_type: &ResourceType::Placed,
+        let buffer = gpu.alloc_buffer(&BufferAllocDesc {
+            name: "generic_index_buffer",
+            size: data.len() as u64,
+            usage: vk::BufferUsageFlags::INDEX_BUFFER | vk::BufferUsageFlags::TRANSFER_DST,
+            flags: vk::BufferCreateFlags::empty(),
+            location: MemoryLocation::GpuOnly,
         })?;
 
-        let mut upload_buffer = gpu.allocate_upload_buffer(data.len() as u64)?;
-        let upload_buffer_data = upload_buffer
-            .resource()
-            .map(0)
-            .context("Failed to map upload buffer")?;
+        let upload_buffer = gpu.alloc_upload_buffer(data.len() as u64)?;
         unsafe {
-            upload_buffer_data.copy_from_nonoverlapping(data.as_ptr(), data.len());
+            upload_buffer
+                .mapped_ptr()
+                .as_ptr()
+                .copy_from_nonoverlapping(data.as_ptr(), data.len());
         }
-        upload_buffer.resource().unmap(0);
 
-        gpu.cmd_scope(|cmd| {
-            upload_buffer.transition(cmd, d3d12::ResourceStates::COPY_SOURCE);
-            resource.transition(cmd, d3d12::ResourceStates::COPY_DEST);
-
-            cmd.copy_resource(upload_buffer.resource(), resource.resource());
-
-            resource.transition(cmd, d3d12::ResourceStates::COMMON);
-
-            Ok(())
-        })?;
+        let cmd = gpu.upload_command_buffer();
+        unsafe {
+            gpu.cmd_copy_buffer(
+                *cmd,
+                upload_buffer.vk_buffer(),
+                buffer.vk_buffer(),
+                &[vk::BufferCopy::default().size(data.len() as u64)],
+            );
+        }
 
         Ok(Self {
-            resource,
+            buffer,
             length: data.len() / if is_32bit { 4 } else { 2 },
             size: data.len(),
-            format: if is_32bit {
-                Format::R32Uint
+            index_type: if is_32bit {
+                vk::IndexType::UINT32
             } else {
-                Format::R16Uint
+                vk::IndexType::UINT16
             },
         })
     }
 
-    // pub fn load_u16(gpu: &Gpu, data: &[u16]) -> anyhow::Result<Self> {
-    //     let buffer = gpu.create_buffer(
-    //         &BufferDesc::builder()
-    //             .byte_width(std::mem::size_of_val(data) as u32)
-    //             .usage(Usage::Immutable)
-    //             .bind_flags(BindFlags::INDEX_BUFFER)
-    //             .build(),
-    //         Some(bytemuck::cast_slice(data)),
-    //     )?;
-
-    //     Ok(Self {
-    //         buffer,
-    //         length: data.len(),
-    //         format: Format::R16Uint,
-    //     })
-    // }
-
-    // pub fn load_u32(gpu: &Gpu, data: &[u32]) -> anyhow::Result<Self> {
-    //     let buffer = gpu.create_buffer(
-    //         &BufferDesc::builder()
-    //             .byte_width(std::mem::size_of_val(data) as u32)
-    //             .usage(Usage::Immutable)
-    //             .bind_flags(BindFlags::INDEX_BUFFER)
-    //             .build(),
-    //         Some(bytemuck::cast_slice(data)),
-    //     )?;
-
-    //     Ok(Self {
-    //         buffer,
-    //         length: data.len(),
-    //         format: Format::R32Uint,
-    //     })
-    // }
-
-    pub fn bind(&self, cmd: &d3d12::GraphicsCommandList) {
+    pub fn bind(&self, cmd: &vk::CommandBuffer) {
+        unsafe {
+            self.buffer.resource().gpu().cmd_bind_index_buffer(
+                *cmd,
+                self.buffer.vk_buffer(),
+                0,
+                self.index_type,
+            )
+        };
         // cmd.input_assembler_set_index_buffer(&self.buffer, self.format, 0);
-        cmd.ia_set_index_buffer(
-            self.resource.resource().gpu_virtual_address(),
-            self.size as u32,
-            self.format,
-        );
+        // self.cmd.ia_set_index_buffer(
+        //     self.resource.resource().gpu_virtual_address(),
+        //     self.size as u32,
+        //     self.format,
+        // );
     }
 }

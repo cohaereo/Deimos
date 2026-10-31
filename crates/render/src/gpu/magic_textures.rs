@@ -1,5 +1,7 @@
 use ahash::HashMap;
 use anyhow::Context;
+use ash::vk;
+use deimos_data::tfx::texture::DxgiFormat;
 use parking_lot::{RwLock, RwLockUpgradableReadGuard};
 use rand_chacha::ChaCha8Rng;
 use rand_core::{Rng, SeedableRng};
@@ -9,7 +11,6 @@ use std::sync::Arc;
 
 use crate::asset::texture::{Texture, TextureDesc};
 use crate::gpu::Gpu;
-use crate::gpu::alloc::descriptors::ResourceView;
 
 fn texture_from_hash(hash: u64) -> [u8; 32 * 32 * 4] {
     let mut seed = [0u8; 32];
@@ -49,14 +50,14 @@ impl MagicTextureContainer {
         gpu: &Arc<Gpu>,
         key: String,
         filler: Option<[u8; 4]>,
-    ) -> anyhow::Result<ResourceView> {
+    ) -> anyhow::Result<vk::ImageView> {
         let mut hasher = DefaultHasher::new();
         key.hash(&mut hasher);
         let hash = hasher.finish();
 
         let textures = self.textures.upgradable_read();
         if let Some(tex) = textures.get(&hash) {
-            Ok(tex.srv)
+            Ok(tex.view)
         } else {
             let mut data = texture_from_hash(hash);
             if let Some(filler) = filler {
@@ -68,14 +69,14 @@ impl MagicTextureContainer {
                 gpu,
                 &TextureDesc::texture_2d(
                     format!("unresolved {key}"),
-                    d3d12::Format::R8g8b8a8Unorm,
+                    DxgiFormat::R8G8B8A8_UNORM,
                     32,
                     32,
                 ),
                 &data,
             )
             .context("uploading texture")?;
-            let srv = texture.srv;
+            let srv = texture.view;
 
             let mut textures = RwLockUpgradableReadGuard::upgrade(textures);
             textures.insert(hash, texture);

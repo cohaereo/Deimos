@@ -1,52 +1,47 @@
 use std::{sync::atomic::AtomicU64, time::Duration};
 
-use d3d12::ext::GpuFence;
+use anyhow::Context;
+use ash::vk;
 
-use crate::gpu::{
-    alloc::{descriptors::DescriptorRing, ring::UploadRing},
-    profiler::FrameProfiler,
-    stream::FrameCommandStream,
-};
+use crate::gpu::{alloc::upload::UploadHeap, fence::GpuFence};
 
 /// Represents a frame in flight.
 pub struct FrameContext {
-    pub stream: FrameCommandStream,
+    // pub stream: FrameCommandStream,
     fence_value: AtomicU64,
 
-    pub upload: UploadRing,
-    pub descriptors: DescriptorRing,
-    pub profiler: FrameProfiler,
+    pub upload: UploadHeap,
+    // pub descriptors: DescriptorRing,
+    // pub profiler: FrameProfiler,
 }
 
 impl FrameContext {
-    pub fn new(
-        device: &d3d12::Device,
-        allocator: &mut gpu_allocator::d3d12::Allocator,
-    ) -> anyhow::Result<Self> {
+    pub fn new(device: ash::Device, upload_memory_type_index: u32) -> anyhow::Result<Self> {
         let mb = 1024 * 1024;
         Ok(Self {
-            upload: UploadRing::new(device, 32 * mb)?,
-            stream: FrameCommandStream::new(device.clone()),
+            upload: UploadHeap::new(device, upload_memory_type_index, 32 * mb)
+                .context("Failed to allocate UploadHeap")?,
+            // stream: FrameCommandStream::new(device.clone()),
             // command_list: NativeCommandList::new(device, d3d12::CommandListType::Direct)?,
             fence_value: AtomicU64::new(0),
-            descriptors: DescriptorRing::new(
-                device,
-                d3d12::DescriptorHeapType::CbvSrvUav,
-                512_000,
-                true,
-            )?,
-            profiler: FrameProfiler::new(device, allocator)?,
+            // descriptors: DescriptorRing::new(
+            //     device,
+            //     d3d12::DescriptorHeapType::CbvSrvUav,
+            //     512_000,
+            //     true,
+            // )?,
+            // profiler: FrameProfiler::new(device, allocator)?,
         })
     }
 
     /// Resets upload rings.
     ///
     /// Keep in mind that this does not reset the command list.
-    pub fn begin_frame(&self, queue: &d3d12::CommandQueue) {
+    pub fn begin_frame(&self) {
         self.upload.reset();
-        self.descriptors.reset();
+        // self.descriptors.reset();
 
-        self.profiler.begin_frame(queue);
+        // self.profiler.begin_frame(queue);
     }
 
     pub fn wait_for_completion(&self, fence: &GpuFence) -> anyhow::Result<()> {
@@ -55,9 +50,10 @@ impl FrameContext {
         Ok(())
     }
 
-    pub fn signal(&self, fence: &GpuFence, queue: &d3d12::CommandQueue) {
-        let fence_value = fence.signal(queue);
+    pub fn signal(&self, fence: &GpuFence, queue: &vk::Queue) -> anyhow::Result<()> {
+        let fence_value = fence.signal(queue)?;
         self.fence_value
             .store(fence_value, std::sync::atomic::Ordering::Release);
+        Ok(())
     }
 }

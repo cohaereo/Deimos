@@ -2,6 +2,7 @@ use std::sync::Arc;
 
 use ahash::AHashMap;
 use anyhow::Context;
+use ash::vk;
 use deimos_data::{
     tag::WideHash,
     tfx::{ExternIndex, SDynamicCore, SSamplerReference, ShaderStage},
@@ -13,8 +14,12 @@ use tiger_pkg::{TagHash, package_manager};
 
 use crate::{
     asset::{AssetManager, Handle, texture::Texture},
-    gpu::command_list::CommandList,
+    gpu::{
+        Gpu,
+        command_list::{CommandList, ConstantBufferView},
+    },
     tfx::{
+        d3d12_sampler::D3D12SamplerDesc,
         expression_vm::{
             self,
             interpreter::InterpreterState,
@@ -44,7 +49,7 @@ pub struct DynamicCore {
 
     data: SDynamicCore,
 
-    pub samplers: Vec<d3d12::StaticSamplerDesc>,
+    pub samplers: Vec<(u32, vk::Sampler)>,
     pub textures: Vec<(u32, ResolvedTextureSource)>,
     has_dynamic_textures: bool,
 
@@ -56,6 +61,7 @@ pub struct DynamicCore {
 
 impl DynamicCore {
     pub fn new(
+        gpu: &Gpu,
         asset_manager: &Arc<AssetManager>,
         data: SDynamicCore,
         stage: ShaderStage,
@@ -71,7 +77,7 @@ impl DynamicCore {
             has_dynamic_textures: false,
         };
 
-        let mut resources = DynamicCoreResources::extract(&core.data, stage)?;
+        let mut resources = DynamicCoreResources::extract(gpu, &core.data, stage)?;
         std::mem::swap(&mut resources.samplers, &mut core.samplers);
 
         for (slot, t) in resources.textures {
@@ -177,7 +183,10 @@ impl DynamicCore {
             cmd.set_shader_constant_buffer_view(
                 self.stage,
                 self.data.constant_buffer_slot as u32,
-                Some(buffer.virtual_address()),
+                Some(ConstantBufferView {
+                    addr: buffer.virtual_address(),
+                    size: self.cbuffer_size as u64,
+                }),
             );
         }
 
@@ -185,7 +194,7 @@ impl DynamicCore {
             match texture {
                 ResolvedTextureSource::Static(handle) => {
                     handle
-                        .get_ref(|v| cmd.set_shader_resource_view(self.stage, *slot, Some(v.srv)));
+                        .get_ref(|v| cmd.set_shader_resource_view(self.stage, *slot, Some(v.view)));
                 }
                 ResolvedTextureSource::Dynamic {
                     extern_index,
@@ -261,12 +270,12 @@ pub enum TextureSource {
 
 /// Resources extracted from dynamic core
 pub struct DynamicCoreResources {
-    pub samplers: Vec<d3d12::StaticSamplerDesc>,
+    pub samplers: Vec<(u32, vk::Sampler)>,
     pub textures: Vec<(u32, TextureSource)>,
 }
 
 impl DynamicCoreResources {
-    pub fn extract(core: &SDynamicCore, stage: ShaderStage) -> anyhow::Result<Self> {
+    pub fn extract(gpu: &Gpu, core: &SDynamicCore, stage: ShaderStage) -> anyhow::Result<Self> {
         let mut res = Self {
             samplers: Vec::new(),
             textures: Vec::new(),
@@ -294,23 +303,9 @@ impl DynamicCoreResources {
             let data = package_manager()
                 .read_tag(sampler_entry.reference)
                 .context("reading sampler")?;
-            let sampler: d3d12::SamplerDesc =
-                unsafe { data.as_ptr().cast::<d3d12::SamplerDesc>().read() };
-            res.samplers.push(d3d12::StaticSamplerDesc {
-                filter: sampler.filter,
-                address_u: sampler.address_u,
-                address_v: sampler.address_v,
-                address_w: sampler.address_w,
-                mip_lod_bias: sampler.mip_lod_bias.min(0.0),
-                max_anisotropy: sampler.max_anisotropy,
-                comparison_func: sampler.comparison_func,
-                border_color: d3d12::D3D12_STATIC_BORDER_COLOR_TRANSPARENT_BLACK,
-                min_lod: sampler.min_lod,
-                max_lod: sampler.max_lod,
-                shader_register: slot,
-                register_space: 0,
-                shader_visibility: stage.shader_visibility(),
-            });
+            let desc: D3D12SamplerDesc = unsafe { data.as_ptr().cast::<D3D12SamplerDesc>().read() };
+            res.samplers
+                .push((slot, unsafe { gpu.create_sampler(&desc.to_vk(), None)? }));
         }
 
         Ok(res)

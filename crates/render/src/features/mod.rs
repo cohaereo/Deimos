@@ -1,10 +1,10 @@
-pub mod decals;
+// pub mod decals;
 pub mod decorators;
-pub mod light;
-pub mod rigid_model;
-mod shared;
+// pub mod light;
+// pub mod rigid_model;
+// mod shared;
 mod skinning;
-pub mod static_instances;
+// pub mod static_instances;
 pub mod terrain_patches;
 
 use std::any::Any;

@@ -12,7 +12,7 @@ use std::{
 
 use ahash::HashMap;
 use anyhow::Context;
-use d3d12::{ResourceBarrier, ResourceStates};
+use ash::vk;
 use deimos_core::job::SCHEDULER;
 use deimos_data::{
     strings::{StringContainer, StringContainerShared},
@@ -29,7 +29,7 @@ use crate::{
     config::AppConfig,
     ui::{
         Gui,
-        tabs::{Tab, map::MapTab, model_view::ModelViewTab},
+        tabs::{Tab, map::MapTab},
     },
 };
 
@@ -50,8 +50,9 @@ pub struct App {
 
 impl App {
     pub fn new(sdl: Rc<sdl3::Sdl>, window: Rc<Window>, args: AppArgs) -> anyhow::Result<Self> {
-        let gpu = Arc::new(Gpu::create(&window).context("Failed to create GPU")?);
-        let renderer = Arc::new(Renderer::new(gpu.clone()));
+        let gpu =
+            Gpu::new(window.as_ref(), window.size_in_pixels()).context("Failed to create GPU")?;
+        let renderer = Renderer::new(gpu.clone());
         *gpu.extern_source.write() =
             deimos_render::tfx::externs::BaseExternSource::Renderer(renderer.clone());
 
@@ -70,20 +71,20 @@ impl App {
                 }
             };
         }
-        if let Some(pattern_hash) = args.open_pattern.as_ref() {
-            match TagHash::from_str(pattern_hash) {
-                Ok(tag) => match ModelViewTab::new_pattern(&renderer, &shared_state, tag) {
-                    Ok(tab) => gui.add_tab(Tab::ModelView(Box::new(tab))),
-                    Err(e) => error!(
-                        "Failed to open model view tab for {}: {:?}",
-                        pattern_hash, e
-                    ),
-                },
-                Err(e) => {
-                    error!("Failed to parse pattern hash {}: {:?}", pattern_hash, e);
-                }
-            };
-        }
+        // if let Some(pattern_hash) = args.open_pattern.as_ref() {
+        //     match TagHash::from_str(pattern_hash) {
+        //         Ok(tag) => match ModelViewTab::new_pattern(&renderer, &shared_state, tag) {
+        //             Ok(tab) => gui.add_tab(Tab::ModelView(Box::new(tab))),
+        //             Err(e) => error!(
+        //                 "Failed to open model view tab for {}: {:?}",
+        //                 pattern_hash, e
+        //             ),
+        //         },
+        //         Err(e) => {
+        //             error!("Failed to parse pattern hash {}: {:?}", pattern_hash, e);
+        //         }
+        //     };
+        // }
 
         Ok(Self {
             // _spinner: FullscreenSpinner::create(&renderer.gpu)?,
@@ -108,11 +109,10 @@ impl App {
             }
             sdl3::event::Event::Window { win_event, .. } => match win_event {
                 &sdl3::event::WindowEvent::Resized(new_width, new_height) => {
-                    self.gpu.wait_for_idle();
-                    self.gpu
-                        .swapchain
-                        .lock()
-                        .resize((new_width as u32, new_height as u32));
+                    // self.gpu.wait_for_idle();
+                    // self.gpu
+                    //     .resize_swapchain((new_width as u32, new_height as u32));
+                    tracing::error!("TODO: implement swapchain resize");
                 }
                 sdl3::event::WindowEvent::CloseRequested => {
                     self.running = false;
@@ -136,52 +136,78 @@ impl App {
 
         self.frametime_histogram.push(delta_time);
 
+        let gpu = &self.gpu;
         let frame = self.gpu.begin_frame();
-        {
-            let _scope = self.gpu.profiler_scope(&frame.stream, "App::render");
-            self.gui.draw_ui(&self.shared_state);
+        let image_index = gpu.acquire_next_image()?;
+        let cmd = gpu.current_command_buffer();
 
-            frame.stream.acquire_cmd(&self.gpu).scope(|cmd| {
-                let _event_scope = cmd.event_scope("App::render::ui", (255, 0, 255));
-                let _profiler_scope = self.gpu.profiler_scope(&frame.stream, "App::render::ui");
-                let (back_buffer_handle, back_buffer) = self.gpu.swapchain.lock().get_back_buffer();
-
-                cmd.resource_barriers(&[ResourceBarrier::transition(
-                    &back_buffer,
-                    0,
-                    ResourceStates::PRESENT,
-                    ResourceStates::RENDER_TARGET,
-                )]);
-
-                cmd.clear_render_target_view(back_buffer_handle, &[0.0, 0.0, 0.0, 1.0]);
-                cmd.om_set_render_targets(
-                    &[(back_buffer_handle, d3d12::Format::R8g8b8a8Unorm)],
-                    None,
-                );
-                cmd.set_viewports(&[d3d12::Viewport::builder()
-                    .width(self.window.size_in_pixels().0 as f32)
-                    .height(self.window.size_in_pixels().1 as f32)
-                    .build()]);
-                cmd.set_scissor_rects(&[d3d12::Rect::builder()
-                    .bottom(2160)
-                    .right(3840)
-                    .top(0)
-                    .left(0)
-                    .build()]);
-
-                self.gui.render(&self.gpu, cmd);
-
-                cmd.resource_barriers(&[ResourceBarrier::transition(
-                    &back_buffer,
-                    0,
-                    ResourceStates::RENDER_TARGET,
-                    ResourceStates::PRESENT,
-                )]);
-            });
+        unsafe {
+            gpu.reset_command_buffer(*cmd, vk::CommandBufferResetFlags::empty())?;
+            gpu.begin_command_buffer(*cmd, &vk::CommandBufferBeginInfo::default())?;
         }
 
-        self.gpu.end_frame();
-        self.gpu.present(self.shared_state.config.read().vsync);
+        let backbuffer_image = gpu.swapchain_images[image_index as usize];
+        gpu.cmd_image_layout_barrier(
+            *cmd,
+            backbuffer_image,
+            vk::ImageAspectFlags::COLOR,
+            vk::ImageLayout::UNDEFINED,
+            vk::ImageLayout::COLOR_ATTACHMENT_OPTIMAL,
+            vk::PipelineStageFlags::COLOR_ATTACHMENT_OUTPUT,
+            vk::PipelineStageFlags::COLOR_ATTACHMENT_OUTPUT,
+            vk::AccessFlags::empty(),
+            vk::AccessFlags::COLOR_ATTACHMENT_WRITE,
+        );
+
+        {
+            self.gui.draw_ui(&self.shared_state);
+
+            {
+                // let _event_scope = cmd.event_scope("App::render::ui", (255, 0, 255));
+                // let _profiler_scope = self.gpu.profiler_scope(&frame.stream, "App::render::ui");
+                // let (back_buffer_handle, back_buffer) = self.gpu.swapchain.lock().get_back_buffer();
+
+                let attachment_info = vk::RenderingAttachmentInfo::default()
+                    .image_view(gpu.swapchain_image_views[image_index as usize])
+                    .image_layout(vk::ImageLayout::COLOR_ATTACHMENT_OPTIMAL)
+                    .load_op(vk::AttachmentLoadOp::CLEAR)
+                    .store_op(vk::AttachmentStoreOp::STORE)
+                    .clear_value(vk::ClearValue {
+                        color: vk::ClearColorValue {
+                            float32: [1.0, 0.0, 1.0, 1.0],
+                        },
+                    });
+
+                cmd.begin_rendering(
+                    (gpu.swapchain_extent.width, gpu.swapchain_extent.height),
+                    &[attachment_info],
+                    None,
+                )?;
+
+                self.gui.render(&self.gpu, &cmd);
+
+                cmd.end_rendering();
+            }
+        }
+
+        gpu.cmd_image_layout_barrier(
+            *cmd,
+            backbuffer_image,
+            vk::ImageAspectFlags::COLOR,
+            vk::ImageLayout::COLOR_ATTACHMENT_OPTIMAL,
+            vk::ImageLayout::PRESENT_SRC_KHR,
+            vk::PipelineStageFlags::COLOR_ATTACHMENT_OUTPUT,
+            vk::PipelineStageFlags::BOTTOM_OF_PIPE,
+            vk::AccessFlags::COLOR_ATTACHMENT_WRITE,
+            vk::AccessFlags::empty(),
+        );
+
+        unsafe {
+            gpu.end_command_buffer(*cmd)?;
+        }
+        self.gpu.submit(image_index);
+        // self.gpu.present(self.shared_state.config.read().vsync);
+        self.gpu.present(image_index);
 
         let config = self.shared_state.config.read();
         if config.framelimiter_enabled {

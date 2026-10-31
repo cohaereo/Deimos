@@ -1,5 +1,3 @@
-use uuid::{Uuid, uuid};
-
 pub mod handle;
 pub mod index_buffer;
 pub mod manager;
@@ -11,22 +9,30 @@ pub use manager::AssetManager;
 
 use crate::tfx::technique::Technique;
 
+#[derive(Debug)]
+pub enum AssetKind {
+    Texture,
+    VertexBuffer,
+    IndexBuffer,
+    Technique,
+}
+
 pub trait Asset {
-    const ASSET_TYPE: Uuid;
+    const ASSET_KIND: AssetKind;
 }
 
 impl Asset for texture::Texture {
-    const ASSET_TYPE: Uuid = uuid!("a6877fe1-99c2-4015-afd4-b5f8dc5be81d");
+    const ASSET_KIND: AssetKind = AssetKind::Texture;
 }
 
 impl Asset for vertex_buffer::VertexBuffer {
-    const ASSET_TYPE: Uuid = uuid!("ca341c44-3706-4a19-8c76-1a756e491485");
+    const ASSET_KIND: AssetKind = AssetKind::VertexBuffer;
 }
 
 impl Asset for index_buffer::IndexBuffer {
-    const ASSET_TYPE: Uuid = uuid!("d7e5e281-dcec-496d-ade0-ef0079ea29f6");
+    const ASSET_KIND: AssetKind = AssetKind::IndexBuffer;
 }
 
 impl Asset for Technique {
-    const ASSET_TYPE: Uuid = uuid!("23f52458-9bd3-4bdf-9d73-bebc795ae77e");
+    const ASSET_KIND: AssetKind = AssetKind::Technique;
 }

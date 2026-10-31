@@ -62,7 +62,7 @@ impl MapTab {
         })
     }
 
-    pub fn ui(&mut self, ui: &mut egui::Ui, egui_d3d12: &mut egui_d3d12::D3D12Renderer) {
+    pub fn ui(&mut self, ui: &mut egui::Ui, renderer: &mut egui_ash_renderer::Renderer) {
         if let Some(map) = self.load_task.get() {
             match map {
                 Ok(world) => {
@@ -114,7 +114,7 @@ impl MapTab {
                 Color32::DARK_RED,
             );
         } else {
-            self.scene.show(ui, egui_d3d12, ui.available_size());
+            self.scene.show(ui, renderer, ui.available_size());
         }
     }
 }

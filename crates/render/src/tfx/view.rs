@@ -5,6 +5,7 @@
 
 use std::sync::Arc;
 
+use ash::vk;
 use glam::Mat4;
 
 use crate::{
@@ -47,15 +48,15 @@ impl ShadedView {
             shaded_read: RenderTarget::new(
                 gpu,
                 "shaded_read",
-                d3d12::Format::R11g11b10Float,
-                d3d12::Format::R11g11b10Float,
+                vk::Format::B10G11R11_UFLOAT_PACK32,
+                vk::Format::B10G11R11_UFLOAT_PACK32,
                 resolution,
             )?,
             output: RenderTarget::new(
                 gpu,
                 "result",
-                d3d12::Format::R11g11b10Float,
-                d3d12::Format::R11g11b10Float,
+                vk::Format::B10G11R11_UFLOAT_PACK32,
+                vk::Format::B10G11R11_UFLOAT_PACK32,
                 resolution,
             )?,
             shadow_views: [
@@ -67,8 +68,8 @@ impl ShadedView {
             shadow_mask: RenderTarget::new(
                 gpu,
                 "shadow_mask",
-                d3d12::Format::R8g8Unorm,
-                d3d12::Format::R8g8Unorm,
+                vk::Format::R8G8_UNORM,
+                vk::Format::R8G8_UNORM,
                 resolution,
             )?,
             resolution,

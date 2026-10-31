@@ -1,6 +1,7 @@
 use std::sync::Arc;
 
 use anyhow::Context;
+use ash::vk;
 use bytemuck::{Pod, Zeroable};
 use deimos_data::tfx::{
     ShaderStage,
@@ -13,7 +14,7 @@ use tiger_pkg::{TagHash, package_manager};
 
 use crate::{
     asset::AssetManager,
-    gpu::command_list::CommandList,
+    gpu::{Gpu, command_list::CommandList},
     tfx::dynamic_core::{DynamicCore, DynamicCoreResources},
 };
 
@@ -25,19 +26,25 @@ pub struct Scope {
 }
 
 impl Scope {
-    pub fn load(asset_manager: &Arc<AssetManager>, hash: TagHash) -> anyhow::Result<Self> {
+    pub fn load(
+        gpu: &Gpu,
+        asset_manager: &Arc<AssetManager>,
+        hash: TagHash,
+    ) -> anyhow::Result<Self> {
         let data: SScope = package_manager()
             .read_tag_struct(hash)
             .context("Failed to read scope data")?;
 
         Ok(Self {
             stage_vertex: ScopeStage::new(
+                gpu,
                 asset_manager,
                 data.stage_vertex.clone(),
                 ShaderStage::Vertex,
             )
             .context("while loading vertex stage")?,
             stage_pixel: ScopeStage::new(
+                gpu,
                 asset_manager,
                 data.stage_pixel.clone(),
                 ShaderStage::Pixel,
@@ -58,7 +65,7 @@ impl Scope {
         [&self.stage_vertex, &self.stage_pixel]
     }
 
-    pub fn stage_by_visibility(&self, visibility: d3d12::ShaderVisibility) -> Option<&ScopeStage> {
+    pub fn stage_by_visibility(&self, visibility: vk::ShaderStageFlags) -> Option<&ScopeStage> {
         self.all_stages()
             .into_iter()
             .find(|stage| stage.visibility == visibility)
@@ -79,19 +86,20 @@ impl Scope {
 
 pub struct ScopeStage {
     pub core: RwLock<DynamicCore>,
-    pub visibility: d3d12::ShaderVisibility,
+    pub visibility: vk::ShaderStageFlags,
 }
 
 impl ScopeStage {
     pub fn new(
+        gpu: &Gpu,
         asset_manager: &Arc<AssetManager>,
         stage: SScopeStage,
         shader_stage: ShaderStage,
     ) -> anyhow::Result<Self> {
-        let core = DynamicCore::new(asset_manager, stage.core, shader_stage)?;
+        let core = DynamicCore::new(gpu, asset_manager, stage.core, shader_stage)?;
         Ok(Self {
             core: RwLock::new(core),
-            visibility: shader_stage.shader_visibility(),
+            visibility: shader_stage.vk_shader_stage_flags(),
         })
     }
 
@@ -149,15 +157,19 @@ pub struct ScopeSamplers {
 }
 
 impl ScopeSamplers {
-    pub fn load(hash: TagHash) -> anyhow::Result<Self> {
+    pub fn load(gpu: &Gpu, hash: TagHash) -> anyhow::Result<Self> {
         let data: SScope = package_manager()
             .read_tag_struct(hash)
             .context("Failed to read scope data")?;
 
         Ok(Self {
-            stage_vertex: ScopeStageSamplers::new(data.stage_vertex.clone(), ShaderStage::Vertex)
-                .context("while loading vertex stage")?,
-            stage_pixel: ScopeStageSamplers::new(data.stage_pixel, ShaderStage::Pixel)
+            stage_vertex: ScopeStageSamplers::new(
+                gpu,
+                data.stage_vertex.clone(),
+                ShaderStage::Vertex,
+            )
+            .context("while loading vertex stage")?,
+            stage_pixel: ScopeStageSamplers::new(gpu, data.stage_pixel.clone(), ShaderStage::Pixel)
                 .context("while loading pixel stage")?,
         })
     }
@@ -168,7 +180,7 @@ impl ScopeSamplers {
 
     pub fn stage_by_visibility(
         &self,
-        visibility: d3d12::ShaderVisibility,
+        visibility: vk::ShaderStageFlags,
     ) -> Option<&ScopeStageSamplers> {
         self.all_stages()
             .into_iter()
@@ -178,15 +190,15 @@ impl ScopeSamplers {
 
 pub struct ScopeStageSamplers {
     pub core: DynamicCoreResources,
-    visibility: d3d12::ShaderVisibility,
+    visibility: vk::ShaderStageFlags,
 }
 
 impl ScopeStageSamplers {
-    pub fn new(stage: SScopeStage, shader_stage: ShaderStage) -> anyhow::Result<Self> {
-        let core = DynamicCoreResources::extract(&stage.core, shader_stage)?;
+    pub fn new(gpu: &Gpu, stage: SScopeStage, shader_stage: ShaderStage) -> anyhow::Result<Self> {
+        let core = DynamicCoreResources::extract(gpu, &stage.core, shader_stage)?;
         Ok(Self {
             core,
-            visibility: shader_stage.shader_visibility(),
+            visibility: shader_stage.vk_shader_stage_flags(),
         })
     }
 }
@@ -214,5 +226,22 @@ pub struct FrameScope {
 impl FrameScope {
     pub fn to_array(&self) -> &[Vec4; 7] {
         bytemuck::cast_ref::<Self, [Vec4; _]>(self)
+    }
+}
+
+pub trait ShaderStageExt {
+    fn vk_shader_stage_flags(&self) -> vk::ShaderStageFlags;
+}
+
+impl ShaderStageExt for ShaderStage {
+    fn vk_shader_stage_flags(&self) -> vk::ShaderStageFlags {
+        match self {
+            Self::Pixel => vk::ShaderStageFlags::FRAGMENT,
+            Self::Vertex => vk::ShaderStageFlags::VERTEX,
+            Self::Geometry => vk::ShaderStageFlags::GEOMETRY,
+            Self::Hull => vk::ShaderStageFlags::TESSELLATION_CONTROL,
+            Self::Compute => vk::ShaderStageFlags::COMPUTE,
+            Self::Domain => vk::ShaderStageFlags::TESSELLATION_EVALUATION,
+        }
     }
 }

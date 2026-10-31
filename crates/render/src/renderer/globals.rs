@@ -19,26 +19,26 @@ use crate::{
 };
 
 lazy_static! {
-    static ref GLOBAL_SCOPES: Vec<ScopeSamplers> = {
-        // TODO(cohae): Feels a bit weird to load globals again here, but right now it's the most convenient way to access them for building root signatures
-        let data: SRenderGlobals = package_manager()
-            .read_named_tag_struct("render_globals")
-            .expect("no render_globals tag");
-        let globs = &data.unk8.first().expect("No render globals found").unk8.0;
+    // static ref GLOBAL_SCOPES: Vec<ScopeSamplers> = {
+    //     // TODO(cohae): Feels a bit weird to load globals again here, but right now it's the most convenient way to access them for building root signatures
+    //     let data: SRenderGlobals = package_manager()
+    //         .read_named_tag_struct("render_globals")
+    //         .expect("no render_globals tag");
+    //     let globs = &data.unk8.first().expect("No render globals found").unk8.0;
 
-        let mut scopes = Vec::new();
-        for scope_tag in &globs.scopes {
-            let scope = ScopeSamplers::load(scope_tag.scope).unwrap_or_else(|_| {
-                panic!(
-                    "failed to load scope {} ({})",
-                    scope_tag.name.0, scope_tag.scope
-                )
-            });
-            scopes.push(scope);
-        }
+    //     let mut scopes = Vec::new();
+    //     for scope_tag in &globs.scopes {
+    //         let scope = ScopeSamplers::load(scope_tag.scope).unwrap_or_else(|_| {
+    //             panic!(
+    //                 "failed to load scope {} ({})",
+    //                 scope_tag.name.0, scope_tag.scope
+    //             )
+    //         });
+    //         scopes.push(scope);
+    //     }
 
-        scopes
-    };
+    //     scopes
+    // };
 
     pub static ref GLOBAL_CHANNELS: SRenderGlobalsGlobalChannels = {
         // TODO(cohae): Feels a bit weird to load globals again here, but right now it's the most convenient way to access them for building root signatures
@@ -51,13 +51,13 @@ lazy_static! {
     };
 }
 
-pub fn try_get_scope_samplers(index: u32) -> Option<&'static ScopeSamplers> {
-    GLOBAL_SCOPES.get(index as usize)
-}
+// pub fn try_get_scope_samplers(index: u32) -> Option<&'static ScopeSamplers> {
+//     GLOBAL_SCOPES.get(index as usize)
+// }
 
-pub fn get_scope_samplers(index: u32) -> &'static ScopeSamplers {
-    try_get_scope_samplers(index).unwrap_or_else(|| panic!("Scope {index} does not exist"))
-}
+// pub fn get_scope_samplers(index: u32) -> &'static ScopeSamplers {
+//     try_get_scope_samplers(index).unwrap_or_else(|| panic!("Scope {index} does not exist"))
+// }
 
 pub struct RenderGlobals {
     pub scopes: GlobalScopes,
@@ -73,7 +73,7 @@ impl RenderGlobals {
         let globs = &data.unk8.first().context("No render globals found")?.unk8.0;
 
         Ok(Self {
-            scopes: GlobalScopes::load(asset_manager, globs),
+            scopes: GlobalScopes::load(gpu, asset_manager, globs),
             pipelines: GlobalPipelines::load(asset_manager, gpu, globs),
             textures: GlobalTextures::load(gpu, globs)?,
             channels: globs.global_channels.0.clone(),
@@ -115,12 +115,13 @@ macro_rules! tfx_global_scopes {
         }
 
         impl GlobalScopes {
-            pub fn load(asset_manager: &Arc<AssetManager>, globals: &SRenderGlobalsData) -> Self {
+            pub fn load(gpu: &Gpu, asset_manager: &Arc<AssetManager>, globals: &SRenderGlobalsData) -> Self {
                 let scopes: HashMap<String, TagHash> = globals.scopes.iter().map(|p| (p.name.to_string(), p.scope)).collect();
 
                 Self {
                     $(
                         $name: Box::new(Scope::load(
+                            gpu,
                             asset_manager,
                             *scopes.get(stringify!($name))
                                 .expect(&format!("Scope {} does not exist", stringify!($name))),

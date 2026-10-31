@@ -9,8 +9,6 @@ use std::{
 
 use tiger_pkg::TagHash;
 
-use crate::tfx::technique::Technique;
-
 use super::Asset;
 
 struct AssetHolder {
@@ -181,14 +179,14 @@ impl<T: Asset + 'static> Default for Handle<T> {
     }
 }
 
-pub fn is_technique_loaded(handle: &Handle<Technique>) -> bool {
-    if handle.is_null() {
-        return true;
-    }
+// pub fn is_technique_loaded(handle: &Handle<Technique>) -> bool {
+//     if handle.is_null() {
+//         return true;
+//     }
 
-    let Some(technique) = handle.get() else {
-        return false;
-    };
+//     let Some(technique) = handle.get() else {
+//         return false;
+//     };
 
-    technique.is_loaded()
-}
+//     technique.is_loaded()
+// }

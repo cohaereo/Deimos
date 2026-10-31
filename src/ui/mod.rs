@@ -1,7 +1,6 @@
 use std::{collections::BTreeMap, mem::discriminant, rc::Rc, sync::Arc, thread::JoinHandle};
 
-use anyhow::Context;
-use d3d12::GraphicsCommandList;
+use ash::vk;
 use deimos_render::gpu::Gpu;
 use egui::{Align2, Color32, FontFamily, FontId, Margin};
 use egui_dock::{DockArea, DockState, TabInteractionStyle};
@@ -11,7 +10,6 @@ use crate::{
     app::SharedState,
     task::Task,
     ui::{
-        sodi::SodiVow,
         tabs::{DockStateExt, Tab, TabViewer},
         util::UiExt,
     },
@@ -20,7 +18,7 @@ use crate::{
 
 pub mod colors;
 mod scene;
-pub mod sodi;
+// pub mod sodi;
 mod style;
 pub mod tabs;
 pub mod util;
@@ -29,14 +27,13 @@ pub struct Gui {
     window: Rc<sdl3::video::Window>,
     sdl: Rc<sdl3::Sdl>,
 
-    pub egui_d3d12: egui_d3d12::D3D12Renderer,
+    pub renderer: egui_ash_renderer::Renderer,
     pub egui_sdl3: egui_sdl3_platform::Platform,
     tree: DockState<Tab>,
 
     added_nodes: Vec<Tab>,
 
-    sodi: SodiVow,
-
+    // sodi: SodiVow,
     update_check: Task<Option<AvailableUpdate>>,
     available_update: Option<AvailableUpdate>,
 
@@ -127,6 +124,23 @@ impl Gui {
             .or_default()
             .insert(0, "GoliathBeta-Encrypted".into());
 
+        let renderer = egui_ash_renderer::Renderer::with_default_allocator(
+            &gpu.instance,
+            gpu.physical_device,
+            gpu.device.clone(),
+            egui_ash_renderer::DynamicRendering {
+                color_attachment_format: gpu.surface_format.format,
+                depth_attachment_format: None,
+            },
+            egui_ash_renderer::Options {
+                in_flight_frames: Gpu::MAX_FRAMES_IN_FLIGHT,
+                enable_depth_test: false,
+                enable_depth_write: false,
+                srgb_framebuffer: false,
+            },
+        )
+        .unwrap();
+
         let egui_sdl3 =
             egui_sdl3_platform::Platform::new(&sdl, &window, gpu.swapchain_resolution())?;
         egui_sdl3.context().set_fonts(fonts);
@@ -174,13 +188,11 @@ impl Gui {
         Ok(Self {
             window,
             sdl,
-            egui_d3d12: egui_d3d12::D3D12Renderer::new(gpu)
-                .context("Failed to initialize D3D12 Egui renderer")?,
+            renderer,
             egui_sdl3,
             tree,
             added_nodes: Vec::new(),
-            sodi: SodiVow::default(),
-
+            // sodi: SodiVow::default(),
             update_check: Task::new("updater".to_string(), || match check_stable_release() {
                 Ok(Some(update)) => Some(update),
                 Ok(None) => None,
@@ -265,7 +277,7 @@ impl Gui {
                 &ctx,
                 &mut TabViewer {
                     added_nodes: &mut self.added_nodes,
-                    egui_d3d12: &mut self.egui_d3d12,
+                    renderer: &mut self.renderer,
                     shared_state,
                 },
             );
@@ -300,7 +312,7 @@ impl Gui {
         //     );
         // }
 
-        self.sodi.draw(&ctx);
+        // self.sodi.draw(&ctx);
 
         if let Some(update) = self.update_check.get() {
             match update {
@@ -404,20 +416,35 @@ impl Gui {
         }
     }
 
-    pub fn render(&mut self, gpu: &Arc<Gpu>, cmd: &GraphicsCommandList) {
+    pub fn render(&mut self, gpu: &Arc<Gpu>, cmd: &vk::CommandBuffer) {
         let output = self
             .egui_sdl3
             .end_frame(&mut self.sdl.video().unwrap())
             .unwrap();
 
-        self.egui_d3d12
-            .paint(
-                gpu,
-                cmd,
-                output,
-                self.egui_sdl3.context(),
-                self.window.size(),
+        let pixels_per_point = self.egui_sdl3.context().pixels_per_point();
+        let primitives = self
+            .egui_sdl3
+            .context()
+            .tessellate(output.shapes, pixels_per_point);
+
+        self.renderer
+            .set_textures(
+                gpu.queue,
+                gpu.command_pool,
+                output.textures_delta.set.as_slice(),
             )
-            .expect("failed to paint GUI");
+            .unwrap();
+
+        if let Err(e) =
+            self.renderer
+                .cmd_draw(*cmd, gpu.swapchain_extent, pixels_per_point, &primitives)
+        {
+            error!("Failed to draw egui primitives: {:?}", e);
+        }
+
+        self.renderer
+            .free_textures(output.textures_delta.free.as_slice())
+            .unwrap();
     }
 }

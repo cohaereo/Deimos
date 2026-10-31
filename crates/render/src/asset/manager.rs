@@ -8,16 +8,18 @@ use ahash::HashMap;
 use deimos_data::tag::WideHash;
 use parking_lot::Mutex;
 use tiger_pkg::TagHash;
-use uuid::Uuid;
+use tracing::{debug, error};
+
+use crate::{
+    asset::{AssetKind, index_buffer::IndexBuffer, texture::Texture, vertex_buffer::VertexBuffer},
+    gpu::Gpu,
+    tfx::technique::Technique,
+    util::once,
+};
 
 use super::{
     Asset,
     handle::{Handle, UntypedHandle},
-};
-use crate::{
-    asset::{index_buffer::IndexBuffer, texture::Texture, vertex_buffer::VertexBuffer},
-    gpu::Gpu,
-    tfx::technique::Technique,
 };
 
 // Asynchronous asset manager. Allows taking a handle to an ArcShift<Option<T>> (where T: Asset), which will be populated with the asset once it is loaded.
@@ -60,7 +62,6 @@ impl AssetManager {
 
     /// Get the asset handle for the given tag, or create a new one, and send it to the loader thread.
     /// Returns None if the tag is null
-    #[profiling::function]
     pub fn try_load<T: Asset + 'static>(
         self: &Arc<Self>,
         tag: impl Into<WideHash>,
@@ -92,28 +93,25 @@ impl AssetManager {
         let request = LoadRequest {
             tag,
             handle: handle.clone(),
-            type_id: T::ASSET_TYPE,
+            kind: T::ASSET_KIND,
         };
         let gpu = self.gpu.clone();
         let num_loaded = self.num_loading.clone();
         let asset_manager = self.clone();
-        // TODO(cohae): Potassium has a memory corruption issue here? Should be resolved ASAP once the problem is found
-        // SCHEDULER
-        //     .job_builder("load_asset")
-        //     .priority(Priority::Low)
-        //     .spawn(move || {
-        //         load_asset(request, asset_manager, &gpu, &num_loaded);
-        //     });
-        rayon::spawn(move || {
-            load_asset(request, asset_manager, &gpu, &num_loaded);
-        });
+
+        // once! {
+        //     warn!("TODO: Re-enable asynchronous asset loading (blocked by command buffer async issue)")
+        // }
+
+        // rayon::spawn(move || {
+        load_asset(request, asset_manager, &gpu, &num_loaded);
+        // });
 
         // SAFETY: The type ID was checked above
         Some(unsafe { handle.clone_as_typed_unchecked() })
     }
 
     /// Cull assets that are no longer referenced (ref count == 1, since the asset handle itself holds a reference)
-    #[profiling::function]
     pub fn remove_unreferenced(&self) {
         self.assets.lock().retain(|t, (_, handle)| {
             if handle.ref_count() == 1 {
@@ -143,7 +141,7 @@ impl AssetManager {
 struct LoadRequest {
     tag: TagHash,
     handle: UntypedHandle,
-    type_id: Uuid,
+    kind: AssetKind,
 }
 
 fn load_asset(
@@ -152,8 +150,8 @@ fn load_asset(
     gpu: &Arc<Gpu>,
     num_loaded: &Arc<AtomicUsize>,
 ) {
-    match request.type_id {
-        Texture::ASSET_TYPE => {
+    match request.kind {
+        AssetKind::Texture => {
             match Texture::load_tag(gpu, request.tag) {
                 Ok(o) => {
                     request.handle.update(o.into());
@@ -164,7 +162,7 @@ fn load_asset(
                 }
             }
         }
-        VertexBuffer::ASSET_TYPE => match VertexBuffer::load(gpu, request.tag) {
+        AssetKind::VertexBuffer => match VertexBuffer::load(gpu, request.tag) {
             Ok(o) => {
                 request.handle.update(o.into());
             }
@@ -172,7 +170,7 @@ fn load_asset(
                 error!("Failed to load vertex buffer {}: {:?}", request.tag, e);
             }
         },
-        IndexBuffer::ASSET_TYPE => match IndexBuffer::load(gpu, request.tag) {
+        AssetKind::IndexBuffer => match IndexBuffer::load(gpu, request.tag) {
             Ok(o) => {
                 request.handle.update(o.into());
             }
@@ -180,7 +178,7 @@ fn load_asset(
                 error!("Failed to load index buffer {}: {:?}", request.tag, e);
             }
         },
-        Technique::ASSET_TYPE => match Technique::load(&asset_manager, gpu, request.tag) {
+        AssetKind::Technique => match Technique::load(&asset_manager, gpu, request.tag) {
             Ok(o) => {
                 request.handle.update(o);
             }
@@ -188,12 +186,6 @@ fn load_asset(
                 error!("Failed to load technique {}: {:?}", request.tag, e);
             }
         },
-        u => {
-            panic!(
-                "asset loader: Unknown asset type for tag {}: {u:?}",
-                request.tag
-            );
-        }
     }
 
     num_loaded.fetch_sub(1, std::sync::atomic::Ordering::SeqCst);

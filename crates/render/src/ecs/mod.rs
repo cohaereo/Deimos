@@ -1,4 +1,3 @@
-use d3d12::GpuVirtualAddress;
 use deimos_data::tfx::{FeatureRendererSubscription, geometry::AxisAlignedBBox};
 use deimos_ecs::{
     object::{ObjectChannels, PermutationConfig},
@@ -10,7 +9,6 @@ use rayon::iter::{ParallelBridge, ParallelIterator};
 
 use crate::{
     ecs::render_objects::{DynamicRenderObject, StaticRenderObject},
-    features::rigid_model::{DynamicModel, DynamicObjectData},
     renderer::{Renderer, packet::ViewPacket, scene::SceneRenderer},
     visibility::ViewVisibility,
 };
@@ -115,56 +113,56 @@ pub fn s_extract_frame_packet(
         }
     }
 
-    for (_entity, (transform, render_object, permutations, object_channels, visible)) in world
-        .query::<(
-            Option<&Transform>,
-            &DynamicRenderObject,
-            Option<&PermutationConfig>,
-            Option<&ObjectChannels>,
-            Option<&Visible>,
-        )>()
-        .iter()
-    {
-        if !features.is_subscribed(render_objects[render_object.handle()].feature_type) {
-            continue;
-        }
+    // for (_entity, (transform, render_object, permutations, object_channels, visible)) in world
+    //     .query::<(
+    //         Option<&Transform>,
+    //         &DynamicRenderObject,
+    //         Option<&PermutationConfig>,
+    //         Option<&ObjectChannels>,
+    //         Option<&Visible>,
+    //     )>()
+    //     .iter()
+    // {
+    //     if !features.is_subscribed(render_objects[render_object.handle()].feature_type) {
+    //         continue;
+    //     }
 
-        let transform = transform.copied().unwrap_or_default();
-        let permutation = if let Some(permutation) = permutations {
-            permutation
-                .calculate_permutation_index()
-                .unwrap_or(render_object.permutation)
-        } else {
-            render_object.permutation
-        };
+    //     let transform = transform.copied().unwrap_or_default();
+    //     let permutation = if let Some(permutation) = permutations {
+    //         permutation
+    //             .calculate_permutation_index()
+    //             .unwrap_or(render_object.permutation)
+    //     } else {
+    //         render_object.permutation
+    //     };
 
-        if let Some(object_channels) = object_channels
-            && let Some(rigid_model) = render_objects
-                .get_mut(render_object.handle())
-                .and_then(|r| r.get_mut::<DynamicModel>())
-        {
-            for channel in &object_channels.0 {
-                rigid_model.channels.insert(channel.name, channel.clone());
-            }
-        }
+    //     if let Some(object_channels) = object_channels
+    //         && let Some(rigid_model) = render_objects
+    //             .get_mut(render_object.handle())
+    //             .and_then(|r| r.get_mut::<DynamicModel>())
+    //     {
+    //         for channel in &object_channels.0 {
+    //             rigid_model.channels.insert(channel.name, channel.clone());
+    //         }
+    //     }
 
-        let frame_node = frame_packet.push_frame_node(
-            render_object.handle(),
-            Some(DynamicObjectData {
-                local_to_world: transform.local_to_world(),
-                permutation,
-                cbuffer_gpuva: GpuVirtualAddress::NULL,
-            }),
-        );
+    //     let frame_node = frame_packet.push_frame_node(
+    //         render_object.handle(),
+    //         Some(DynamicObjectData {
+    //             local_to_world: transform.local_to_world(),
+    //             permutation,
+    //             // cbuffer_gpuva: GpuVirtualAddress::NULL,
+    //         }),
+    //     );
 
-        for (view_id, _v) in views.iter().enumerate() {
-            if !visible.is_none_or(|v| v.0) {
-                continue;
-            }
+    //     for (view_id, _v) in views.iter().enumerate() {
+    //         if !visible.is_none_or(|v| v.0) {
+    //             continue;
+    //         }
 
-            frame_packet.push_view_node::<()>(view_id, frame_node, None);
-        }
-    }
+    //         frame_packet.push_view_node::<()>(view_id, frame_node, None);
+    //     }
+    // }
 }
 
 #[profiling::function]

@@ -3,25 +3,20 @@ use std::{
     sync::{Arc, atomic::Ordering},
 };
 
-use d3d12::{CpuDescriptorHandle, GpuVirtualAddress};
+use ash::vk;
 use deimos_data::tfx::{FixedFunctionState, PrimitiveType, ShaderStage};
-use smallvec::SmallVec;
 use tiger_pkg::TagHash;
 
 use crate::{
-    gpu::{
-        alloc::{descriptors::ResourceView, ring::UploadRing},
-        native_command_list::NativeCommandList,
-        render_target::{DepthBuffer, RenderTarget},
-    },
+    gpu::{alloc::upload::UploadHeap, command_buffer::CommandBuffer},
     tfx::externs::LocalExternContainer,
 };
 
 use super::Gpu;
 
 pub struct CommandList {
-    parent: Arc<Gpu>,
-    pub(crate) cmd: NativeCommandList,
+    gpu: Arc<Gpu>,
+    pub cmd: CommandBuffer,
 
     state: CommandListState,
     pub(super) current_blend_state: usize,
@@ -40,7 +35,7 @@ pub struct CommandList {
 }
 
 impl Deref for CommandList {
-    type Target = d3d12::GraphicsCommandList;
+    type Target = CommandBuffer;
     fn deref(&self) -> &Self::Target {
         &self.cmd
     }
@@ -54,11 +49,10 @@ impl CommandList {
     //     )
     // }
 
-    pub fn from_native_command_list(gpu: &Arc<Gpu>, cmd: NativeCommandList) -> Self {
-        cmd.set_descriptor_heaps(std::slice::from_ref(gpu.frame().descriptors.heap()));
+    pub fn from_native_command_list(gpu: &Arc<Gpu>, cmd: CommandBuffer) -> Self {
         Self {
             externs: LocalExternContainer::new(gpu.extern_source.read().clone()),
-            parent: gpu.clone(),
+            gpu: gpu.clone(),
             cmd,
             state: CommandListState::default(),
 
@@ -85,7 +79,7 @@ impl CommandList {
         self.tag
     }
 
-    pub fn into_inner(self) -> NativeCommandList {
+    pub fn into_inner(self) -> CommandBuffer {
         self.cmd
     }
 
@@ -105,12 +99,12 @@ impl CommandList {
     // }
 
     pub const fn gpu(&self) -> &Arc<Gpu> {
-        &self.parent
+        &self.gpu
     }
 
-    pub fn upload_ring(&self) -> &UploadRing {
-        &self.parent.frame().upload
-    }
+    // pub fn upload_ring(&self) -> &UploadRing {
+    //     &self.gpu.frame().upload
+    // }
 }
 
 // GPU state management
@@ -206,99 +200,30 @@ impl CommandList {
 
     pub fn set_input_topology(&mut self, topology: PrimitiveType) {
         // if self.current_input_topology != topology as usize {
-        self.cmd.ia_set_primitive_topology(match topology {
-            PrimitiveType::PointList => d3d12::PrimitiveTopology::PointList,
-            PrimitiveType::LineList => d3d12::PrimitiveTopology::LineList,
-            PrimitiveType::LineStrip => d3d12::PrimitiveTopology::LineStrip,
-            PrimitiveType::Triangles => d3d12::PrimitiveTopology::TriangleList,
-            PrimitiveType::TriangleStrip => d3d12::PrimitiveTopology::TriangleStrip,
+        self.cmd.set_primitive_topology(match topology {
+            PrimitiveType::PointList => vk::PrimitiveTopology::POINT_LIST,
+            PrimitiveType::LineList => vk::PrimitiveTopology::LINE_LIST,
+            PrimitiveType::LineStrip => vk::PrimitiveTopology::LINE_STRIP,
+            PrimitiveType::Triangles => vk::PrimitiveTopology::TRIANGLE_LIST,
+            PrimitiveType::TriangleStrip => vk::PrimitiveTopology::TRIANGLE_STRIP,
         });
         //     self.current_input_topology = topology as usize;
         // }
     }
 
     #[deprecated(note = "This method bypasses the pipeline state, use set_input_topology instead")]
-    pub fn input_assembler_set_primitive_topology(&self, topology: d3d12::PrimitiveTopology) {
-        self.cmd.ia_set_primitive_topology(topology);
-    }
-
-    pub fn om_set_render_targets(
-        &mut self,
-        render_target_descriptors: &[(CpuDescriptorHandle, d3d12::Format)],
-        depth_stencil_descriptor: Option<(CpuDescriptorHandle, d3d12::Format)>,
-    ) {
-        self.state.output.rtvs = render_target_descriptors
-            .iter()
-            .copied()
-            .map(|(rtv, _)| rtv)
-            .collect();
-        self.state.output.rtv_formats = render_target_descriptors
-            .iter()
-            .copied()
-            .map(|(_, format)| format)
-            .collect();
-        self.state.output.dsv = depth_stencil_descriptor.unzip().0;
-        self.state.output.dsv_format = depth_stencil_descriptor.unzip().1;
-
-        self.cmd
-            .om_set_render_targets(&self.state.output.rtvs, false, self.state.output.dsv);
-    }
-
-    /// Sets the render targets and depth-stencil buffer for the command list.
-    ///
-    /// Updates CMD state:
-    /// - Sets output RTVs and RTV formats
-    /// - Sets output DSV and DSV format
-    /// - Sets viewport and scissor rect
-    pub fn set_render_targets(
-        &mut self,
-        render_target_descriptors: &[&RenderTarget],
-        depth_stencil_descriptor: Option<&DepthBuffer>,
-    ) {
-        self.state.output.rtvs = render_target_descriptors
-            .iter()
-            .copied()
-            .map(|rt| rt.cpu_handle())
-            .collect();
-        self.state.output.rtv_formats = render_target_descriptors
-            .iter()
-            .copied()
-            .map(|rt| rt.output_format())
-            .collect();
-        self.state.output.dsv = depth_stencil_descriptor.map(|db| db.cpu_handle());
-        self.state.output.dsv_format = depth_stencil_descriptor.map(|db| db.output_format());
-
-        self.cmd
-            .om_set_render_targets(&self.state.output.rtvs, false, self.state.output.dsv);
-
-        if let Some(rt0) = render_target_descriptors.first() {
-            self.set_viewports(&[d3d12::Viewport::builder()
-                .width(rt0.resolution().0 as f32)
-                .height(rt0.resolution().1 as f32)
-                .build()]);
-            self.set_scissor_rects(&[d3d12::Rect::builder()
-                .right(rt0.resolution().0 as i32)
-                .bottom(rt0.resolution().1 as i32)
-                .top(0)
-                .left(0)
-                .build()]);
-        } else if let Some(dsv) = depth_stencil_descriptor {
-            self.set_viewports(&[d3d12::Viewport::builder()
-                .width(dsv.resolution().0 as f32)
-                .height(dsv.resolution().1 as f32)
-                .build()]);
-            self.set_scissor_rects(&[d3d12::Rect::builder()
-                .right(dsv.resolution().0 as i32)
-                .bottom(dsv.resolution().1 as i32)
-                .top(0)
-                .left(0)
-                .build()]);
-        }
+    pub fn input_assembler_set_primitive_topology(&self, topology: vk::PrimitiveTopology) {
+        self.cmd.set_primitive_topology(topology);
     }
 
     pub fn draw_instanced(&self, vertices: Range<u32>, instances: Range<u32>) {
         self.gpu().num_drawcalls.fetch_add(1, Ordering::Relaxed);
-        self.cmd.draw_instanced(vertices, instances);
+        self.cmd.draw(
+            vertices.len() as u32,
+            instances.len() as u32,
+            vertices.start,
+            instances.start,
+        );
     }
 
     pub fn draw_indexed_instanced(
@@ -308,18 +233,23 @@ impl CommandList {
         base_vertex_location: i32,
     ) {
         self.gpu().num_drawcalls.fetch_add(1, Ordering::Relaxed);
-        self.cmd
-            .draw_indexed_instanced(indices, instances, base_vertex_location);
+        self.cmd.draw_indexed(
+            indices.len() as u32,
+            instances.len() as u32,
+            indices.start,
+            base_vertex_location,
+            instances.start,
+        );
     }
 
-    pub fn set_scissor_rects(&mut self, rects: &[d3d12::Rect]) {
-        self.state.output.scissor_rects = rects.iter().cloned().collect();
-        self.cmd.set_scissor_rects(rects);
+    pub fn set_scissor_rects(&mut self, rects: &[vk::Rect2D]) {
+        // self.state.output.scissor_rects = rects.iter().cloned().collect();
+        self.cmd.set_scissor(0, rects);
     }
 
-    pub fn set_viewports(&mut self, viewports: &[d3d12::Viewport]) {
-        self.state.output.viewports = viewports.iter().cloned().collect();
-        self.cmd.set_viewports(viewports);
+    pub fn set_viewports(&mut self, viewports: &[vk::Viewport]) {
+        // self.state.output.viewports = viewports.iter().cloned().collect();
+        self.cmd.set_viewport(0, viewports);
     }
 
     pub const fn resources(&self, stage: ShaderStage) -> &StageResources {
@@ -334,7 +264,7 @@ impl CommandList {
         &mut self,
         stage: ShaderStage,
         slot: u32,
-    ) -> Option<ResourceView> {
+    ) -> Option<vk::ImageView> {
         self.resources(stage)
             .srvs
             .get(slot as usize)
@@ -346,7 +276,7 @@ impl CommandList {
         &mut self,
         stage: ShaderStage,
         slot: u32,
-    ) -> Option<d3d12::GpuVirtualAddress> {
+    ) -> Option<ConstantBufferView> {
         self.resources(stage)
             .cbvs
             .get(slot as usize)
@@ -358,10 +288,10 @@ impl CommandList {
         &mut self,
         stage: ShaderStage,
         slot: u32,
-        resource: Option<ResourceView>,
+        view: Option<vk::ImageView>,
     ) {
         if let Some(slot_mut) = self.resources_mut(stage).srvs.get_mut(slot as usize) {
-            *slot_mut = resource;
+            *slot_mut = view;
         }
     }
 
@@ -369,14 +299,14 @@ impl CommandList {
         &mut self,
         stage: ShaderStage,
         slot: u32,
-        mut buffer_address: Option<d3d12::GpuVirtualAddress>,
+        mut cbv: Option<ConstantBufferView>,
     ) {
-        if buffer_address == Some(d3d12::GpuVirtualAddress::NULL) {
-            buffer_address = None;
+        if cbv.as_ref().is_some_and(|v| v.addr == 0) {
+            cbv = None;
         }
 
         if let Some(slot_mut) = self.resources_mut(stage).cbvs.get_mut(slot as usize) {
-            *slot_mut = buffer_address;
+            *slot_mut = cbv;
         }
     }
 
@@ -402,10 +332,10 @@ impl CommandList {
 
     #[profiling::function]
     pub fn restore_cmd_state(&mut self, new_state: &CommandListState) {
-        let om = &new_state.output;
-        self.cmd.om_set_render_targets(&om.rtvs, false, om.dsv);
-        self.cmd.set_viewports(&om.viewports);
-        self.cmd.set_scissor_rects(&om.scissor_rects);
+        // let om = &new_state.output;
+        // self.cmd.om_set_render_targets(&om.rtvs, false, om.dsv);
+        // self.cmd.set_viewports(&om.viewports);
+        // self.cmd.set_scissor_rects(&om.scissor_rects);
 
         self.state = new_state.clone();
     }
@@ -435,24 +365,26 @@ pub enum DepthMode {
     Reverse,
 }
 
+#[derive(Debug, Clone, Copy, Default)]
+pub struct ConstantBufferView {
+    pub addr: vk::DeviceAddress,
+    pub size: u64,
+}
+
 #[derive(Default, Clone)]
 pub struct StageResources {
-    pub srvs: [Option<ResourceView>; 32],
-    pub cbvs: [Option<d3d12::GpuVirtualAddress>; 16],
+    pub srvs: [Option<vk::ImageView>; 32],
+    pub cbvs: [Option<ConstantBufferView>; 16],
 }
 
 impl StageResources {
-    pub fn get_shader_resource_view(&self, slot: u32) -> Option<ResourceView> {
+    pub fn get_shader_resource_view(&self, slot: u32) -> Option<vk::ImageView> {
         self.srvs.get(slot as usize).cloned().flatten()
     }
 
-    pub fn get_shader_constant_buffer_view(&self, slot: u32) -> Option<d3d12::GpuVirtualAddress> {
-        let va = self.cbvs.get(slot as usize).cloned().flatten();
-        if va == Some(GpuVirtualAddress::NULL) {
-            None
-        } else {
-            va
-        }
+    pub fn get_shader_constant_buffer_view(&self, slot: u32) -> Option<ConstantBufferView> {
+        let view = self.cbvs.get(slot as usize).cloned().flatten()?;
+        if view.addr == 0 { None } else { Some(view) }
     }
 }
 
@@ -468,7 +400,6 @@ macro_rules! cmd_event_span {
 pub struct CommandListState {
     pub ffstate: FixedFunctionState,
     pub ffstate_override: FixedFunctionState,
-    pub output: OutputState,
     pub(super) depth_mode: DepthMode,
 
     resources: [StageResources; 6],
@@ -486,7 +417,6 @@ impl Default for CommandListState {
             ffstate: FixedFunctionState::default(),
             ffstate_override: FixedFunctionState::default(),
 
-            output: OutputState::default(),
             depth_mode: DepthMode::Reverse,
 
             resources: std::array::from_fn(|_| StageResources::default()),
@@ -498,15 +428,4 @@ impl Default for CommandListState {
             // resources_gs: StageResources::default(),
         }
     }
-}
-
-#[derive(Default, Clone)]
-pub struct OutputState {
-    pub rtvs: SmallVec<[CpuDescriptorHandle; 4]>,
-    pub rtv_formats: SmallVec<[d3d12::Format; 4]>,
-    pub dsv: Option<CpuDescriptorHandle>,
-    pub dsv_format: Option<d3d12::Format>,
-
-    pub viewports: SmallVec<[d3d12::Viewport; 4]>,
-    pub scissor_rects: SmallVec<[d3d12::Rect; 4]>,
 }

@@ -141,6 +141,7 @@ fn main() -> anyhow::Result<()> {
     }
 
     info!("Application shutting down...");
+    app.gpu.wait_idle()?;
     app.renderer.shutdown();
 
     tiger_pkg::finalize_package_manager();

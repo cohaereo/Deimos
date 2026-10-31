@@ -19,9 +19,7 @@ fn main() {
         // Copy lib/SDL3.dll to OUT_DIR
         let out_dir = target_dir.join(std::env::var("PROFILE").expect("PROFILE not set"));
         _ = std::fs::create_dir_all(&out_dir);
-        for dll in ["SDL3.dll", "d3d12SDKLayers.dll", "D3D12Core.dll"] {
-            std::fs::copy(Path::new("lib").join(dll), out_dir.join(dll))
-                .expect("Failed to copy SDL3.dll");
-        }
+        std::fs::copy(Path::new("lib").join("SDL3.dll"), out_dir.join("SDL3.dll"))
+            .expect("Failed to copy SDL3.dll");
     }
 }

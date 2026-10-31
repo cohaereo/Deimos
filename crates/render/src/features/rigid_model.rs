@@ -502,6 +502,5 @@ impl Default for SkinningConstants {
 pub struct DynamicObjectData {
     pub local_to_world: Mat4,
     pub permutation: usize,
-
-    pub cbuffer_gpuva: d3d12::GpuVirtualAddress,
+    // pub cbuffer_gpuva: d3d12::GpuVirtualAddress,
 }

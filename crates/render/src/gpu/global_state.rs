@@ -1,23 +1,22 @@
 use anyhow::Context;
-use d3d12::{
-    D3D12_CULL_MODE, D3D12_DEPTH_STENCIL_DESC, D3D12_DEPTH_WRITE_MASK, D3D12_FILL_MODE,
-    D3D12_RASTERIZER_DESC, D3D12_STENCIL_OP,
-};
+use ash::vk;
 use deimos_data::tfx::render_globals::SRenderGlobals;
 use tiger_parse::PackageManagerExt;
 use tiger_pkg::package_manager;
-use windows::core::BOOL;
 
 use crate::util::byteutil;
 
 const DEPTH_STENCIL_COMBO_COUNT: usize = DEPTH_STENCIL_COMBOS.len();
 pub struct RenderStates {
-    pub input_layouts: Vec<Vec<d3d12::InputElementDesc>>,
-    pub blend_states: Vec<d3d12::BlendDesc>,
-    pub rasterizer_states: [[d3d12::D3D12_RASTERIZER_DESC; 9]; 9],
-    // /// 1st state is for reverse Z, 2nd state is for regular Z (commonly used for shadow maps)
-    pub depth_stencil_states:
-        [(D3D12_DEPTH_STENCIL_DESC, D3D12_DEPTH_STENCIL_DESC); DEPTH_STENCIL_COMBO_COUNT],
+    pub input_layouts: Vec<(
+        Vec<vk::VertexInputBindingDescription>,
+        Vec<vk::VertexInputAttributeDescription>,
+    )>,
+    // pub blend_states: Vec<d3d12::BlendDesc>,
+    // pub rasterizer_states: [[d3d12::D3D12_RASTERIZER_DESC; 9]; 9],
+    // // /// 1st state is for reverse Z, 2nd state is for regular Z (commonly used for shadow maps)
+    // pub depth_stencil_states:
+    //     [(D3D12_DEPTH_STENCIL_DESC, D3D12_DEPTH_STENCIL_DESC); DEPTH_STENCIL_COMBO_COUNT],
 }
 
 impl RenderStates {
@@ -28,26 +27,26 @@ impl RenderStates {
     const DEPTH_STATE_DATA: &[u8] = include_bytes!("../../builtin/gpu/depth_states.bin");
     const STENCIL_STATE_DATA: &[u8] = include_bytes!("../../builtin/gpu/stencil_states.bin");
 
-    const REVERSED_DEPTH_FUNCS: [d3d12::ComparisonFunc; 13] = [
-        d3d12::ComparisonFunc::Always,
-        d3d12::ComparisonFunc::Always,
-        d3d12::ComparisonFunc::LessEqual,
-        d3d12::ComparisonFunc::LessEqual,
-        d3d12::ComparisonFunc::GreaterEqual,
-        d3d12::ComparisonFunc::GreaterEqual,
-        d3d12::ComparisonFunc::Greater,
-        d3d12::ComparisonFunc::LessEqual,
-        d3d12::ComparisonFunc::LessEqual,
-        d3d12::ComparisonFunc::Always,
-        d3d12::ComparisonFunc::Never,
-        d3d12::ComparisonFunc::Always,
-        d3d12::ComparisonFunc::LessEqual,
+    const REVERSED_DEPTH_FUNCS: [vk::CompareOp; 13] = [
+        vk::CompareOp::ALWAYS,
+        vk::CompareOp::ALWAYS,
+        vk::CompareOp::LESS_OR_EQUAL,
+        vk::CompareOp::LESS_OR_EQUAL,
+        vk::CompareOp::GREATER_OR_EQUAL,
+        vk::CompareOp::GREATER_OR_EQUAL,
+        vk::CompareOp::GREATER,
+        vk::CompareOp::LESS_OR_EQUAL,
+        vk::CompareOp::LESS_OR_EQUAL,
+        vk::CompareOp::ALWAYS,
+        vk::CompareOp::NEVER,
+        vk::CompareOp::ALWAYS,
+        vk::CompareOp::LESS_OR_EQUAL,
     ];
 
-    pub fn new(_device: &d3d12::Device) -> anyhow::Result<Self> {
-        let mut input_layouts = vec![vec![]; 255];
+    pub fn new(_device: &ash::Device) -> anyhow::Result<Self> {
+        let mut input_layouts = vec![(vec![], vec![]); 255];
         for (i, layout) in BASE_INPUT_LAYOUTS.iter().enumerate() {
-            input_layouts[i] = tiger_input_layout_to_d3d12(layout.elements);
+            input_layouts[i] = tiger_input_layout_to_vk(layout.elements);
         }
 
         let data: SRenderGlobals = package_manager().read_named_tag_struct("render_globals")?;
@@ -74,7 +73,7 @@ impl RenderStates {
                     layout_elements.push(TigerInputLayoutElement {
                         _hlsl_type: format.hlsl_type,
                         format: format.format,
-                        _stride: format.stride,
+                        stride: format.stride,
                         semantic_name: semantic,
                         semantic_index: e.semantic_index as _,
                         buffer_index: buffer_index as _,
@@ -83,7 +82,7 @@ impl RenderStates {
                 }
             }
 
-            input_layouts[l.index as usize] = tiger_input_layout_to_d3d12(&layout_elements);
+            input_layouts[l.index as usize] = tiger_input_layout_to_vk(&layout_elements);
 
             // println!("Layout {}", l.index);
             // for (ei, element) in layout_elements.iter().enumerate() {
@@ -103,113 +102,113 @@ impl RenderStates {
             // }
         }
 
-        let mut blend_states = vec![];
+        // let mut blend_states = vec![];
 
-        let blend_state_descs: &[QuadBlendState] =
-            unsafe { byteutil::bytes_as_slice(Self::BLEND_STATE_DESC_DATA) };
-        // let chroma = ChromaConfig {
-        //     inline_struct: chroma_dbg::InlineThreshold::Always,
-        //     ..Default::default()
-        // };
-        for desc in blend_state_descs.iter() {
-            // println!("{}", chroma.format(desc));
+        // let blend_state_descs: &[QuadBlendState] =
+        //     unsafe { byteutil::bytes_as_slice(Self::BLEND_STATE_DESC_DATA) };
+        // // let chroma = ChromaConfig {
+        // //     inline_struct: chroma_dbg::InlineThreshold::Always,
+        // //     ..Default::default()
+        // // };
+        // for desc in blend_state_descs.iter() {
+        //     // println!("{}", chroma.format(desc));
 
-            let render_targets = [
-                desc.render_targets[0].clone(),
-                desc.render_targets[1].clone(),
-                desc.render_targets[2].clone(),
-                desc.render_targets[3].clone(),
-                desc.render_targets[4].clone(),
-                // Extend to 8 render targets
-                desc.render_targets[4].clone(),
-                desc.render_targets[4].clone(),
-                desc.render_targets[4].clone(),
-            ];
+        //     let render_targets = [
+        //         desc.render_targets[0].clone(),
+        //         desc.render_targets[1].clone(),
+        //         desc.render_targets[2].clone(),
+        //         desc.render_targets[3].clone(),
+        //         desc.render_targets[4].clone(),
+        //         // Extend to 8 render targets
+        //         desc.render_targets[4].clone(),
+        //         desc.render_targets[4].clone(),
+        //         desc.render_targets[4].clone(),
+        //     ];
 
-            let state = d3d12::BlendDesc::builder()
-                .alpha_to_coverage_enable(false)
-                .independent_blend_enable(true)
-                .render_target(render_targets)
-                .build();
-            blend_states.push(state);
-        }
+        //     let state = d3d12::BlendDesc::builder()
+        //         .alpha_to_coverage_enable(false)
+        //         .independent_blend_enable(true)
+        //         .render_target(render_targets)
+        //         .build();
+        //     blend_states.push(state);
+        // }
 
-        let depth_biases: &[ShortDepthBias] =
-            unsafe { byteutil::bytes_as_slice(Self::DEPTH_BIAS_DATA) };
-        let rasterizer_states: &[PaddedRasterizerState] =
-            unsafe { byteutil::bytes_as_slice(Self::RASTERIZER_STATE_DATA) };
-        assert_eq!(rasterizer_states.len(), 9);
-        assert_eq!(depth_biases.len(), 9);
+        // let depth_biases: &[ShortDepthBias] =
+        //     unsafe { byteutil::bytes_as_slice(Self::DEPTH_BIAS_DATA) };
+        // let rasterizer_states: &[PaddedRasterizerState] =
+        //     unsafe { byteutil::bytes_as_slice(Self::RASTERIZER_STATE_DATA) };
+        // assert_eq!(rasterizer_states.len(), 9);
+        // assert_eq!(depth_biases.len(), 9);
 
-        let rasterizer_states = std::array::from_fn(|bi| {
-            std::array::from_fn(|ri| {
-                let desc11 = &rasterizer_states[ri].desc;
-                let ShortDepthBias(_, depth_bias, slope_scaled_depth_bias, depth_bias_clamp) =
-                    depth_biases[bi];
+        // let rasterizer_states = std::array::from_fn(|bi| {
+        //     std::array::from_fn(|ri| {
+        //         let desc11 = &rasterizer_states[ri].desc;
+        //         let ShortDepthBias(_, depth_bias, slope_scaled_depth_bias, depth_bias_clamp) =
+        //             depth_biases[bi];
 
-                D3D12_RASTERIZER_DESC {
-                    FillMode: desc11.fill_mode,
-                    CullMode: desc11.cull_mode,
-                    FrontCounterClockwise: desc11.front_counter_clockwise,
-                    DepthBias: depth_bias,
-                    DepthBiasClamp: depth_bias_clamp,
-                    SlopeScaledDepthBias: slope_scaled_depth_bias,
-                    DepthClipEnable: desc11.depth_clip_enable,
-                    MultisampleEnable: desc11.multisample_enable,
-                    AntialiasedLineEnable: desc11.antialiased_line_enable,
-                    ForcedSampleCount: 0,
-                    ConservativeRaster: d3d12::D3D12_CONSERVATIVE_RASTERIZATION_MODE_OFF,
-                }
-            })
-        });
+        //         D3D12_RASTERIZER_DESC {
+        //             FillMode: desc11.fill_mode,
+        //             CullMode: desc11.cull_mode,
+        //             FrontCounterClockwise: desc11.front_counter_clockwise,
+        //             DepthBias: depth_bias,
+        //             DepthBiasClamp: depth_bias_clamp,
+        //             SlopeScaledDepthBias: slope_scaled_depth_bias,
+        //             DepthClipEnable: desc11.depth_clip_enable,
+        //             MultisampleEnable: desc11.multisample_enable,
+        //             AntialiasedLineEnable: desc11.antialiased_line_enable,
+        //             ForcedSampleCount: 0,
+        //             ConservativeRaster: d3d12::D3D12_CONSERVATIVE_RASTERIZATION_MODE_OFF,
+        //         }
+        //     })
+        // });
 
-        let depth_states: &[ShortDepthState] =
-            unsafe { byteutil::bytes_as_slice(Self::DEPTH_STATE_DATA) };
-        let stencil_states: &[ShortStencilDesc] =
-            unsafe { byteutil::bytes_as_slice(Self::STENCIL_STATE_DATA) };
+        // let depth_states: &[ShortDepthState] =
+        //     unsafe { byteutil::bytes_as_slice(Self::DEPTH_STATE_DATA) };
+        // let stencil_states: &[ShortStencilDesc] =
+        //     unsafe { byteutil::bytes_as_slice(Self::STENCIL_STATE_DATA) };
 
-        // warn!("!!! STENCIL TESTING IS DISABLED");
-        let depth_stencil_states = std::array::from_fn(|i| {
-            let (depth_index, stencil_index) = DEPTH_STENCIL_COMBOS[i];
+        // // warn!("!!! STENCIL TESTING IS DISABLED");
+        // let depth_stencil_states = std::array::from_fn(|i| {
+        //     let (depth_index, stencil_index) = DEPTH_STENCIL_COMBOS[i];
 
-            let depth = depth_states[depth_index].clone();
-            let stencil = stencil_states[stencil_index].clone();
-            let reversed_depth_func = Self::REVERSED_DEPTH_FUNCS[depth_index];
+        //     let depth = depth_states[depth_index].clone();
+        //     let stencil = stencil_states[stencil_index].clone();
+        //     let reversed_depth_func = Self::REVERSED_DEPTH_FUNCS[depth_index];
 
-            let desc_reverse = d3d12::D3D12_DEPTH_STENCIL_DESC {
-                DepthEnable: BOOL(depth.0),
-                DepthWriteMask: depth.1,
-                DepthFunc: depth.2.into(),
-                StencilEnable: false.into(), //stencil.enabled,
-                StencilReadMask: stencil.read_mask,
-                StencilWriteMask: stencil.write_mask,
-                FrontFace: d3d12::D3D12_DEPTH_STENCILOP_DESC {
-                    StencilFailOp: stencil.front_face.2,
-                    StencilDepthFailOp: stencil.front_face.3,
-                    StencilPassOp: stencil.front_face.1,
-                    StencilFunc: stencil.front_face.0.into(),
-                },
-                BackFace: d3d12::D3D12_DEPTH_STENCILOP_DESC {
-                    StencilFailOp: stencil.back_face.2,
-                    StencilDepthFailOp: stencil.back_face.3,
-                    StencilPassOp: stencil.back_face.1,
-                    StencilFunc: stencil.back_face.0.into(),
-                },
-            };
+        //     let desc_reverse = d3d12::D3D12_DEPTH_STENCIL_DESC {
+        //         DepthEnable: BOOL(depth.0),
+        //         DepthWriteMask: depth.1,
+        //         DepthFunc: depth.2.into(),
+        //         StencilEnable: false.into(), //stencil.enabled,
+        //         StencilReadMask: stencil.read_mask,
+        //         StencilWriteMask: stencil.write_mask,
+        //         FrontFace: d3d12::D3D12_DEPTH_STENCILOP_DESC {
+        //             StencilFailOp: stencil.front_face.2,
+        //             StencilDepthFailOp: stencil.front_face.3,
+        //             StencilPassOp: stencil.front_face.1,
+        //             StencilFunc: stencil.front_face.0.into(),
+        //         },
+        //         BackFace: d3d12::D3D12_DEPTH_STENCILOP_DESC {
+        //             StencilFailOp: stencil.back_face.2,
+        //             StencilDepthFailOp: stencil.back_face.3,
+        //             StencilPassOp: stencil.back_face.1,
+        //             StencilFunc: stencil.back_face.0.into(),
+        //         },
+        //     };
 
-            let desc_forward = D3D12_DEPTH_STENCIL_DESC {
-                DepthFunc: reversed_depth_func.into(),
-                ..desc_reverse
-            };
+        //     let desc_forward = D3D12_DEPTH_STENCIL_DESC {
+        //         DepthFunc: reversed_depth_func.into(),
+        //         ..desc_reverse
+        //     };
 
-            (desc_reverse, desc_forward)
-        });
+        //     (desc_reverse, desc_forward)
+        // });
 
         Ok(Self {
             input_layouts,
-            blend_states,
-            rasterizer_states,
-            depth_stencil_states,
+            // blend_states,
+            // rasterizer_states,
+            // depth_stencil_states,
         })
     }
 
@@ -263,50 +262,50 @@ impl RenderStates {
     // }
 }
 
-/// Regular d3d11 blend state, but with only 4 render targets
-#[repr(C)]
-#[derive(Debug)]
-pub struct QuadBlendState {
-    pub index: u32,
-    pub render_targets: [d3d12::RenderTargetBlendDesc; 5],
-}
+// /// Regular d3d11 blend state, but with only 4 render targets
+// #[repr(C)]
+// #[derive(Debug)]
+// pub struct QuadBlendState {
+//     pub index: u32,
+//     pub render_targets: [d3d12::RenderTargetBlendDesc; 5],
+// }
 
-#[repr(C)]
-#[derive(Debug)]
-pub struct PaddedRasterizerState {
-    pub desc: D3d11RasterizerDesc,
-    _pad: u32,
-}
+// #[repr(C)]
+// #[derive(Debug)]
+// pub struct PaddedRasterizerState {
+//     pub desc: D3d11RasterizerDesc,
+//     _pad: u32,
+// }
 
-#[repr(C)]
-#[derive(Debug, Clone)]
-pub struct ShortDepthBias(u32, i32, f32, f32);
+// #[repr(C)]
+// #[derive(Debug, Clone)]
+// pub struct ShortDepthBias(u32, i32, f32, f32);
 
-#[repr(C)]
-#[derive(Debug, Clone)]
-pub struct ShortDepthState(i32, D3D12_DEPTH_WRITE_MASK, d3d12::ComparisonFunc, u32);
+// #[repr(C)]
+// #[derive(Debug, Clone)]
+// pub struct ShortDepthState(i32, D3D12_DEPTH_WRITE_MASK, d3d12::ComparisonFunc, u32);
 
-#[repr(C)]
-#[derive(Debug, Clone)]
-pub struct ShortStencilDesc {
-    pub unk0: u32,
-    pub enabled: BOOL,
-    pub read_mask: u8,
-    pub write_mask: u8,
-    _pad0: u16,
-    pub front_face: (
-        d3d12::ComparisonFunc,
-        D3D12_STENCIL_OP,
-        D3D12_STENCIL_OP,
-        D3D12_STENCIL_OP,
-    ),
-    pub back_face: (
-        d3d12::ComparisonFunc,
-        D3D12_STENCIL_OP,
-        D3D12_STENCIL_OP,
-        D3D12_STENCIL_OP,
-    ),
-}
+// #[repr(C)]
+// #[derive(Debug, Clone)]
+// pub struct ShortStencilDesc {
+//     pub unk0: u32,
+//     pub enabled: BOOL,
+//     pub read_mask: u8,
+//     pub write_mask: u8,
+//     _pad0: u16,
+//     pub front_face: (
+//         d3d12::ComparisonFunc,
+//         D3D12_STENCIL_OP,
+//         D3D12_STENCIL_OP,
+//         D3D12_STENCIL_OP,
+//     ),
+//     pub back_face: (
+//         d3d12::ComparisonFunc,
+//         D3D12_STENCIL_OP,
+//         D3D12_STENCIL_OP,
+//         D3D12_STENCIL_OP,
+//     ),
+// }
 
 const DEPTH_STENCIL_COMBOS: [(usize, usize); 83] = [
     (0, 0),
@@ -398,48 +397,99 @@ struct TigerInputLayout {
     pub elements: &'static [TigerInputLayoutElement],
 }
 
-fn tiger_input_layout_to_d3d12(
+fn tiger_input_layout_to_vk(
     elements: &[TigerInputLayoutElement],
-) -> Vec<d3d12::InputElementDesc> {
-    elements
+) -> (
+    Vec<vk::VertexInputBindingDescription>,
+    Vec<vk::VertexInputAttributeDescription>,
+) {
+    let mut attributes = vec![];
+
+    #[derive(Clone)]
+    struct Buffer {
+        stride: u32,
+        element_count: u32,
+        is_instanced: bool,
+    }
+
+    let num_buffers = elements
         .iter()
-        .cloned()
-        .map(|element| element.into())
-        .collect()
+        .map(|b| b.buffer_index + 1)
+        .max()
+        .unwrap_or(0);
+    let mut buffers = vec![
+        Buffer {
+            stride: 0,
+            element_count: 0,
+            is_instanced: false,
+        };
+        num_buffers as usize
+    ];
+
+    for element in elements {
+        attributes.push(vk::VertexInputAttributeDescription {
+            location: element.buffer_index,
+            binding: buffers[element.buffer_index as usize].element_count,
+            format: element.format,
+            offset: buffers[element.buffer_index as usize].stride,
+        });
+
+        buffers[element.buffer_index as usize].element_count += 1;
+        buffers[element.buffer_index as usize].stride += element.stride;
+        if element.is_instance_data {
+            buffers[element.buffer_index as usize].is_instanced = true;
+        }
+    }
+
+    let bindings = buffers
+        .into_iter()
+        .enumerate()
+        .map(|(i, b)| vk::VertexInputBindingDescription {
+            binding: i as u32,
+            stride: b.stride,
+            input_rate: if b.is_instanced {
+                vk::VertexInputRate::INSTANCE
+            } else {
+                vk::VertexInputRate::VERTEX
+            },
+        })
+        .collect();
+
+    (bindings, attributes)
 }
 
 #[derive(Clone)]
 struct TigerInputLayoutElement {
     pub _hlsl_type: &'static str,
-    pub format: d3d12::Format,
-    pub _stride: u32,
+    pub format: vk::Format,
+    pub stride: u32,
     pub semantic_name: &'static str,
     pub semantic_index: u32,
     pub buffer_index: u32,
     pub is_instance_data: bool,
 }
 
-impl From<TigerInputLayoutElement> for d3d12::InputElementDesc {
-    fn from(value: TigerInputLayoutElement) -> Self {
-        Self::builder()
-            .semantic_name(value.semantic_name)
-            .semantic_index(value.semantic_index)
-            .format(value.format)
-            .input_slot(value.buffer_index)
-            .input_slot_class(if value.is_instance_data {
-                d3d12::InputClassification::PerInstanceData
-            } else {
-                d3d12::InputClassification::PerVertexData
-            })
-            .instance_data_step_rate(value.is_instance_data as u32)
-            .build()
-    }
-}
+// impl From<TigerInputLayoutElement> for d3d12::InputElementDesc {
+//     fn from(value: TigerInputLayoutElement) -> Self {
+//         Self::builder()
+//             .semantic_name(value.semantic_name)
+//             .semantic_index(value.semantic_index)
+//             .format(value.format)
+//             .input_slot(value.buffer_index)
+//             .input_slot_class(if value.is_instance_data {
+//                 d3d12::InputClassification::PerInstanceData
+//             } else {
+//                 d3d12::InputClassification::PerVertexData
+//             })
+//             .instance_data_step_rate(value.is_instance_data as u32)
+//             .build()
+//     }
+// }
 
 struct InputElementFormat {
     hlsl_type: &'static str,
     stride: u32,
-    format: d3d12::Format,
+    format: vk::Format,
 }
 
 //region Built-in input layouts
@@ -457,40 +507,40 @@ const INPUT_SEMANTICS: [&str; 9] = [
 
 #[rustfmt::skip]
 const INPUT_FORMATS: [InputElementFormat; 34] = [
-    InputElementFormat { hlsl_type: "", stride: 0, format: d3d12::Format::Unknown, }, // 0
-    InputElementFormat { hlsl_type: "float", stride: 4, format: d3d12::Format::R32Float }, // 1
-    InputElementFormat { hlsl_type: "float2", stride: 8, format: d3d12::Format::R32g32Float }, // 2
-    InputElementFormat { hlsl_type: "float3", stride: 12, format: d3d12::Format::R32g32b32Float }, // 3
-    InputElementFormat { hlsl_type: "float4", stride: 16, format: d3d12::Format::R32g32b32a32Float }, // 4
-    InputElementFormat { hlsl_type: "float4", stride: 4, format: d3d12::Format::R8g8b8a8Unorm }, // 5
-    InputElementFormat { hlsl_type: "uint4", stride: 4, format: d3d12::Format::R8g8b8a8Uint }, // 6
-    InputElementFormat { hlsl_type: "int2", stride: 4, format: d3d12::Format::R16g16Sint }, // 7
-    InputElementFormat { hlsl_type: "int4", stride: 8, format: d3d12::Format::R16g16b16a16Sint }, // 8
-    InputElementFormat { hlsl_type: "uint4", stride: 8, format: d3d12::Format::R16g16b16a16Uint }, // 9
-    InputElementFormat { hlsl_type: "float2", stride: 4, format: d3d12::Format::R16g16Snorm }, // 10
-    InputElementFormat { hlsl_type: "float4", stride: 8, format: d3d12::Format::R16g16b16a16Snorm }, // 11
-    InputElementFormat { hlsl_type: "float2", stride: 4, format: d3d12::Format::R16g16Float }, // 12
-    InputElementFormat { hlsl_type: "float4", stride: 8, format: d3d12::Format::R16g16b16a16Float }, // 13
-    InputElementFormat { hlsl_type: "int4", stride: 4, format: d3d12::Format::R8g8b8a8Sint }, // 14
-    InputElementFormat { hlsl_type: "float4", stride: 4, format: d3d12::Format::R8g8b8a8Snorm }, // 15
-    InputElementFormat { hlsl_type: "uint4", stride: 4, format: d3d12::Format::R10g10b10a2Uint }, // 16
-    InputElementFormat { hlsl_type: "float4", stride: 4, format: d3d12::Format::R10g10b10a2Unorm }, // 17
-    InputElementFormat { hlsl_type: "int", stride: 4, format: d3d12::Format::R32Sint }, // 18
-    InputElementFormat { hlsl_type: "int2", stride: 8, format: d3d12::Format::R32g32Sint }, // 19
-    InputElementFormat { hlsl_type: "int4", stride: 16, format: d3d12::Format::R32g32b32a32Sint }, // 20
-    InputElementFormat { hlsl_type: "int", stride: 4, format: d3d12::Format::R32Uint }, // 21
-    InputElementFormat { hlsl_type: "int2", stride: 8, format: d3d12::Format::R32g32Uint }, // 22
-    InputElementFormat { hlsl_type: "int4", stride: 16, format: d3d12::Format::R32g32b32a32Uint }, // 23
-    InputElementFormat { hlsl_type: "int", stride: 2, format: d3d12::Format::R16Sint }, // 24
-    InputElementFormat { hlsl_type: "float", stride: 1, format: d3d12::Format::R8Unorm }, // 25
-    InputElementFormat { hlsl_type: "", stride: 0, format: d3d12::Format::Unknown, }, // 26
-    InputElementFormat { hlsl_type: "", stride: 0, format: d3d12::Format::Unknown, }, // 27
-    InputElementFormat { hlsl_type: "", stride: 0, format: d3d12::Format::Unknown, }, // 28
-    InputElementFormat { hlsl_type: "", stride: 0, format: d3d12::Format::Unknown, }, // 29
-    InputElementFormat { hlsl_type: "", stride: 0, format: d3d12::Format::Unknown, }, // 30
-    InputElementFormat { hlsl_type: "float4", stride: 4, format: d3d12::Format::R8g8b8a8UnormSrgb }, // 31
-    InputElementFormat { hlsl_type: "float3", stride: 4, format: d3d12::Format::R11g11b10Float }, // 32
-    InputElementFormat { hlsl_type: "float4", stride: 8, format: d3d12::Format::R16g16b16a16Snorm }, // 33
+    InputElementFormat { hlsl_type: "", stride: 0, format: vk::Format::UNDEFINED, }, // 0
+    InputElementFormat { hlsl_type: "float", stride: 4, format: vk::Format::R32_SFLOAT }, // 1
+    InputElementFormat { hlsl_type: "float2", stride: 8, format: vk::Format::R32G32_SFLOAT }, // 2
+    InputElementFormat { hlsl_type: "float3", stride: 12, format: vk::Format::R32G32B32_SFLOAT }, // 3
+    InputElementFormat { hlsl_type: "float4", stride: 16, format: vk::Format::R32G32B32A32_SFLOAT }, // 4
+    InputElementFormat { hlsl_type: "float4", stride: 4, format: vk::Format::R8G8B8A8_UNORM }, // 5
+    InputElementFormat { hlsl_type: "uint4", stride: 4, format: vk::Format::R8G8B8A8_UINT }, // 6
+    InputElementFormat { hlsl_type: "int2", stride: 4, format: vk::Format::R16G16_SINT }, // 7
+    InputElementFormat { hlsl_type: "int4", stride: 8, format: vk::Format::R16G16B16A16_SINT }, // 8
+    InputElementFormat { hlsl_type: "uint4", stride: 8, format: vk::Format::R16G16B16A16_UINT }, // 9
+    InputElementFormat { hlsl_type: "float2", stride: 4, format: vk::Format::R16G16_SNORM }, // 10
+    InputElementFormat { hlsl_type: "float4", stride: 8, format: vk::Format::R16G16B16A16_SNORM }, // 11
+    InputElementFormat { hlsl_type: "float2", stride: 4, format: vk::Format::R16G16_SFLOAT }, // 12
+    InputElementFormat { hlsl_type: "float4", stride: 8, format: vk::Format::R16G16B16A16_SFLOAT }, // 13
+    InputElementFormat { hlsl_type: "int4", stride: 4, format: vk::Format::R8G8B8A8_SINT }, // 14
+    InputElementFormat { hlsl_type: "float4", stride: 4, format: vk::Format::R8G8B8A8_SNORM }, // 15
+    InputElementFormat { hlsl_type: "uint4", stride: 4, format: vk::Format::A2R10G10B10_UINT_PACK32 }, // 16
+    InputElementFormat { hlsl_type: "float4", stride: 4, format: vk::Format::A2R10G10B10_UNORM_PACK32 }, // 17
+    InputElementFormat { hlsl_type: "int", stride: 4, format: vk::Format::R32_SINT }, // 18
+    InputElementFormat { hlsl_type: "int2", stride: 8, format: vk::Format::R32G32_SINT }, // 19
+    InputElementFormat { hlsl_type: "int4", stride: 16, format: vk::Format::R32G32B32A32_SINT }, // 20
+    InputElementFormat { hlsl_type: "int", stride: 4, format: vk::Format::R32_UINT }, // 21
+    InputElementFormat { hlsl_type: "int2", stride: 8, format: vk::Format::R32G32_UINT }, // 22
+    InputElementFormat { hlsl_type: "int4", stride: 16, format: vk::Format::R32G32B32A32_UINT }, // 23
+    InputElementFormat { hlsl_type: "int", stride: 2, format: vk::Format::R16_SINT }, // 24
+    InputElementFormat { hlsl_type: "float", stride: 1, format: vk::Format::UNDEFINED }, // 25
+    InputElementFormat { hlsl_type: "", stride: 0, format: vk::Format::UNDEFINED, }, // 26
+    InputElementFormat { hlsl_type: "", stride: 0, format: vk::Format::UNDEFINED, }, // 27
+    InputElementFormat { hlsl_type: "", stride: 0, format: vk::Format::UNDEFINED, }, // 28
+    InputElementFormat { hlsl_type: "", stride: 0, format: vk::Format::UNDEFINED, }, // 29
+    InputElementFormat { hlsl_type: "", stride: 0, format: vk::Format::UNDEFINED, }, // 30
+    InputElementFormat { hlsl_type: "float4", stride: 4, format: vk::Format::R8G8B8A8_UNORM }, // 31
+    InputElementFormat { hlsl_type: "float3", stride: 4, format: vk::Format::B10G11R11_UFLOAT_PACK32 }, // 32
+    InputElementFormat { hlsl_type: "float4", stride: 8, format: vk::Format::R16G16B16A16_SNORM }, // 33
 ];
 
 const BASE_INPUT_LAYOUTS: [TigerInputLayout; 7] = [
@@ -498,8 +548,8 @@ const BASE_INPUT_LAYOUTS: [TigerInputLayout; 7] = [
     TigerInputLayout {
         elements: &[TigerInputLayoutElement {
             _hlsl_type: "float3",
-            format: d3d12::Format::R32g32b32Float,
-            _stride: 12,
+            format: vk::Format::R32G32B32_SFLOAT,
+            stride: 12,
             semantic_name: "POSITION",
             semantic_index: 0,
             buffer_index: 0,
@@ -510,8 +560,8 @@ const BASE_INPUT_LAYOUTS: [TigerInputLayout; 7] = [
     TigerInputLayout {
         elements: &[TigerInputLayoutElement {
             _hlsl_type: "float3",
-            format: d3d12::Format::R32g32b32Float,
-            _stride: 12,
+            format: vk::Format::R32G32B32_SFLOAT,
+            stride: 12,
             semantic_name: "POSITION",
             semantic_index: 0,
             buffer_index: 0,
@@ -523,8 +573,8 @@ const BASE_INPUT_LAYOUTS: [TigerInputLayout; 7] = [
         elements: &[
             TigerInputLayoutElement {
                 _hlsl_type: "float2",
-                format: d3d12::Format::R32g32Float,
-                _stride: 8,
+                format: vk::Format::R32G32_SFLOAT,
+                stride: 8,
                 semantic_name: "POSITION",
                 semantic_index: 0,
                 buffer_index: 0,
@@ -532,8 +582,8 @@ const BASE_INPUT_LAYOUTS: [TigerInputLayout; 7] = [
             },
             TigerInputLayoutElement {
                 _hlsl_type: "float2",
-                format: d3d12::Format::R32g32Float,
-                _stride: 8,
+                format: vk::Format::R32G32_SFLOAT,
+                stride: 8,
                 semantic_name: "TEXCOORD",
                 semantic_index: 0,
                 buffer_index: 0,
@@ -541,8 +591,8 @@ const BASE_INPUT_LAYOUTS: [TigerInputLayout; 7] = [
             },
             TigerInputLayoutElement {
                 _hlsl_type: "float4",
-                format: d3d12::Format::R8g8b8a8Unorm,
-                _stride: 4,
+                format: vk::Format::R8G8B8A8_UNORM,
+                stride: 4,
                 semantic_name: "COLOR",
                 semantic_index: 0,
                 buffer_index: 0,
@@ -555,8 +605,8 @@ const BASE_INPUT_LAYOUTS: [TigerInputLayout; 7] = [
         elements: &[
             TigerInputLayoutElement {
                 _hlsl_type: "float3",
-                format: d3d12::Format::R32g32b32Float,
-                _stride: 12,
+                format: vk::Format::R32G32B32_SFLOAT,
+                stride: 12,
                 semantic_name: "POSITION",
                 semantic_index: 0,
                 buffer_index: 0,
@@ -564,8 +614,8 @@ const BASE_INPUT_LAYOUTS: [TigerInputLayout; 7] = [
             },
             TigerInputLayoutElement {
                 _hlsl_type: "float2",
-                format: d3d12::Format::R32g32Float,
-                _stride: 8,
+                format: vk::Format::R32G32_SFLOAT,
+                stride: 8,
                 semantic_name: "TEXCOORD",
                 semantic_index: 0,
                 buffer_index: 0,
@@ -573,8 +623,8 @@ const BASE_INPUT_LAYOUTS: [TigerInputLayout; 7] = [
             },
             TigerInputLayoutElement {
                 _hlsl_type: "float4",
-                format: d3d12::Format::R8g8b8a8Unorm,
-                _stride: 4,
+                format: vk::Format::R8G8B8A8_UNORM,
+                stride: 4,
                 semantic_name: "COLOR",
                 semantic_index: 0,
                 buffer_index: 0,
@@ -587,8 +637,8 @@ const BASE_INPUT_LAYOUTS: [TigerInputLayout; 7] = [
         elements: &[
             TigerInputLayoutElement {
                 _hlsl_type: "float3",
-                format: d3d12::Format::R32g32b32Float,
-                _stride: 12,
+                format: vk::Format::R32G32B32_SFLOAT,
+                stride: 12,
                 semantic_name: "POSITION",
                 semantic_index: 0,
                 buffer_index: 0,
@@ -596,8 +646,8 @@ const BASE_INPUT_LAYOUTS: [TigerInputLayout; 7] = [
             },
             TigerInputLayoutElement {
                 _hlsl_type: "float4",
-                format: d3d12::Format::R8g8b8a8Unorm,
-                _stride: 4,
+                format: vk::Format::R8G8B8A8_UNORM,
+                stride: 4,
                 semantic_name: "COLOR",
                 semantic_index: 0,
                 buffer_index: 0,
@@ -610,8 +660,8 @@ const BASE_INPUT_LAYOUTS: [TigerInputLayout; 7] = [
         elements: &[
             TigerInputLayoutElement {
                 _hlsl_type: "float2",
-                format: d3d12::Format::R32g32Float,
-                _stride: 8,
+                format: vk::Format::R32G32_SFLOAT,
+                stride: 8,
                 semantic_name: "POSITION",
                 semantic_index: 0,
                 buffer_index: 0,
@@ -619,8 +669,8 @@ const BASE_INPUT_LAYOUTS: [TigerInputLayout; 7] = [
             },
             TigerInputLayoutElement {
                 _hlsl_type: "float2",
-                format: d3d12::Format::R32g32Float,
-                _stride: 8,
+                format: vk::Format::R32G32_SFLOAT,
+                stride: 8,
                 semantic_name: "TEXCOORD",
                 semantic_index: 0,
                 buffer_index: 0,
@@ -633,8 +683,8 @@ const BASE_INPUT_LAYOUTS: [TigerInputLayout; 7] = [
         elements: &[
             TigerInputLayoutElement {
                 _hlsl_type: "float3",
-                format: d3d12::Format::R32g32b32Float,
-                _stride: 12,
+                format: vk::Format::R32G32B32_SFLOAT,
+                stride: 12,
                 semantic_name: "POSITION",
                 semantic_index: 0,
                 buffer_index: 0,
@@ -642,8 +692,8 @@ const BASE_INPUT_LAYOUTS: [TigerInputLayout; 7] = [
             },
             TigerInputLayoutElement {
                 _hlsl_type: "float3",
-                format: d3d12::Format::R32g32b32Float,
-                _stride: 12,
+                format: vk::Format::R32G32B32_SFLOAT,
+                stride: 12,
                 semantic_name: "NORMAL",
                 semantic_index: 0,
                 buffer_index: 0,
@@ -651,8 +701,8 @@ const BASE_INPUT_LAYOUTS: [TigerInputLayout; 7] = [
             },
             TigerInputLayoutElement {
                 _hlsl_type: "float4",
-                format: d3d12::Format::R32g32b32a32Float,
-                _stride: 16,
+                format: vk::Format::R32G32B32A32_SFLOAT,
+                stride: 16,
                 semantic_name: "TANGENT",
                 semantic_index: 0,
                 buffer_index: 0,
@@ -660,8 +710,8 @@ const BASE_INPUT_LAYOUTS: [TigerInputLayout; 7] = [
             },
             TigerInputLayoutElement {
                 _hlsl_type: "float2",
-                format: d3d12::Format::R32g32Float,
-                _stride: 8,
+                format: vk::Format::R32G32_SFLOAT,
+                stride: 8,
                 semantic_name: "TEXCOORD",
                 semantic_index: 0,
                 buffer_index: 0,
@@ -672,17 +722,17 @@ const BASE_INPUT_LAYOUTS: [TigerInputLayout; 7] = [
 ];
 //endregion
 
-#[repr(C)]
-#[derive(Debug, Clone)]
-pub struct D3d11RasterizerDesc {
-    pub fill_mode: D3D12_FILL_MODE,
-    pub cull_mode: D3D12_CULL_MODE,
-    pub front_counter_clockwise: BOOL,
-    pub depth_bias: i32,
-    pub depth_bias_clamp: f32,
-    pub slope_scaled_depth_bias: f32,
-    pub depth_clip_enable: BOOL,
-    pub scissor_enable: BOOL,
-    pub multisample_enable: BOOL,
-    pub antialiased_line_enable: BOOL,
-}
+// #[repr(C)]
+// #[derive(Debug, Clone)]
+// pub struct D3d11RasterizerDesc {
+//     pub fill_mode: D3D12_FILL_MODE,
+//     pub cull_mode: D3D12_CULL_MODE,
+//     pub front_counter_clockwise: BOOL,
+//     pub depth_bias: i32,
+//     pub depth_bias_clamp: f32,
+//     pub slope_scaled_depth_bias: f32,
+//     pub depth_clip_enable: BOOL,
+//     pub scissor_enable: BOOL,
+//     pub multisample_enable: BOOL,
+//     pub antialiased_line_enable: BOOL,
+// }
