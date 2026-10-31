@@ -234,8 +234,9 @@ impl PipelineCache {
             .vertex_binding_descriptions(vertex_binding_descs)
             .vertex_attribute_descriptions(vertex_attribute_descs);
 
-        let input_assembly =
-            vk::PipelineInputAssemblyStateCreateInfo::default().topology(key.topology);
+        let input_assembly = vk::PipelineInputAssemblyStateCreateInfo::default()
+            .topology(key.topology)
+            .primitive_restart_enable(true);
 
         let viewports = [vk::Viewport::default()];
         let scissors = [vk::Rect2D::default()];
