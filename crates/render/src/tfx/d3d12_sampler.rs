@@ -1,7 +1,9 @@
+use std::hash::Hash;
+
 use ash::vk;
 
 #[repr(C)]
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct D3D12SamplerDesc {
     pub filter: D3D12Filter,
     pub address_u: D3D12TextureAddressMode,
@@ -40,8 +42,19 @@ impl D3D12SamplerDesc {
     }
 }
 
+impl Eq for D3D12SamplerDesc {}
+
+impl Hash for D3D12SamplerDesc {
+    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
+        let raw = unsafe {
+            std::slice::from_raw_parts((self as *const Self).cast::<u8>(), size_of::<Self>())
+        };
+        state.write(raw);
+    }
+}
+
 #[repr(i32)]
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, Hash, PartialEq, Eq)]
 pub enum D3D12ComparisonFunc {
     None = 0,
     Never = 1,
@@ -72,7 +85,7 @@ impl D3D12ComparisonFunc {
 
 #[repr(u32)]
 #[rustfmt::skip]
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, Hash, PartialEq)]
 pub enum D3D12Filter {
     MinMagMipPoint = 0x0,
     MinMagPointMipLinear = 0x1,
@@ -136,7 +149,7 @@ impl D3D12Filter {
 }
 
 #[repr(i32)]
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, PartialEq)]
 pub enum D3D12TextureAddressMode {
     Invalid = 0,
     Wrap = 1,

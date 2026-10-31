@@ -21,6 +21,7 @@ use std::{
     },
 };
 
+use ahash::HashMap;
 use anyhow::{Context, bail};
 use ash::{
     ext::{debug_utils, descriptor_buffer, memory_budget},
@@ -48,7 +49,7 @@ use crate::{
         magic_textures::MagicTextureContainer,
         pipeline_cache::PipelineCache,
     },
-    tfx::externs::BaseExternSource,
+    tfx::{d3d12_sampler::D3D12SamplerDesc, externs::BaseExternSource},
 };
 
 /// Result of presenting a swapchain image.
@@ -122,6 +123,8 @@ pub struct Gpu {
     // Per-frame stats
     pub num_drawcalls: AtomicUsize,
     pub num_static_instances: AtomicUsize,
+
+    pub(crate) sampler_cache: Mutex<HashMap<D3D12SamplerDesc, vk::Sampler>>,
 }
 
 unsafe impl Sync for Gpu {}
@@ -267,6 +270,9 @@ impl Gpu {
                         descriptor_buffer::NAME.as_ptr(),
                         memory_budget::NAME.as_ptr(),
                     ])
+                    .enabled_features(
+                        &vk::PhysicalDeviceFeatures::default().sampler_anisotropy(true),
+                    )
                     .push_next(
                         &mut vk::PhysicalDeviceVulkan11Features::default()
                             .shader_draw_parameters(true),
@@ -279,7 +285,9 @@ impl Gpu {
                             .vulkan_memory_model_device_scope(true),
                     )
                     .push_next(
-                        &mut vk::PhysicalDeviceVulkan13Features::default().dynamic_rendering(true),
+                        &mut vk::PhysicalDeviceVulkan13Features::default()
+                            .dynamic_rendering(true)
+                            .shader_demote_to_helper_invocation(true),
                     )
                     .push_next(
                         &mut vk::PhysicalDeviceExtendedDynamicStateFeaturesEXT::default()
@@ -292,6 +300,10 @@ impl Gpu {
                     .push_next(
                         &mut vk::PhysicalDeviceDynamicRenderingLocalReadFeaturesKHR::default()
                             .dynamic_rendering_local_read(true),
+                    )
+                    .push_next(
+                        &mut vk::PhysicalDevicePrimitiveTopologyListRestartFeaturesEXT::default()
+                            .primitive_topology_list_restart(true),
                     ),
                 None,
             )
@@ -486,6 +498,8 @@ impl Gpu {
 
             num_drawcalls: AtomicUsize::new(0),
             num_static_instances: AtomicUsize::new(0),
+
+            sampler_cache: Mutex::new(HashMap::default()),
         }
         .into())
     }

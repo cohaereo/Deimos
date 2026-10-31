@@ -330,6 +330,7 @@ impl DynamicCoreResources {
             &mut res.uavs,
         )?;
 
+        let mut sampler_cache = gpu.sampler_cache.lock();
         for (slot, tag) in sampler_tags {
             let sampler_entry = package_manager()
                 .get_entry(tag)
@@ -338,8 +339,11 @@ impl DynamicCoreResources {
                 .read_tag(sampler_entry.reference)
                 .context("reading sampler")?;
             let desc: D3D12SamplerDesc = unsafe { data.as_ptr().cast::<D3D12SamplerDesc>().read() };
-            res.samplers
-                .push((slot, unsafe { gpu.create_sampler(&desc.to_vk(), None)? }));
+            let sampler = sampler_cache
+                .entry(desc.clone())
+                .or_insert_with(|| unsafe { gpu.create_sampler(&desc.to_vk(), None).unwrap() });
+
+            res.samplers.push((slot, *sampler));
         }
 
         Ok(res)

@@ -8,4 +8,4 @@ pub mod externs;
 pub mod buffers;
 pub mod view;
 
-mod d3d12_sampler;
+pub(crate) mod d3d12_sampler;

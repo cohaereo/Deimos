@@ -113,7 +113,7 @@ impl Scene {
             show_channel_editor: false,
             only_show_used_channels: true,
             umbra_result: QueryErrorCode::Ok,
-            umbra_enabled: false,
+            umbra_enabled: true,
         })
     }
 
