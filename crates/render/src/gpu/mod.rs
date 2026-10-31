@@ -2,6 +2,7 @@ pub mod alloc;
 pub mod buffer;
 pub mod command_buffer;
 pub mod command_list;
+pub mod descriptor;
 pub mod device_iterator;
 pub mod fence;
 pub mod frame;
@@ -18,27 +19,34 @@ use std::{
         Arc,
         atomic::{AtomicBool, AtomicUsize, Ordering},
     },
-    time::Duration,
 };
 
 use anyhow::{Context, bail};
 use ash::{
     ext::{debug_utils, descriptor_buffer, memory_budget},
-    khr::{dynamic_rendering_local_read, surface, swapchain},
+    khr::{surface, swapchain},
     vk::{
         self, DebugUtilsMessageSeverityFlagsEXT, DebugUtilsMessageTypeFlagsEXT,
         DebugUtilsMessengerCallbackDataEXT, QueueFlags,
     },
 };
-use gpu_allocator::vulkan::{Allocator, AllocatorCreateDesc};
+use gpu_allocator::{
+    MemoryLocation,
+    vulkan::{Allocator, AllocatorCreateDesc},
+};
 use parking_lot::{Mutex, MutexGuard, RwLock};
 use raw_window_handle::{HasDisplayHandle, HasWindowHandle};
 use tracing::info;
 
 use crate::{
     gpu::{
-        command_buffer::CommandBuffer, fence::GpuFence, frame::FrameContext,
+        alloc::{ImageAllocDesc, image::Image},
+        command_buffer::CommandBuffer,
+        descriptor::DescriptorSizes,
+        fence::GpuFence,
+        frame::FrameContext,
         magic_textures::MagicTextureContainer,
+        pipeline_cache::PipelineCache,
     },
     tfx::externs::BaseExternSource,
 };
@@ -62,8 +70,6 @@ pub struct Gpu {
     pub surface_format: vk::SurfaceFormatKHR,
 
     allocator: Mutex<Allocator>,
-
-    swapchain_image_layouts: Mutex<Vec<vk::ImageLayout>>,
 
     image_available_semaphores: Vec<vk::Semaphore>,
     render_finished_semaphores: Vec<vk::Semaphore>,
@@ -89,6 +95,11 @@ pub struct Gpu {
     pub extern_source: RwLock<BaseExternSource>,
 
     pub magic_textures: MagicTextureContainer,
+    pub pipeline_cache: Mutex<PipelineCache>,
+    pub descriptor_sizes: DescriptorSizes,
+    pub default_sampler: vk::Sampler,
+    null_storage_image: Mutex<Option<(Image, vk::ImageView)>>,
+
     debug_messenger: Option<vk::DebugUtilsMessengerEXT>,
     pub swapchain_extent: vk::Extent2D,
 
@@ -203,6 +214,31 @@ impl Gpu {
             bail!("No graphics queue family found");
         };
 
+        let (descriptor_sizes, descriptor_offset_alignment) = {
+            let mut db_props = vk::PhysicalDeviceDescriptorBufferPropertiesEXT::default();
+            let mut properties = vk::PhysicalDeviceProperties2::default().push_next(&mut db_props);
+            unsafe {
+                instance.get_physical_device_properties2(physical_device, &mut properties);
+            }
+
+            if db_props.descriptor_buffer_offset_alignment == 0 {
+                bail!("VK_EXT_descriptor_buffer is not supported by the selected device");
+            }
+
+            (
+                DescriptorSizes {
+                    sampler: db_props.sampler_descriptor_size,
+                    sampled_image: db_props.sampled_image_descriptor_size,
+                    storage_image: db_props.storage_image_descriptor_size,
+                    uniform_texel_buffer: db_props.uniform_texel_buffer_descriptor_size,
+                    storage_texel_buffer: db_props.storage_texel_buffer_descriptor_size,
+                    uniform_buffer: db_props.uniform_buffer_descriptor_size,
+                    storage_buffer: db_props.storage_buffer_descriptor_size,
+                },
+                db_props.descriptor_buffer_offset_alignment,
+            )
+        };
+
         let device = unsafe {
             instance.create_device(
                 physical_device,
@@ -220,7 +256,11 @@ impl Gpu {
                             .shader_draw_parameters(true),
                     )
                     .push_next(
-                        &mut vk::PhysicalDeviceVulkan12Features::default().timeline_semaphore(true),
+                        &mut vk::PhysicalDeviceVulkan12Features::default()
+                            .timeline_semaphore(true)
+                            .buffer_device_address(true)
+                            .vulkan_memory_model(true)
+                            .vulkan_memory_model_device_scope(true),
                     )
                     .push_next(
                         &mut vk::PhysicalDeviceVulkan13Features::default().dynamic_rendering(true),
@@ -230,8 +270,8 @@ impl Gpu {
                             .extended_dynamic_state(true),
                     )
                     .push_next(
-                        &mut vk::PhysicalDeviceBufferDeviceAddressFeaturesEXT::default()
-                            .buffer_device_address(true),
+                        &mut vk::PhysicalDeviceDescriptorBufferFeaturesEXT::default()
+                            .descriptor_buffer(true),
                     )
                     .push_next(
                         &mut vk::PhysicalDeviceDynamicRenderingLocalReadFeaturesKHR::default()
@@ -242,6 +282,20 @@ impl Gpu {
         }?;
 
         let debug_loader = debug_utils::Device::new(&instance, &device);
+
+        let default_sampler = unsafe {
+            device.create_sampler(
+                &vk::SamplerCreateInfo::default()
+                    .mag_filter(vk::Filter::NEAREST)
+                    .min_filter(vk::Filter::NEAREST)
+                    .mipmap_mode(vk::SamplerMipmapMode::NEAREST)
+                    .address_mode_u(vk::SamplerAddressMode::CLAMP_TO_EDGE)
+                    .address_mode_v(vk::SamplerAddressMode::CLAMP_TO_EDGE)
+                    .address_mode_w(vk::SamplerAddressMode::CLAMP_TO_EDGE)
+                    .max_lod(0.0),
+                None,
+            )
+        }?;
 
         let queue = unsafe { device.get_device_queue(graphics_queue_family_idx as u32, 0) };
 
@@ -396,9 +450,6 @@ impl Gpu {
         let upload_command_buffer_fence =
             unsafe { device.create_fence(&vk::FenceCreateInfo::default(), None)? };
 
-        let swapchain_image_layouts =
-            Mutex::new(vec![vk::ImageLayout::UNDEFINED; swapchain_images.len()]);
-
         let allocator = Allocator::new(&AllocatorCreateDesc {
             instance: instance.clone(),
             device: device.clone(),
@@ -448,7 +499,6 @@ impl Gpu {
             swapchain_images,
             swapchain_image_views,
             surface_format,
-            swapchain_image_layouts,
             image_available_semaphores,
 
             allocator: allocator.into(),
@@ -464,8 +514,12 @@ impl Gpu {
             upload_command_buffer_fence,
 
             frames: std::array::from_fn(|_| {
-                FrameContext::new(device.clone(), upload_memory_type_index)
-                    .expect("Failed to create frame context")
+                FrameContext::new(
+                    device.clone(),
+                    upload_memory_type_index,
+                    descriptor_offset_alignment,
+                )
+                .expect("Failed to create frame context")
             }),
             frame_index: AtomicUsize::new(0),
             frame_fence: GpuFence::new(&device)?,
@@ -474,6 +528,10 @@ impl Gpu {
 
             extern_source: RwLock::new(BaseExternSource::None),
             magic_textures: MagicTextureContainer::default(),
+            pipeline_cache: Mutex::new(PipelineCache::new(device.clone())),
+            descriptor_sizes,
+            default_sampler,
+            null_storage_image: Mutex::new(None),
 
             debug_messenger,
 
@@ -483,8 +541,58 @@ impl Gpu {
         .into())
     }
 
-    pub fn swapchain_resolution(&self) -> (u32, u32) {
+    pub const fn swapchain_resolution(&self) -> (u32, u32) {
         (self.swapchain_extent.width, self.swapchain_extent.height)
+    }
+
+    pub fn null_storage_image_view(self: &Arc<Self>) -> vk::ImageView {
+        let mut lock = self.null_storage_image.lock();
+        if let Some((_, view)) = lock.as_ref() {
+            return *view;
+        }
+
+        let image = self
+            .alloc_image(&ImageAllocDesc {
+                name: "null_storage_image",
+                image_type: vk::ImageType::TYPE_2D,
+                format: vk::Format::R8G8B8A8_UNORM,
+                extent: vk::Extent3D {
+                    width: 1,
+                    height: 1,
+                    depth: 1,
+                },
+                mip_levels: 1,
+                array_layers: 1,
+                samples: vk::SampleCountFlags::TYPE_1,
+                tiling: vk::ImageTiling::OPTIMAL,
+                usage: vk::ImageUsageFlags::STORAGE
+                    | vk::ImageUsageFlags::SAMPLED
+                    | vk::ImageUsageFlags::TRANSFER_DST,
+                sharing_mode: vk::SharingMode::EXCLUSIVE,
+                initial_layout: vk::ImageLayout::GENERAL,
+                location: MemoryLocation::GpuOnly,
+            })
+            .expect("Failed to create null storage image");
+
+        let view = unsafe {
+            self.create_image_view(
+                &vk::ImageViewCreateInfo::default()
+                    .image(image.vk_image())
+                    .view_type(vk::ImageViewType::TYPE_2D)
+                    .format(vk::Format::R8G8B8A8_UNORM)
+                    .subresource_range(
+                        vk::ImageSubresourceRange::default()
+                            .aspect_mask(vk::ImageAspectFlags::COLOR)
+                            .layer_count(1)
+                            .level_count(1),
+                    ),
+                None,
+            )
+        }
+        .expect("Failed to create null storage image view");
+
+        *lock = Some((image, view));
+        view
     }
 
     pub fn current_command_buffer(self: &Arc<Self>) -> CommandBuffer {

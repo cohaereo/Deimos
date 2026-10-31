@@ -145,35 +145,57 @@ impl SceneRenderer {
             .transition(cmd, IMAGE_STATE_DEPTH_ATTACHMENT);
         self.main_view.gbuffer.clear(cmd);
         // self.main_view.gbuffer.bind(cmd);
+        cmd.set_render_target_formats(
+            &[
+                self.main_view.gbuffer.albedo.output_format(),
+                self.main_view.gbuffer.normal.output_format(),
+                self.main_view.gbuffer.rt3.output_format(),
+                self.main_view.gbuffer.rt4.output_format(),
+            ],
+            Some(self.main_view.gbuffer.depth.output_format()),
+        );
+
+        {
+            let resolution = self.main_view.gbuffer.albedo.resolution();
+            cmd.set_viewports(&[vk::Viewport::default()
+                .width(resolution.0 as f32)
+                .height(resolution.1 as f32)
+                .max_depth(1.0)]);
+            cmd.set_scissor_rects(&[vk::Rect2D::default().extent(vk::Extent2D {
+                width: resolution.0,
+                height: resolution.1,
+            })]);
+        }
+
         cmd.begin_rendering(
             self.main_view.gbuffer.albedo.resolution(),
             &[
                 vk::RenderingAttachmentInfo::default()
                     .image_view(self.main_view.gbuffer.albedo.view())
                     .image_layout(vk::ImageLayout::COLOR_ATTACHMENT_OPTIMAL)
-                    .load_op(vk::AttachmentLoadOp::DONT_CARE)
+                    .load_op(vk::AttachmentLoadOp::LOAD)
                     .store_op(vk::AttachmentStoreOp::STORE),
                 vk::RenderingAttachmentInfo::default()
                     .image_view(self.main_view.gbuffer.normal.view())
                     .image_layout(vk::ImageLayout::COLOR_ATTACHMENT_OPTIMAL)
-                    .load_op(vk::AttachmentLoadOp::DONT_CARE)
+                    .load_op(vk::AttachmentLoadOp::LOAD)
                     .store_op(vk::AttachmentStoreOp::STORE),
                 vk::RenderingAttachmentInfo::default()
                     .image_view(self.main_view.gbuffer.rt3.view())
                     .image_layout(vk::ImageLayout::COLOR_ATTACHMENT_OPTIMAL)
-                    .load_op(vk::AttachmentLoadOp::DONT_CARE)
+                    .load_op(vk::AttachmentLoadOp::LOAD)
                     .store_op(vk::AttachmentStoreOp::STORE),
                 vk::RenderingAttachmentInfo::default()
                     .image_view(self.main_view.gbuffer.rt4.view())
                     .image_layout(vk::ImageLayout::COLOR_ATTACHMENT_OPTIMAL)
-                    .load_op(vk::AttachmentLoadOp::DONT_CARE)
+                    .load_op(vk::AttachmentLoadOp::LOAD)
                     .store_op(vk::AttachmentStoreOp::STORE),
             ],
             Some(
                 &vk::RenderingAttachmentInfo::default()
                     .image_view(self.main_view.gbuffer.depth.view())
                     .image_layout(vk::ImageLayout::DEPTH_ATTACHMENT_OPTIMAL)
-                    .load_op(vk::AttachmentLoadOp::DONT_CARE)
+                    .load_op(vk::AttachmentLoadOp::LOAD)
                     .store_op(vk::AttachmentStoreOp::STORE),
             ),
         );
@@ -220,6 +242,7 @@ impl SceneRenderer {
             cmd.flush_states();
             self.submit_stage(cmd, view, RenderStage::GenerateGbuffer);
         }
+        cmd.end_rendering();
 
         // {
         //     let view = &self.frame_packet.views[ShadedView::MAIN_VIEW_ID];

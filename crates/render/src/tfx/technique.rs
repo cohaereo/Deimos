@@ -3,22 +3,27 @@ use std::sync::Arc;
 use ahash::AHashMap;
 use anyhow::Context;
 use ash::vk;
-use deimos_data::tfx::{STechnique, STechniqueStage, ShaderStage};
+use deimos_data::tfx::{STechnique, STechniqueStage, ShaderStage, TechniqueBindMode};
 use deimos_ecs::object::ObjectChannel;
-use smallvec::SmallVec;
+use dxil2spirv::{SlotType, SlotUsage};
 use tiger_parse::PackageManagerExt;
 use tiger_pkg::{TagHash, package_manager};
 
 use crate::{
     asset::AssetManager,
-    gpu::{Gpu, command_list::CommandList},
+    gpu::{
+        Gpu,
+        command_list::{CommandList, ConstantBufferView},
+        descriptor::DescriptorWriter,
+        pipeline_cache::{PipelineKey, ShaderInfo, TechniqueLayout},
+    },
     tfx::{dynamic_core::DynamicCore, scope::ShaderStageExt},
 };
 
 pub struct Technique {
-    gpu: Arc<Gpu>,
     pub tag: TagHash,
     pub data: STechnique,
+    pub layout: TechniqueLayout,
     stage_vertex: TechniqueStage,
     stage_pixel: TechniqueStage,
 }
@@ -33,7 +38,7 @@ impl Technique {
             .read_tag_struct(hash)
             .context("Failed to read technique data")?;
 
-        let mut stage_vertex = TechniqueStage::new(
+        let stage_vertex = TechniqueStage::new(
             asset_manager,
             gpu,
             &data,
@@ -42,7 +47,7 @@ impl Technique {
         )
         .context("while loading vertex stage")?;
 
-        let mut stage_pixel = TechniqueStage::new(
+        let stage_pixel = TechniqueStage::new(
             asset_manager,
             gpu,
             &data,
@@ -51,10 +56,16 @@ impl Technique {
         )
         .context("while loading pixel stage")?;
 
+        let layout = gpu
+            .pipeline_cache
+            .lock()
+            .get_or_create_layout(data.shader_vertex.shader, data.shader_pixel.shader)
+            .context("while creating technique descriptor layout")?;
+
         Ok(Box::new(Self {
-            gpu: gpu.clone(),
             tag: hash,
             data,
+            layout,
             stage_vertex,
             stage_pixel,
         }))
@@ -73,7 +84,170 @@ impl Technique {
         cmd: &mut CommandList,
         object_channels: Option<&AHashMap<u32, ObjectChannel>>,
     ) {
-        // todo!()
+        let _span = info_span!("Technique::bind", tag = %self.tag).entered();
+
+        if !matches!(
+            self.data.bind_mode,
+            TechniqueBindMode::VertexOnly | TechniqueBindMode::VertexPixel
+        ) {
+            error!("{:?} bind mode not implemented", self.data.bind_mode);
+            return;
+        }
+
+        for stage in self.all_stages() {
+            if let Err(e) = stage.core.prepare(cmd, object_channels) {
+                error!("Failed to prepare technique stage: {}", e);
+                return;
+            }
+        }
+
+        let gpu = cmd.gpu().clone();
+        let fixed_function_state = cmd
+            .cmd_state()
+            .ffstate
+            .select(&self.data.states)
+            .select(&cmd.cmd_state().ffstate_override);
+
+        let pipeline_key = PipelineKey {
+            vertex_shader: self.data.shader_vertex.shader,
+            pixel_shader: self.data.shader_pixel.shader,
+            depth_mode: cmd.depth_mode(),
+            fixed_function_state,
+            topology: cmd.current_topology(),
+            input_layout: cmd.get_input_layout() as u8,
+            color_formats: cmd.color_attachment_formats().to_vec(),
+            depth_format: cmd.depth_attachment_format(),
+        };
+
+        let layout = self.layout;
+        let pipeline = {
+            let mut cache = gpu.pipeline_cache.lock();
+            match cache.get_or_create(&pipeline_key) {
+                Ok(pipeline) => pipeline,
+                Err(e) => {
+                    error!("Failed to create pipeline: {e:?}");
+                    return;
+                }
+            }
+        };
+
+        let mut offsets = [0u64; 8];
+        for (set_index, set_layout) in layout.set_layouts.iter().enumerate() {
+            let size = unsafe {
+                gpu.descriptor_buffer
+                    .get_descriptor_set_layout_size(*set_layout)
+            };
+            if size == 0 {
+                continue;
+            }
+
+            let offset = match gpu.frame().descriptors.alloc(size) {
+                Ok(offset) => offset,
+                Err(e) => {
+                    error!("Failed to allocate descriptor set: {e:?}");
+                    return;
+                }
+            };
+            offsets[set_index] = offset as vk::DeviceSize;
+
+            let stage = if set_index < 4 {
+                &self.stage_vertex
+            } else {
+                &self.stage_pixel
+            };
+            self.write_set(
+                &gpu,
+                stage,
+                (set_index % 4) as u32,
+                *set_layout,
+                gpu.frame().descriptors.ptr_at(offset),
+                cmd,
+            );
+        }
+
+        cmd.bind_descriptor_buffer();
+        cmd.set_descriptor_buffer_offsets(layout.pipeline_layout, 0, &layout.set_layouts, &offsets);
+        cmd.bind_pipeline(pipeline);
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    fn write_set(
+        &self,
+        gpu: &Arc<Gpu>,
+        stage: &TechniqueStage,
+        set_kind: u32,
+        set_layout: vk::DescriptorSetLayout,
+        ptr: *mut u8,
+        cmd: &CommandList,
+    ) {
+        let writer = DescriptorWriter::new(gpu.clone(), set_layout, ptr);
+        let slots = &stage.shader_info.slots;
+        let resources = cmd.resources(stage.shader_stage);
+
+        match set_kind {
+            dxil2spirv::SET_CBV => {
+                for slot in SlotUsage::iter_mask(slots.cbv) {
+                    writer.write_uniform_buffer(
+                        slot,
+                        resources.get_shader_constant_buffer_view(slot),
+                    );
+                }
+            }
+            dxil2spirv::SET_SRV => {
+                for slot in SlotUsage::iter_mask(slots.srv) {
+                    match slots.srv_types[slot as usize] {
+                        SlotType::UniformTexelBuffer => {
+                            writer.write_uniform_texel_buffer(slot, resources.get_srv_buffer(slot))
+                        }
+                        SlotType::StorageTexelBuffer => {
+                            writer.write_storage_texel_buffer(slot, resources.get_srv_buffer(slot))
+                        }
+                        SlotType::StorageBuffer => {
+                            let buffer = resources.get_srv_buffer(slot);
+                            writer.write_storage_buffer(
+                                slot,
+                                buffer.map(|b| ConstantBufferView {
+                                    addr: b.addr,
+                                    size: b.size,
+                                }),
+                            );
+                        }
+                        _ => writer
+                            .write_sampled_image(slot, resources.get_shader_resource_view(slot)),
+                    }
+                }
+            }
+            dxil2spirv::SET_SAMPLER => {
+                for slot in SlotUsage::iter_mask(slots.sampler) {
+                    writer.write_sampler(slot, resources.get_sampler(slot));
+                }
+            }
+            dxil2spirv::SET_UAV => {
+                for slot in SlotUsage::iter_mask(slots.uav) {
+                    match slots.uav_types[slot as usize] {
+                        SlotType::StorageBuffer => {
+                            let buffer = resources.get_uav_buffer(slot);
+                            writer.write_storage_buffer(
+                                slot,
+                                buffer.map(|b| ConstantBufferView {
+                                    addr: b.addr,
+                                    size: b.size,
+                                }),
+                            );
+                        }
+                        SlotType::StorageTexelBuffer => {
+                            writer.write_storage_texel_buffer(slot, resources.get_uav_buffer(slot))
+                        }
+                        _ => writer.write_storage_image(
+                            slot,
+                            resources.get_unordered_access_view(slot),
+                            vk::ImageLayout::GENERAL,
+                        ),
+                    }
+                }
+            }
+            _ => {}
+        }
     }
 
     pub const fn all_stages(&self) -> [&TechniqueStage; 2] {
@@ -90,129 +264,41 @@ impl Technique {
 pub struct TechniqueStage {
     pub core: DynamicCore,
     pub stage: vk::ShaderStageFlags,
+    pub shader_stage: ShaderStage,
+    pub shader_info: ShaderInfo,
 
     /// Does this stage have any textures bound outside of the technique's expressions?
     pub has_manual_textures: bool,
-    // pub srv_root_param_index: u32,
-    // pub descriptor_count: usize,
-}
-
-pub struct TechniqueCbufferSlot {
-    pub register: u8,
-    pub rs_slot: u8,
-}
-
-pub struct TechniqueResourceSlot {
-    pub register: u8,
-    pub descriptor_offset: u8,
-    _is_static: bool,
 }
 
 impl TechniqueStage {
     pub fn new(
         asset_manager: &Arc<AssetManager>,
         gpu: &Arc<Gpu>,
-        // rsb: &mut d3d12::RootSignatureBuilder<'_>,
-        technique_data: &STechnique,
+        _technique_data: &STechnique,
         stage: STechniqueStage,
         shader_stage: ShaderStage,
     ) -> anyhow::Result<Self> {
-        // let resources = if let Ok(bytecode) =
-        //     gpu.pipeline_cache.lock().get_or_load_bytecode(stage.shader)
-        //     && let Some(parsed_resources) = d3d12::ext::parse_psv0_resources(&bytecode)
-        // {
-        //     parsed_resources
-        // } else {
-        //     vec![]
-        // };
+        let shader_info = gpu
+            .pipeline_cache
+            .lock()
+            .get_or_load_bytecode(stage.shader, shader_stage)
+            .context("loading shader bytecode")?;
 
         let core = DynamicCore::new(gpu, asset_manager, stage.core, shader_stage)?;
 
-        let mut has_manual_textures = false;
-        // for res in &resources {
-        //     if matches!(
-        //         res.res_type,
-        //         PsvResourceType::SRVTyped
-        //             | PsvResourceType::SRVRaw
-        //             | PsvResourceType::SRVStructured,
-        //     ) && !core
-        //         .textures
-        //         .iter()
-        //         .any(|(slot, _)| *slot == res.lower_bound)
-        //     {
-        //         has_manual_textures = true;
-        //         break;
-        //     }
-        // }
-
-        // for scopes in technique_data.used_scopes.iter() {
-        //     let index = scopes.bits().ilog2();
-        //     let scope = get_scope_samplers(index);
-        //     if let Some(scope_stage) = scope.stage_by_visibility(shader_stage.shader_visibility()) {
-        //         for sampler in &scope_stage.core.samplers {
-        //             rsb.add_sampler(sampler.clone());
-        //         }
-        //     }
-        // }
-
-        // for sampler in &core.samplers {
-        //     rsb.add_sampler(sampler.clone());
-        // }
-
-        // let mut root_cbuffer_slots = SmallVec::new();
-        // let mut root_texture_slots = SmallVec::new();
-
-        // let mut descriptor_ranges = vec![];
-        // let mut descriptor_offset = 0;
-        // for resource in &resources {
-        //     match resource.res_type {
-        //         d3d12::ext::PsvResourceType::SRVTyped
-        //         | d3d12::ext::PsvResourceType::SRVRaw
-        //         | d3d12::ext::PsvResourceType::SRVStructured => {
-        //             let range = d3d12::DescriptorRange {
-        //                 range_type: d3d12::DescriptorRangeType::Srv,
-        //                 num_descriptors: 1,
-        //                 base_shader_register: resource.lower_bound,
-        //                 register_space: 0,
-        //                 offset_in_descriptors_from_table_start: descriptor_offset,
-        //             };
-        //             debug_assert!(descriptor_offset <= 0xff);
-        //             debug_assert!(resource.lower_bound <= 0xff);
-
-        //             let is_static = core.textures.iter().any(|(slot, src)| {
-        //                 *slot == resource.lower_bound
-        //                     && matches!(src, ResolvedTextureSource::Static(_))
-        //             });
-        //             root_texture_slots.push(TechniqueResourceSlot {
-        //                 descriptor_offset: descriptor_offset as u8,
-        //                 register: resource.lower_bound as u8,
-        //                 _is_static: is_static,
-        //             });
-        //             descriptor_offset += 1;
-        //             descriptor_ranges.push(range);
-        //         }
-        //         d3d12::ext::PsvResourceType::CBV => {
-        //             let rs_index = rsb.add_param(
-        //                 d3d12::RootParameter::CbvDescriptor {
-        //                     shader_register: resource.lower_bound,
-        //                     register_space: 0,
-        //                 },
-        //                 shader_stage.shader_visibility(),
-        //             );
-        //             debug_assert!(rs_index <= 0xff);
-        //             debug_assert!(resource.lower_bound <= 0xff);
-        //             root_cbuffer_slots.push(TechniqueCbufferSlot {
-        //                 register: resource.lower_bound as u8,
-        //                 rs_slot: rs_index as u8,
-        //             });
-        //         }
-        //         _ => {}
-        //     }
-        // }
+        let has_manual_textures = SlotUsage::iter_mask(shader_info.slots.srv).any(|slot| {
+            !core
+                .textures
+                .iter()
+                .any(|(core_slot, _)| *core_slot == slot)
+        });
 
         Ok(Self {
             core,
             stage: shader_stage.vk_shader_stage_flags(),
+            shader_stage,
+            shader_info,
             has_manual_textures,
         })
     }
@@ -221,9 +307,11 @@ impl TechniqueStage {
     pub fn bind(
         &self,
         cmd: &mut CommandList,
-        full_rebind: bool,
+        _full_rebind: bool,
         object_channels: Option<&AHashMap<u32, ObjectChannel>>,
     ) {
-        // cmd.gpu().descriptor_buffer.cmd_bind_descriptor_buffers(command_buffer, binding_info);
+        if let Err(e) = self.core.prepare(cmd, object_channels) {
+            error!("Failed to prepare technique stage: {}", e);
+        }
     }
 }

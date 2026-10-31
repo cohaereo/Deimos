@@ -134,13 +134,30 @@ impl From<Handle<Texture>> for TextureView {
 pub enum Uav {
     #[default]
     None,
+    View(vk::ImageView),
     // Surface(SurfaceHandle),
+}
+
+impl Uav {
+    pub const fn get_uav(&self) -> Option<vk::ImageView> {
+        match self {
+            Self::None => None,
+            Self::View(view) => Some(*view),
+        }
+    }
+}
+
+impl From<vk::ImageView> for Uav {
+    fn from(value: vk::ImageView) -> Self {
+        Self::View(value)
+    }
 }
 
 impl Debug for Uav {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             Self::None => write!(f, "None"),
+            Self::View(view) => write!(f, "View({view:?})"),
             // Uav::Surface(surface) => write!(f, "Surface({surface:?})"),
         }
     }

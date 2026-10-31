@@ -426,18 +426,19 @@ fn tiger_input_layout_to_vk(
         num_buffers as usize
     ];
 
-    for element in elements {
+    for (location, element) in elements.iter().enumerate() {
+        let buffer = &mut buffers[element.buffer_index as usize];
         attributes.push(vk::VertexInputAttributeDescription {
-            location: element.buffer_index,
-            binding: buffers[element.buffer_index as usize].element_count,
+            location: location as u32,
+            binding: element.buffer_index,
             format: element.format,
-            offset: buffers[element.buffer_index as usize].stride,
+            offset: buffer.stride,
         });
 
-        buffers[element.buffer_index as usize].element_count += 1;
-        buffers[element.buffer_index as usize].stride += element.stride;
+        buffer.element_count += 1;
+        buffer.stride += element.stride;
         if element.is_instance_data {
-            buffers[element.buffer_index as usize].is_instanced = true;
+            buffer.is_instanced = true;
         }
     }
 

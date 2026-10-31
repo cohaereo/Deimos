@@ -19,10 +19,16 @@ pub struct UploadHeap {
 impl UploadHeap {
     const BLOCK_ALIGNMENT: usize = 256;
 
+    /// Extra padding applied as workaround to a `VK_ERROR_OUT_OF_DEVICE_MEMORY` issue with renderdoc
+    const ALLOCATION_PADDING: u64 = 64 * 1024;
+
     pub fn new(device: ash::Device, memory_type_index: u32, capacity: u64) -> anyhow::Result<Self> {
         unsafe {
+            let mut allocate_flags = vk::MemoryAllocateFlagsInfo::default()
+                .flags(vk::MemoryAllocateFlags::DEVICE_ADDRESS);
             let allocate_info = vk::MemoryAllocateInfo::default()
-                .allocation_size(capacity)
+                .push_next(&mut allocate_flags)
+                .allocation_size(capacity + Self::ALLOCATION_PADDING)
                 .memory_type_index(memory_type_index);
             let device_memory = device.allocate_memory(&allocate_info, None)?;
             let buffer = device.create_buffer(

@@ -1,4 +1,5 @@
 pub mod buffer;
+pub mod descriptor;
 mod guard;
 pub mod image;
 pub mod upload;

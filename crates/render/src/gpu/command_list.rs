@@ -26,8 +26,13 @@ pub struct CommandList {
     pub(super) current_input_layout: usize,
     // pub(super) current_input_topology: usize,
     pub(super) current_stencil_ref: u32,
+    pub(super) current_topology: vk::PrimitiveTopology,
     pub(super) bound_technique: TagHash,
     smart_rebind: bool,
+
+    descriptor_buffer_bound: bool,
+    current_color_formats: Vec<vk::Format>,
+    current_depth_format: Option<vk::Format>,
 
     pub externs: LocalExternContainer,
 
@@ -61,10 +66,14 @@ impl CommandList {
             current_input_layout: usize::MAX,
             current_rasterizer_state: usize::MAX,
             current_depth_bias: usize::MAX,
-            // current_input_topology: usize::MAX,
+            current_topology: vk::PrimitiveTopology::TRIANGLE_LIST,
             current_stencil_ref: 0,
             smart_rebind: false,
             bound_technique: TagHash::NONE,
+
+            descriptor_buffer_bound: false,
+            current_color_formats: Vec::new(),
+            current_depth_format: None,
 
             tag: None,
         }
@@ -182,6 +191,52 @@ impl CommandList {
         self.current_input_layout
     }
 
+    pub fn bind_descriptor_buffer(&mut self) {
+        if self.descriptor_buffer_bound {
+            return;
+        }
+
+        let binding_info = self.gpu.frame().descriptors.binding_info();
+        unsafe {
+            self.gpu
+                .descriptor_buffer
+                .cmd_bind_descriptor_buffers(*self.cmd, std::slice::from_ref(&binding_info));
+        }
+        self.descriptor_buffer_bound = true;
+    }
+
+    pub fn set_descriptor_buffer_offsets(
+        &self,
+        pipeline_layout: vk::PipelineLayout,
+        first_set: u32,
+        layouts: &[vk::DescriptorSetLayout],
+        offsets: &[vk::DeviceSize],
+    ) {
+        debug_assert_eq!(layouts.len(), offsets.len());
+        debug_assert!(layouts.len() <= 8);
+
+        let buffer_indices = [0u32; 8];
+        unsafe {
+            self.gpu
+                .descriptor_buffer
+                .cmd_set_descriptor_buffer_offsets(
+                    *self.cmd,
+                    vk::PipelineBindPoint::GRAPHICS,
+                    pipeline_layout,
+                    first_set,
+                    &buffer_indices[..layouts.len()],
+                    offsets,
+                );
+        }
+    }
+
+    pub fn bind_pipeline(&self, pipeline: vk::Pipeline) {
+        unsafe {
+            self.gpu
+                .cmd_bind_pipeline(*self.cmd, vk::PipelineBindPoint::GRAPHICS, pipeline);
+        }
+    }
+
     /// Applies a one-time fixed function state override
     pub const fn apply_ffstate(&mut self, states: &FixedFunctionState) {
         if let Some(u) = states.blend_state() {
@@ -199,16 +254,15 @@ impl CommandList {
     }
 
     pub fn set_input_topology(&mut self, topology: PrimitiveType) {
-        // if self.current_input_topology != topology as usize {
-        self.cmd.set_primitive_topology(match topology {
+        let topology = match topology {
             PrimitiveType::PointList => vk::PrimitiveTopology::POINT_LIST,
             PrimitiveType::LineList => vk::PrimitiveTopology::LINE_LIST,
             PrimitiveType::LineStrip => vk::PrimitiveTopology::LINE_STRIP,
             PrimitiveType::Triangles => vk::PrimitiveTopology::TRIANGLE_LIST,
             PrimitiveType::TriangleStrip => vk::PrimitiveTopology::TRIANGLE_STRIP,
-        });
-        //     self.current_input_topology = topology as usize;
-        // }
+        };
+        self.current_topology = topology;
+        self.cmd.set_primitive_topology(topology);
     }
 
     #[deprecated(note = "This method bypasses the pipeline state, use set_input_topology instead")]
@@ -310,6 +364,75 @@ impl CommandList {
         }
     }
 
+    pub fn set_shader_sampler(
+        &mut self,
+        stage: ShaderStage,
+        slot: u32,
+        sampler: Option<vk::Sampler>,
+    ) {
+        if let Some(slot_mut) = self.resources_mut(stage).samplers.get_mut(slot as usize) {
+            *slot_mut = sampler;
+        }
+    }
+
+    pub fn set_unordered_access_view(
+        &mut self,
+        stage: ShaderStage,
+        slot: u32,
+        view: Option<vk::ImageView>,
+    ) {
+        if let Some(slot_mut) = self.resources_mut(stage).uavs.get_mut(slot as usize) {
+            *slot_mut = view;
+        }
+    }
+
+    pub fn set_shader_resource_buffer(
+        &mut self,
+        stage: ShaderStage,
+        slot: u32,
+        buffer: Option<BufferResource>,
+    ) {
+        if let Some(slot_mut) = self.resources_mut(stage).srv_buffers.get_mut(slot as usize) {
+            *slot_mut = buffer;
+        }
+    }
+
+    pub fn set_unordered_access_buffer(
+        &mut self,
+        stage: ShaderStage,
+        slot: u32,
+        buffer: Option<BufferResource>,
+    ) {
+        if let Some(slot_mut) = self.resources_mut(stage).uav_buffers.get_mut(slot as usize) {
+            *slot_mut = buffer;
+        }
+    }
+
+    /// Sets the attachment formats for the current rendering pass
+    ///
+    /// These are compiled into the graphics pipeline, techniques need to know them before creating a pipeline
+    pub fn set_render_target_formats(
+        &mut self,
+        color_formats: &[vk::Format],
+        depth_format: Option<vk::Format>,
+    ) {
+        self.current_color_formats.clear();
+        self.current_color_formats.extend_from_slice(color_formats);
+        self.current_depth_format = depth_format;
+    }
+
+    pub const fn color_attachment_formats(&self) -> &[vk::Format] {
+        self.current_color_formats.as_slice()
+    }
+
+    pub const fn depth_attachment_format(&self) -> Option<vk::Format> {
+        self.current_depth_format
+    }
+
+    pub const fn current_topology(&self) -> vk::PrimitiveTopology {
+        self.current_topology
+    }
+
     /// Rebinds techniques even if they are already bound
     pub const fn disable_smart_technique_binding(&mut self) {
         self.smart_rebind = false;
@@ -371,10 +494,23 @@ pub struct ConstantBufferView {
     pub size: u64,
 }
 
+/// A buffer-backed resource (uniform/storage texel buffer or storage buffer).
+#[derive(Debug, Clone, Copy)]
+pub struct BufferResource {
+    pub view: vk::BufferView,
+    pub addr: vk::DeviceAddress,
+    pub size: u64,
+    pub format: vk::Format,
+}
+
 #[derive(Default, Clone)]
 pub struct StageResources {
     pub srvs: [Option<vk::ImageView>; 32],
-    pub cbvs: [Option<ConstantBufferView>; 16],
+    pub cbvs: [Option<ConstantBufferView>; 32],
+    pub samplers: [Option<vk::Sampler>; 32],
+    pub uavs: [Option<vk::ImageView>; 32],
+    pub srv_buffers: [Option<BufferResource>; 32],
+    pub uav_buffers: [Option<BufferResource>; 32],
 }
 
 impl StageResources {
@@ -385,6 +521,22 @@ impl StageResources {
     pub fn get_shader_constant_buffer_view(&self, slot: u32) -> Option<ConstantBufferView> {
         let view = self.cbvs.get(slot as usize).cloned().flatten()?;
         if view.addr == 0 { None } else { Some(view) }
+    }
+
+    pub fn get_sampler(&self, slot: u32) -> Option<vk::Sampler> {
+        self.samplers.get(slot as usize).cloned().flatten()
+    }
+
+    pub fn get_unordered_access_view(&self, slot: u32) -> Option<vk::ImageView> {
+        self.uavs.get(slot as usize).cloned().flatten()
+    }
+
+    pub fn get_srv_buffer(&self, slot: u32) -> Option<BufferResource> {
+        self.srv_buffers.get(slot as usize).cloned().flatten()
+    }
+
+    pub fn get_uav_buffer(&self, slot: u32) -> Option<BufferResource> {
+        self.uav_buffers.get(slot as usize).cloned().flatten()
     }
 }
 

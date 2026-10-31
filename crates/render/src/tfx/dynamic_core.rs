@@ -27,12 +27,19 @@ use crate::{
                 ExpressionDataSource, Opcode, OpcodeIterator, get_data_access_from_bytecode,
             },
         },
-        externs::{ExternAccessorExt, TextureView},
+        externs::{ExternAccessorExt, TextureView, Uav},
     },
 };
 
 pub enum ResolvedTextureSource {
     Static(Handle<Texture>),
+    Dynamic {
+        extern_index: ExternIndex,
+        offset: u32,
+    },
+}
+
+pub enum UavSource {
     Dynamic {
         extern_index: ExternIndex,
         offset: u32,
@@ -51,6 +58,7 @@ pub struct DynamicCore {
 
     pub samplers: Vec<(u32, vk::Sampler)>,
     pub textures: Vec<(u32, ResolvedTextureSource)>,
+    pub uavs: Vec<(u32, UavSource)>,
     has_dynamic_textures: bool,
 
     pub initial_constants: Vec<Vec4>,
@@ -71,6 +79,7 @@ impl DynamicCore {
             data,
             samplers: Vec::new(),
             textures: Vec::new(),
+            uavs: Vec::new(),
             initial_constants: Vec::new(),
             cbuffer_size: 0,
             data_sources: ExpressionDataSource::empty(),
@@ -79,6 +88,7 @@ impl DynamicCore {
 
         let mut resources = DynamicCoreResources::extract(gpu, &core.data, stage)?;
         std::mem::swap(&mut resources.samplers, &mut core.samplers);
+        std::mem::swap(&mut resources.uavs, &mut core.uavs);
 
         for (slot, t) in resources.textures {
             match t {
@@ -190,6 +200,27 @@ impl DynamicCore {
             );
         }
 
+        for (slot, sampler) in self.samplers.iter() {
+            cmd.set_shader_sampler(self.stage, *slot, Some(*sampler));
+        }
+
+        for (slot, uav) in self.uavs.iter() {
+            match uav {
+                UavSource::Dynamic {
+                    extern_index,
+                    offset,
+                } => {
+                    if let Some(view) = cmd
+                        .externs
+                        .get_extern_value::<Uav>(*extern_index, *offset as usize)
+                        .and_then(|u| u.get_uav())
+                    {
+                        cmd.set_unordered_access_view(self.stage, *slot, Some(view));
+                    }
+                }
+            }
+        }
+
         for (slot, texture) in self.textures.iter() {
             match texture {
                 ResolvedTextureSource::Static(handle) => {
@@ -272,6 +303,7 @@ pub enum TextureSource {
 pub struct DynamicCoreResources {
     pub samplers: Vec<(u32, vk::Sampler)>,
     pub textures: Vec<(u32, TextureSource)>,
+    pub uavs: Vec<(u32, UavSource)>,
 }
 
 impl DynamicCoreResources {
@@ -279,6 +311,7 @@ impl DynamicCoreResources {
         let mut res = Self {
             samplers: Vec::new(),
             textures: Vec::new(),
+            uavs: Vec::new(),
         };
 
         res.textures.extend(
@@ -294,6 +327,7 @@ impl DynamicCoreResources {
             &core.samplers,
             &mut sampler_tags,
             &mut res.textures,
+            &mut res.uavs,
         )?;
 
         for (slot, tag) in sampler_tags {
@@ -317,9 +351,11 @@ fn extract_textures_and_samplers(
     static_samplers: &[SSamplerReference],
     samplers: &mut Vec<(u32, TagHash)>,
     textures: &mut Vec<(u32, TextureSource)>,
+    uavs: &mut Vec<(u32, UavSource)>,
 ) -> anyhow::Result<()> {
     let mut last_sampler = None;
     let mut last_texture = None;
+    let mut last_uav = None;
 
     let bytecode = OpcodeIterator::new(bytecode);
     for op in bytecode {
@@ -355,10 +391,25 @@ fn extract_textures_and_samplers(
                 let texture = last_texture.take().context("Texture view was not pushed")?;
                 textures.push((slot as u32, texture));
             }
+            Opcode::PushExternInputUav => {
+                let extern_id = ExternIndex::try_from(ptr[0])
+                    .ok()
+                    .context("Invalid extern index")?;
+                let offset = ptr[1] as u32 * 8;
+                last_uav = Some(UavSource::Dynamic {
+                    extern_index: extern_id,
+                    offset,
+                });
+            }
+            Opcode::PopUav => {
+                let slot = ptr[0] & 0x1F;
+                let uav = last_uav.take().context("UAV was not pushed")?;
+                uavs.push((slot as u32, uav));
+            }
             _ => {
                 anyhow::ensure!(
-                    last_sampler.is_none() && last_texture.is_none(),
-                    "Malformed bytecode. Sampler/texture was acquired but not assigned"
+                    last_sampler.is_none() && last_texture.is_none() && last_uav.is_none(),
+                    "Malformed bytecode. Sampler/texture/uav was acquired but not assigned"
                 );
             }
         }
@@ -381,6 +432,8 @@ fn filter_bytecode_assignments(original: &[u8]) -> anyhow::Result<Vec<u8>> {
                 | Opcode::PopSamplerState
                 | Opcode::PushExternInputTextureView
                 | Opcode::PopTextureView
+                | Opcode::PushExternInputUav
+                | Opcode::PopUav
         ) {
             offset += op.size();
             continue;
