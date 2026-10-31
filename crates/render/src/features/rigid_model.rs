@@ -1,4 +1,5 @@
 use ahash::AHashMap;
+use ash::vk;
 use deimos_data::tfx::{
     RenderStage, ShaderStage, TfxScopeBits,
     features::dynamic::{
@@ -16,7 +17,10 @@ use tiger_pkg::package_manager;
 use crate::{
     asset::{Handle, handle::is_technique_loaded, vertex_buffer::VertexBuffer},
     features::{FeatureRenderer, skinning},
-    gpu::{buffer::ImmutableBuffer, command_list::CommandList},
+    gpu::{
+        buffer::ImmutableBuffer,
+        command_list::{CommandList, ConstantBufferView},
+    },
     renderer::{
         Renderer,
         packet::{RenderPerFrameNode, RenderPerViewNode, SubmitNode, SubmitNodeContainer},
@@ -88,7 +92,7 @@ impl DynamicModel {
                 let skinning_posbuffer = ImmutableBuffer::new(
                     &renderer.gpu,
                     "skinning_posbuffer",
-                    d3d12::Format::R32Uint,
+                    vk::Format::R32_UINT,
                     bytemuck::cast_slice(&skinning_posdata),
                 )
                 .expect("Failed to create skinning position buffer");
@@ -96,7 +100,7 @@ impl DynamicModel {
                 let skinning_normalbuffer = ImmutableBuffer::new(
                     &renderer.gpu,
                     "skinning_normalbuffer",
-                    d3d12::Format::R32Uint,
+                    vk::Format::R32_UINT,
                     bytemuck::cast_slice(&skinning_normaldata),
                 )
                 .expect("Failed to create skinning normal buffer");
@@ -380,7 +384,10 @@ impl FeatureRenderer for DynamicModel {
             },
         });
 
-        data.cbuffer_gpuva = rigid_model_cb.virtual_address();
+        data.cbuffer = ConstantBufferView {
+            addr: rigid_model_cb.virtual_address(),
+            size: size_of::<RigidModelConstants>() as u64,
+        };
     }
 
     #[profiling::function]
@@ -396,8 +403,8 @@ impl FeatureRenderer for DynamicModel {
         let data = unsafe { frame_node.data::<DynamicObjectData>() }
             .expect("DynamicModel was extracted with no data!");
 
-        cmd.set_shader_constant_buffer_view(ShaderStage::Vertex, 1, Some(data.cbuffer_gpuva));
-        cmd.set_shader_constant_buffer_view(ShaderStage::Pixel, 1, Some(data.cbuffer_gpuva));
+        cmd.set_shader_constant_buffer_view(ShaderStage::Vertex, 1, Some(data.cbuffer));
+        cmd.set_shader_constant_buffer_view(ShaderStage::Pixel, 1, Some(data.cbuffer));
 
         self.draw_wrapped(
             cmd,
@@ -502,5 +509,6 @@ impl Default for SkinningConstants {
 pub struct DynamicObjectData {
     pub local_to_world: Mat4,
     pub permutation: usize,
-    // pub cbuffer_gpuva: d3d12::GpuVirtualAddress,
+    pub cbuffer: ConstantBufferView,
+    pub _pad: u64,
 }

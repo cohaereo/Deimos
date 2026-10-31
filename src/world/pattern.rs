@@ -23,6 +23,7 @@ use deimos_ecs::{
 use deimos_render::{
     ecs::render_objects::{DynamicRenderObject, StaticRenderObject},
     features::{
+        decals::DecalCollectionRenderer, rigid_model::DynamicModel,
         static_instances::StaticInstancesRenderer, terrain_patches::TerrainPatchesRenderer,
     },
     renderer::{Renderer, object::RenderObject},
@@ -67,108 +68,108 @@ pub fn load_component(
     }
 
     match component.default_instance.resource_type {
-        // 0x80808673 => {
+        0x80808673 => {
+            let mut cur = Cursor::new(package_manager().read_tag(component.taghash())?);
+            cur.seek(SeekFrom::Start(component.definition.offset))?;
+            let model: SDynamicModelComponent = TigerReadable::read_ds(&mut cur)
+                .context("while reading dynamic model component")?;
+
+            if let Some(permutations) = PermutationConfig::from_model(&model) {
+                world.insert_one(entity, permutations)?;
+            }
+
+            let model = DynamicModel::load(
+                renderer,
+                model.model_hash,
+                model.technique_map,
+                model.techniques,
+            )
+            .context("while loading dynamic model")?;
+            world.insert_one(
+                entity,
+                AxisAlignedBBox::from_center_extents(
+                    model.model.model_offset.xyz(),
+                    model.model.model_scale.xyz() * 2.0,
+                ),
+            )?;
+
+            let default_permutation = model.default_permutation;
+            let obj =
+                renderer.add_object(RenderObject::new(TfxFeatureRenderer::RigidObject, model));
+            let mut obj_component = DynamicRenderObject::new(renderer, obj);
+            obj_component.permutation = default_permutation;
+            world.insert_one(entity, obj_component)?;
+        }
+        0x808081A1 => {
+            let data = get_component_data!(SWaterPlaneComponent);
+
+            let model = DynamicModel::load(renderer, data.model, vec![], vec![])?;
+            world.insert_one(entity, data.bounds)?;
+
+            let obj = renderer.add_object(RenderObject::new(TfxFeatureRenderer::Water, model));
+            let obj_component = DynamicRenderObject::new(renderer, obj);
+            world.insert_one(entity, obj_component)?;
+        }
+        // 0x80808412 => {
         //     let mut cur = Cursor::new(package_manager().read_tag(component.taghash())?);
-        //     cur.seek(SeekFrom::Start(component.definition.offset))?;
-        //     let model: SDynamicModelComponent = TigerReadable::read_ds(&mut cur)
-        //         .context("while reading dynamic model component")?;
+        //     cur.seek(SeekFrom::Start(component.unk18.offset + 0x88))?;
+        //     let array: Vec<S8080841B> = TigerReadable::read_ds(&mut cur)?;
 
-        //     if let Some(permutations) = PermutationConfig::from_model(&model) {
-        //         world.insert_one(entity, permutations)?;
-        //     }
-
-        //     let model = DynamicModel::load(
-        //         renderer,
-        //         model.model_hash,
-        //         model.technique_map,
-        //         model.techniques,
-        //     )
-        //     .context("while loading dynamic model")?;
-        //     world.insert_one(
-        //         entity,
-        //         AxisAlignedBBox::from_center_extents(
-        //             model.model.model_offset.xyz(),
-        //             model.model.model_scale.xyz() * 2.0,
-        //         ),
-        //     )?;
-
-        //     let default_permutation = model.default_permutation;
-        //     let obj =
-        //         renderer.add_object(RenderObject::new(TfxFeatureRenderer::RigidObject, model));
-        //     let mut obj_component = DynamicRenderObject::new(renderer, obj);
-        //     obj_component.permutation = default_permutation;
-        //     world.insert_one(entity, obj_component)?;
-        // }
-        // 0x808081A1 => {
-        //     let data = get_component_data!(SWaterPlaneComponent);
-
-        //     let model = DynamicModel::load(renderer, data.model, vec![], vec![])?;
-        //     world.insert_one(entity, data.bounds)?;
-
-        //     let obj = renderer.add_object(RenderObject::new(TfxFeatureRenderer::Water, model));
-        //     let obj_component = DynamicRenderObject::new(renderer, obj);
-        //     world.insert_one(entity, obj_component)?;
-        // }
-        // // 0x80808412 => {
-        // //     let mut cur = Cursor::new(package_manager().read_tag(component.taghash())?);
-        // //     cur.seek(SeekFrom::Start(component.unk18.offset + 0x88))?;
-        // //     let array: Vec<S8080841B> = TigerReadable::read_ds(&mut cur)?;
-
-        // //     for v1 in array {
-        // //         for v2 in v1.unk30 {
-        // //             if let Err(e) =
-        // //                 spawn_pattern(renderer, world, v2.entity.hash32(), None, None)
-        // //             {
-        // //                 error!(
-        // //                     "Failed to spawn nested pattern {:?}/{} in pattern component {}: \
-        // //                      {:?}",
-        // //                     v2.entity,
-        // //                     v2.entity.hash32(),
-        // //                     component.taghash(),
-        // //                     e
-        // //                 );
-        // //             }
-        // //         }
-        // //     }
-        // // }
-        // 0x80804030 => {
-        //     let data = get_component_data!(SMaterialPermutationsComponent);
-
-        //     if let Ok(mut config) = world.get::<&mut PermutationConfig>(entity) {
-        //         let mut cur = Cursor::new(package_manager().read_tag(component.taghash())?);
-        //         cur.seek(SeekFrom::Start(component.definition.offset + 0xD8))?;
-        //         let default_keys_order: Vec<S808085E3> = TigerReadable::read_ds(&mut cur)?;
-
-        //         for (key, value) in &data.config {
-        //             let value = if *value == FNV1_BASE
-        //                 && let Some(defaults) =
-        //                     default_keys_order.iter().find(|item| item.key == *key)
+        //     for v1 in array {
+        //         for v2 in v1.unk30 {
+        //             if let Err(e) =
+        //                 spawn_pattern(renderer, world, v2.entity.hash32(), None, None)
         //             {
-        //                 *defaults
-        //                     .values
-        //                     .iter()
-        //                     .find(|v| config.is_valid_value(*key, **v))
-        //                     .unwrap_or(value)
-        //             } else {
-        //                 *value
-        //             };
-
-        //             // if let Some(values) = config.get_available_values(*key)
-        //             //     && !values.contains(&value)
-        //             // {
-        //             //     value = *values.iter().next().unwrap_or(&value);
-        //             // }
-
-        //             config.configuration.insert(*key, value);
+        //                 error!(
+        //                     "Failed to spawn nested pattern {:?}/{} in pattern component {}: \
+        //                      {:?}",
+        //                     v2.entity,
+        //                     v2.entity.hash32(),
+        //                     component.taghash(),
+        //                     e
+        //                 );
+        //             }
         //         }
-        //     } else {
-        //         debug!(
-        //             "Material permutations component found in component {}, but entity does not \
-        //                      have a permutation config set?",
-        //             component.taghash()
-        //         );
         //     }
         // }
+        0x80804030 => {
+            let data = get_component_data!(SMaterialPermutationsComponent);
+
+            if let Ok(mut config) = world.get::<&mut PermutationConfig>(entity) {
+                let mut cur = Cursor::new(package_manager().read_tag(component.taghash())?);
+                cur.seek(SeekFrom::Start(component.definition.offset + 0xD8))?;
+                let default_keys_order: Vec<S808085E3> = TigerReadable::read_ds(&mut cur)?;
+
+                for (key, value) in &data.config {
+                    let value = if *value == FNV1_BASE
+                        && let Some(defaults) =
+                            default_keys_order.iter().find(|item| item.key == *key)
+                    {
+                        *defaults
+                            .values
+                            .iter()
+                            .find(|v| config.is_valid_value(*key, **v))
+                            .unwrap_or(value)
+                    } else {
+                        *value
+                    };
+
+                    // if let Some(values) = config.get_available_values(*key)
+                    //     && !values.contains(&value)
+                    // {
+                    //     value = *values.iter().next().unwrap_or(&value);
+                    // }
+
+                    config.configuration.insert(*key, value);
+                }
+            } else {
+                debug!(
+                    "Material permutations component found in component {}, but entity does not \
+                             have a permutation config set?",
+                    component.taghash()
+                );
+            }
+        }
         0x80808562 => {
             let data = get_component_data!(SStaticTerrainPatchesComponent);
 
@@ -207,25 +208,25 @@ pub fn load_component(
                 ),
             )?;
         }
-        // 0x80808220 => {
-        //     let data = get_component_data!(SDecalCollectionComponent);
-        //     if let Some(collection) = &*data.decals {
-        //         let decal_renderer = DecalCollectionRenderer::load(renderer, collection.clone())
-        //             .with_context(|| {
-        //                 format!("loading decal collection {}", data.decals.taghash())
-        //             })?;
-        //         world.insert_one(
-        //             entity,
-        //             StaticRenderObject::new(
-        //                 renderer,
-        //                 renderer.add_object(RenderObject::new(
-        //                     TfxFeatureRenderer::DynamicDecals,
-        //                     decal_renderer,
-        //                 )),
-        //             ),
-        //         )?;
-        //     }
-        // }
+        0x80808220 => {
+            let data = get_component_data!(SDecalCollectionComponent);
+            if let Some(collection) = &*data.decals {
+                let decal_renderer = DecalCollectionRenderer::load(renderer, collection.clone())
+                    .with_context(|| {
+                        format!("loading decal collection {}", data.decals.taghash())
+                    })?;
+                world.insert_one(
+                    entity,
+                    StaticRenderObject::new(
+                        renderer,
+                        renderer.add_object(RenderObject::new(
+                            TfxFeatureRenderer::DynamicDecals,
+                            decal_renderer,
+                        )),
+                    ),
+                )?;
+            }
+        }
         // 0x808085A9 => {
         //     let data = get_component_data!(SDecoratorsComponent);
         //     if let Some(decorators) = data.decorators.0.as_ref() {

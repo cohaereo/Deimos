@@ -123,14 +123,11 @@ impl FeatureRenderer for DecalCollectionRenderer {
         cmd.set_ffstate_override(FixedFunctionState::new(None, None, Some(1), None));
         cmd.set_depth_mode(DepthMode::Forward);
 
-        // cmd.input_assembler_set_vertex_buffers(
-        //     0,
-        //     &[Some(&vb1.buffer), Some(&vb0.buffer)],
-        //     Some(&[vb1.stride, vb0.stride]),
-        //     Some(&[0, 0]),
-        // )
-        // .unwrap();
-        cmd.ia_set_vertex_buffers(0, &[vb1.view(), vb0.view()]);
+        cmd.set_vertex_buffers(
+            0,
+            &[vb1.buffer().vk_buffer(), vb0.buffer().vk_buffer()],
+            &[0, 0],
+        );
 
         cmd.set_input_layout(17);
         cmd.set_input_topology(PrimitiveType::Triangles);

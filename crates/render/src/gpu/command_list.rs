@@ -494,7 +494,8 @@ pub enum DepthMode {
     Reverse,
 }
 
-#[derive(Debug, Clone, Copy, Default)]
+#[repr(C)]
+#[derive(Debug, Clone, Copy, Default, bytemuck::Pod, bytemuck::Zeroable)]
 pub struct ConstantBufferView {
     pub addr: vk::DeviceAddress,
     pub size: u64,
