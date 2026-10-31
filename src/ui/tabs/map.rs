@@ -41,6 +41,12 @@ impl MapTab {
         };
 
         Ok(Self {
+            tag,
+            name,
+            scene: Box::new(
+                Scene::new(renderer, state, camera)?
+                    .with_controller(CameraController::new_first_person()),
+            ),
             load_task: Task::new(format!("load_map({tag})"), move || {
                 let mut world = hecs::World::new();
                 load_map_into_world(
@@ -53,12 +59,6 @@ impl MapTab {
                 .expect("Failed to load map into world");
                 world
             }),
-            tag,
-            name,
-            scene: Box::new(
-                Scene::new(renderer, &state, camera)?
-                    .with_controller(CameraController::new_first_person()),
-            ),
             errored: false,
         })
     }

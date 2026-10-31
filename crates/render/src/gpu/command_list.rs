@@ -302,8 +302,14 @@ impl CommandList {
     }
 
     pub fn set_viewports(&mut self, viewports: &[vk::Viewport]) {
+        let mut viewports = viewports.to_vec();
+        // Flip D3D viewports to Vulkan
+        for v in &mut viewports {
+            v.y += v.height;
+            v.height = -v.height;
+        }
         // self.state.output.viewports = viewports.iter().cloned().collect();
-        self.cmd.set_viewport(0, viewports);
+        self.cmd.set_viewport(0, &viewports);
     }
 
     pub const fn resources(&self, stage: ShaderStage) -> &StageResources {
