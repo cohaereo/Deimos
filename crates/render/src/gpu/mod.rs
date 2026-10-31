@@ -57,6 +57,7 @@ pub struct Gpu {
     pub swapchain_loader: swapchain::Device,
     pub surface_loader: surface::Instance,
     pub descriptor_buffer: descriptor_buffer::Device,
+    #[cfg(debug_assertions)]
     pub debug_loader: debug_utils::Device,
 
     pub physical_device: vk::PhysicalDevice,
@@ -281,8 +282,6 @@ impl Gpu {
             )
         }?;
 
-        let debug_loader = debug_utils::Device::new(&instance, &device);
-
         let default_sampler = unsafe {
             device.create_sampler(
                 &vk::SamplerCreateInfo::default()
@@ -487,12 +486,13 @@ impl Gpu {
         );
 
         Ok(Self {
+            #[cfg(debug_assertions)]
+            debug_loader: debug_utils::Device::new(&instance, &device),
             entry,
             instance,
             surface_loader,
             swapchain_loader,
             physical_device,
-            debug_loader,
             descriptor_buffer,
             device: device.clone(),
 
@@ -744,7 +744,6 @@ impl Gpu {
     pub fn submit(&self, image_index: u32) -> anyhow::Result<()> {
         let frame_index = self.frame_index.load(std::sync::atomic::Ordering::Relaxed)
             % Self::MAX_FRAMES_IN_FLIGHT;
-        let next_frame_index = (frame_index + 1) % Self::MAX_FRAMES_IN_FLIGHT;
         self.frame_index.store(
             (frame_index + 1) % Self::MAX_FRAMES_IN_FLIGHT,
             Ordering::Relaxed,

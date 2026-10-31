@@ -248,6 +248,7 @@ impl CommandBuffer {
 impl CommandBuffer {
     pub fn begin_debug_utils_label(&self, label_name: &str, color: [f32; 4]) {
         let label_name_cstr = std::ffi::CString::new(label_name).unwrap();
+        #[cfg(debug_assertions)]
         unsafe {
             self.gpu.debug_loader.cmd_begin_debug_utils_label(
                 self.cmd,
@@ -259,6 +260,7 @@ impl CommandBuffer {
     }
 
     pub fn end_debug_utils_label(&self) {
+        #[cfg(debug_assertions)]
         unsafe {
             self.gpu.debug_loader.cmd_end_debug_utils_label(self.cmd);
         }

@@ -29,6 +29,7 @@ impl Resource {
             ResourceKind::Buffer(buffer) => info = info.object_handle(*buffer),
         }
 
+        #[cfg(debug_assertions)]
         unsafe {
             self.gpu.debug_loader.set_debug_utils_object_name(&info);
         };

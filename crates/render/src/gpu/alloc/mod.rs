@@ -105,12 +105,15 @@ impl Gpu {
                 None,
             )?;
 
-            let name_cstr = CString::new(desc.name)?;
-            self.debug_loader.set_debug_utils_object_name(
-                &vk::DebugUtilsObjectNameInfoEXT::default()
-                    .object_handle(image)
-                    .object_name(&name_cstr),
-            )?;
+            #[cfg(debug_assertions)]
+            {
+                let name_cstr = CString::new(desc.name)?;
+                self.debug_loader.set_debug_utils_object_name(
+                    &vk::DebugUtilsObjectNameInfoEXT::default()
+                        .object_handle(image)
+                        .object_name(&name_cstr),
+                )?;
+            }
 
             let requirements = self.get_image_memory_requirements(image);
 
