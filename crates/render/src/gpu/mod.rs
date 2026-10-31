@@ -286,8 +286,8 @@ impl Gpu {
         let default_sampler = unsafe {
             device.create_sampler(
                 &vk::SamplerCreateInfo::default()
-                    .mag_filter(vk::Filter::NEAREST)
-                    .min_filter(vk::Filter::NEAREST)
+                    .mag_filter(vk::Filter::LINEAR)
+                    .min_filter(vk::Filter::LINEAR)
                     .mipmap_mode(vk::SamplerMipmapMode::NEAREST)
                     .address_mode_u(vk::SamplerAddressMode::CLAMP_TO_EDGE)
                     .address_mode_v(vk::SamplerAddressMode::CLAMP_TO_EDGE)
@@ -723,7 +723,7 @@ impl Gpu {
         frame
             .wait_for_completion(&self.frame_fence)
             .expect("wait for frame completion");
-        frame.begin_frame();
+        frame.begin_frame(&self.device);
 
         let _to_bin = self
             .bin

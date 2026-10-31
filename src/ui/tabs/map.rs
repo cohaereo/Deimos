@@ -11,6 +11,7 @@ use crate::{
     app::SharedState,
     task::Task,
     ui::{
+        GuiRenderer,
         scene::{Scene, controller::CameraController},
         util::UiExt,
     },
@@ -62,7 +63,7 @@ impl MapTab {
         })
     }
 
-    pub fn ui(&mut self, ui: &mut egui::Ui, renderer: &mut egui_ash_renderer::Renderer) {
+    pub fn ui(&mut self, ui: &mut egui::Ui, renderer: &mut GuiRenderer) {
         if let Some(map) = self.load_task.get() {
             match map {
                 Ok(world) => {

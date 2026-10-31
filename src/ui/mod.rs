@@ -27,7 +27,7 @@ pub struct Gui {
     window: Rc<sdl3::video::Window>,
     sdl: Rc<sdl3::Sdl>,
 
-    pub renderer: egui_ash_renderer::Renderer,
+    pub renderer: GuiRenderer,
     pub egui_sdl3: egui_sdl3_platform::Platform,
     tree: DockState<Tab>,
 
@@ -188,7 +188,7 @@ impl Gui {
         Ok(Self {
             window,
             sdl,
-            renderer,
+            renderer: GuiRenderer::new(gpu.clone(), renderer)?,
             egui_sdl3,
             tree,
             added_nodes: Vec::new(),
@@ -422,29 +422,83 @@ impl Gui {
             .end_frame(&mut self.sdl.video().unwrap())
             .unwrap();
 
-        let pixels_per_point = self.egui_sdl3.context().pixels_per_point();
-        let primitives = self
-            .egui_sdl3
-            .context()
-            .tessellate(output.shapes, pixels_per_point);
+        self.renderer
+            .draw(self.egui_sdl3.context(), output, cmd)
+            .unwrap();
+    }
+}
+
+pub struct GuiRenderer {
+    gpu: Arc<Gpu>,
+    pub renderer: egui_ash_renderer::Renderer,
+    temporary_textures: Vec<egui::TextureId>,
+
+    descriptor_layout: vk::DescriptorSetLayout,
+}
+
+impl GuiRenderer {
+    pub fn new(gpu: Arc<Gpu>, renderer: egui_ash_renderer::Renderer) -> anyhow::Result<Self> {
+        let descriptor_layout =
+            egui_ash_renderer::vulkan::create_vulkan_descriptor_set_layout(&gpu.device)?;
+
+        Ok(Self {
+            gpu,
+            renderer,
+            temporary_textures: vec![],
+
+            descriptor_layout,
+        })
+    }
+
+    pub fn draw(
+        &mut self,
+        ctx: &egui::Context,
+        output: egui::FullOutput,
+        cmd: &vk::CommandBuffer,
+    ) -> anyhow::Result<()> {
+        let pixels_per_point = ctx.pixels_per_point();
+        let primitives = ctx.tessellate(output.shapes, pixels_per_point);
 
         self.renderer
             .set_textures(
-                gpu.queue,
-                gpu.command_pool,
+                self.gpu.queue,
+                self.gpu.command_pool,
                 output.textures_delta.set.as_slice(),
             )
             .unwrap();
 
-        if let Err(e) =
-            self.renderer
-                .cmd_draw(*cmd, gpu.swapchain_extent, pixels_per_point, &primitives)
-        {
+        if let Err(e) = self.renderer.cmd_draw(
+            *cmd,
+            self.gpu.swapchain_extent,
+            pixels_per_point,
+            &primitives,
+        ) {
             error!("Failed to draw egui primitives: {:?}", e);
         }
 
         self.renderer
             .free_textures(output.textures_delta.free.as_slice())
             .unwrap();
+
+        for id in self.temporary_textures.drain(..) {
+            self.renderer.remove_user_texture(id);
+        }
+
+        Ok(())
+    }
+
+    pub fn add_user_texture(&mut self, view: vk::ImageView) -> egui::TextureId {
+        let descriptor_set = egui_ash_renderer::vulkan::create_vulkan_descriptor_set(
+            &self.gpu,
+            self.descriptor_layout,
+            self.gpu.frame().descriptor_pool,
+            view,
+            self.gpu.default_sampler,
+        )
+        .expect("Failed to create descriptor set");
+
+        let id = self.renderer.add_user_texture(descriptor_set);
+        self.temporary_textures.push(id);
+        id
     }
 }

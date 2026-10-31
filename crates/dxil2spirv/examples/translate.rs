@@ -5,7 +5,7 @@ fn main() {
     let dxil_data = std::fs::read(&file).expect("Failed to read input file");
 
     let start = Instant::now();
-    let (spirv_data, slots) = dxil2spirv::translate(&dxil_data).expect("Translation failed");
+    let (spirv_data, slots) = dxil2spirv::translate(&dxil_data, 0).expect("Translation failed");
     let duration = start.elapsed();
 
     println!("Translation took: {:?}", duration);

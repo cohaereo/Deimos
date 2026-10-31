@@ -37,6 +37,7 @@ use umbra::QueryErrorCode;
 use crate::{
     app::SharedState,
     ui::{
+        GuiRenderer,
         scene::controller::CameraController,
         util::{ExternalDataWidgetExt, UiExt, format_bytes},
     },
@@ -112,7 +113,7 @@ impl Scene {
             show_channel_editor: false,
             only_show_used_channels: true,
             umbra_result: QueryErrorCode::Ok,
-            umbra_enabled: true,
+            umbra_enabled: false,
         })
     }
 
@@ -140,12 +141,7 @@ impl Scene {
 }
 
 impl Scene {
-    pub fn show(
-        &mut self,
-        ui: &mut egui::Ui,
-        renderer: &mut egui_ash_renderer::Renderer,
-        size: Vec2,
-    ) {
+    pub fn show(&mut self, ui: &mut egui::Ui, renderer: &mut GuiRenderer, size: Vec2) {
         let now = Instant::now();
         let delta_time = (now - self.last_frame_time).as_secs_f32();
         self.frametimes.push(delta_time);
@@ -180,12 +176,9 @@ impl Scene {
             // let r = ui.allocate_response(size, Sense::CLICK | Sense::DRAG | Sense::HOVER);
             let r = ui
                 .image(SizedTexture {
-                    id: egui::TextureId::Managed(0),
-                    // id: egui_d3d12.textures_mut().allocate_dx_temporary(
-                    //     self.output_srv().cpu_handle(),
-                    //     None,
-                    //     false,
-                    // ),
+                    // id: renderer.add_user_texture(self.output_srv()),
+                    id: renderer
+                        .add_user_texture(self.scene_renderer.main_view.gbuffer.albedo.view()),
                     size,
                 })
                 .interact(Sense::CLICK | Sense::DRAG | Sense::HOVER);

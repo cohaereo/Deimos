@@ -19,7 +19,10 @@ use egui_dock::{DockState, NodeIndex, SurfaceIndex, TabIndex};
 use google_material_symbols::GoogleMaterialSymbols;
 use home::HomeTab;
 
-use crate::ui::tabs::{map::MapTab, settings::SettingsTab};
+use crate::ui::{
+    GuiRenderer,
+    tabs::{map::MapTab, settings::SettingsTab},
+};
 
 pub enum Tab {
     Home,
@@ -88,7 +91,7 @@ impl Display for Tab {
 
 pub struct TabViewer<'a> {
     pub added_nodes: &'a mut Vec<Tab>,
-    pub renderer: &'a mut egui_ash_renderer::Renderer,
+    pub renderer: &'a mut GuiRenderer,
     pub shared_state: &'a Arc<crate::app::SharedState>,
 }
 

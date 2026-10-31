@@ -14,6 +14,7 @@ pub struct FrameContext {
     fence_value: AtomicU64,
 
     pub upload: UploadHeap,
+    pub descriptor_pool: vk::DescriptorPool,
     pub descriptors: DescriptorHeap,
     // pub profiler: FrameProfiler,
 }
@@ -28,6 +29,17 @@ impl FrameContext {
         Ok(Self {
             upload: UploadHeap::new(device.clone(), upload_memory_type_index, 32 * mb)
                 .context("Failed to allocate UploadHeap")?,
+            descriptor_pool: unsafe {
+                device.create_descriptor_pool(
+                    &vk::DescriptorPoolCreateInfo::default()
+                        .max_sets(512)
+                        .pool_sizes(&[vk::DescriptorPoolSize {
+                            ty: vk::DescriptorType::COMBINED_IMAGE_SAMPLER,
+                            descriptor_count: 512,
+                        }]),
+                    None,
+                )?
+            },
             descriptors: DescriptorHeap::new(
                 device,
                 upload_memory_type_index,
@@ -51,9 +63,18 @@ impl FrameContext {
     /// Resets upload rings.
     ///
     /// Keep in mind that this does not reset the command list.
-    pub fn begin_frame(&self) {
+    pub fn begin_frame(&self, device: &ash::Device) {
         self.upload.reset();
         self.descriptors.reset();
+
+        unsafe {
+            device
+                .reset_descriptor_pool(
+                    self.descriptor_pool,
+                    vk::DescriptorPoolResetFlags::default(),
+                )
+                .ok();
+        }
 
         // self.profiler.begin_frame(queue);
     }

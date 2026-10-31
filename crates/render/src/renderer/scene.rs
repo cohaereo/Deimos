@@ -244,6 +244,9 @@ impl SceneRenderer {
         }
         cmd.end_rendering();
 
+        self.main_view
+            .gbuffer
+            .transition(cmd, IMAGE_STATE_SHADER_READ);
         // {
         //     let view = &self.frame_packet.views[ShadedView::MAIN_VIEW_ID];
         //     {

@@ -98,7 +98,7 @@ fn main() -> anyhow::Result<()> {
         .expect("Failed to initialize video subsystem");
 
     let mut window = {
-        let mut builder = video_subsystem.window(&format!("Deimos v{DEIMOS_VERSION}"), 1920, 1080);
+        let mut builder = video_subsystem.window("Deimos", 1920, 1080);
 
         let mut builder_ref = builder.position_centered().resizable().maximized();
 
