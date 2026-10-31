@@ -501,9 +501,10 @@ pub struct ConstantBufferView {
 }
 
 /// A buffer-backed resource (uniform/storage texel buffer or storage buffer).
+///
+/// Descriptor buffers represent texel buffers
 #[derive(Debug, Clone, Copy)]
 pub struct BufferResource {
-    pub view: vk::BufferView,
     pub addr: vk::DeviceAddress,
     pub size: u64,
     pub format: vk::Format,

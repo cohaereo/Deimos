@@ -11,6 +11,7 @@ use crate::{
     app::SharedState,
     task::Task,
     ui::{
+        GuiRenderer,
         scene::{Scene, controller::CameraController},
         util::UiExt,
     },
@@ -57,7 +58,7 @@ impl ModelViewTab {
         })
     }
 
-    pub fn ui(&mut self, ui: &mut egui::Ui, egui_d3d12: &mut egui_d3d12::D3D12Renderer) {
+    pub fn ui(&mut self, ui: &mut egui::Ui, gui_renderer: &mut GuiRenderer) {
         if let Some(model) = self.load_task.get() {
             match model {
                 Ok(world) => {
@@ -109,7 +110,7 @@ impl ModelViewTab {
                 Color32::DARK_RED,
             );
         } else {
-            self.scene.show(ui, egui_d3d12, ui.available_size());
+            self.scene.show(ui, gui_renderer, ui.available_size());
         }
     }
 }

@@ -6,6 +6,7 @@ use std::{
 };
 
 use anyhow::Context;
+use ash::vk;
 use bit_field::BitField;
 use bytemuck::{Pod, Zeroable};
 use deimos_data::tfx::{
@@ -31,15 +32,16 @@ use crate::{
     features::shared::ModelBuffers,
     gpu::{
         Gpu,
-        alloc::{descriptors::ResourceView, staging::ImmutableStaging},
+        alloc::staging::ImmutableStaging,
         buffer::ImmutableBuffer,
-        command_list::CommandList,
+        command_list::{BufferResource, CommandList},
     },
     renderer::{
         Renderer,
         packet::{RenderPerFrameNode, RenderPerViewNode, SubmitNode, SubmitNodeContainer},
     },
     tfx::technique::Technique,
+    util::once,
     visibility::{ViewVisibility, bvh::Bvh},
 };
 
@@ -385,10 +387,9 @@ impl StaticModelRenderer {
 }
 
 pub struct StaticInstancesRenderer {
-    gpu: Arc<Gpu>,
     subscribed_stages: RenderStageSubscription,
-    /// (model, visible)
-    models: Vec<(StaticModelRenderer, ResourceView)>,
+    /// (model, transforms buffer SRV)
+    models: Vec<(StaticModelRenderer, BufferResource)>,
     _transforms_buffer: ImmutableBuffer,
 }
 
@@ -448,13 +449,12 @@ impl StaticInstancesRenderer {
         let transforms_buffer = ImmutableBuffer::new(
             gpu,
             "grouped_transforms_buffer",
-            d3d12::Format::R32Uint,
+            vk::Format::R32_UINT,
             &transforms_data,
         )
         .unwrap();
 
         Self {
-            gpu: gpu.clone(),
             subscribed_stages: models
                 .iter()
                 .fold(RenderStageSubscription::empty(), |acc, m| {
@@ -465,21 +465,11 @@ impl StaticInstancesRenderer {
                 .map(|m| {
                     let start = m.instance_buffer_offset as u64;
                     let count = (m.transforms.len() + 1) * size_of::<InstanceTransformBlock>();
-                    let elements = start..start + count as u64;
-                    let transforms_srv = transforms_buffer.create_srv(gpu, elements);
+                    let transforms_srv = transforms_buffer.srv(start, count as u64);
                     (m, transforms_srv)
                 })
                 .collect(),
             _transforms_buffer: transforms_buffer,
-        }
-    }
-}
-
-impl Drop for StaticInstancesRenderer {
-    fn drop(&mut self) {
-        let mut resource_heap = self.gpu.resource_heap.lock();
-        for (_m, srv) in &self.models {
-            resource_heap.free_srv(*srv);
         }
     }
 }
@@ -538,8 +528,10 @@ impl FeatureRenderer for StaticInstancesRenderer {
         let key = StaticSubmitKey::from_u64(submit_key);
 
         let (model, transforms_srv) = &self.models[key.model_index as usize];
-        let ids_gpuva = match cmd
-            .upload_ring()
+        let ids_slice = match cmd
+            .gpu()
+            .frame()
+            .upload
             .upload_bytes(bytemuck::cast_slice(&model.visible_instance_ids))
         {
             Ok(va) => va,
@@ -548,15 +540,8 @@ impl FeatureRenderer for StaticInstancesRenderer {
                 return;
             }
         };
-        cmd.ia_set_vertex_buffers(
-            2,
-            &[d3d12::VertexBufferView::new(
-                ids_gpuva,
-                model.visible_instance_ids.len() as u32 * 4,
-                4,
-            )],
-        );
-        cmd.set_shader_resource_view(ShaderStage::Vertex, 2, Some(*transforms_srv));
+        cmd.set_vertex_buffers(2, &[ids_slice.buffer()], &[ids_slice.offset() as u64]);
+        cmd.set_shader_resource_buffer(ShaderStage::Vertex, 2, Some(*transforms_srv));
         model.render_group(cmd, key.is_special_mesh, key.mesh_index as usize);
     }
 

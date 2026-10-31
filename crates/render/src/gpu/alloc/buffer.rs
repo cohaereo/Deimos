@@ -2,7 +2,10 @@ use std::{ffi::c_void, mem::ManuallyDrop, ptr::NonNull};
 
 use ash::vk;
 
-use crate::gpu::{alloc::guard::Resource, command_list::ConstantBufferView};
+use crate::gpu::{
+    alloc::guard::Resource,
+    command_list::{BufferResource, ConstantBufferView},
+};
 
 pub struct Buffer {
     pub(super) buffer: vk::Buffer,
@@ -36,6 +39,14 @@ impl Buffer {
 
     pub fn vk_buffer(&self) -> vk::Buffer {
         self.buffer
+    }
+
+    pub const fn device_address(&self) -> vk::DeviceAddress {
+        self.addr
+    }
+
+    pub const fn size(&self) -> u64 {
+        self.size
     }
 
     pub fn resource(&self) -> &Resource {

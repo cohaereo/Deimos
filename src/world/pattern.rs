@@ -22,7 +22,9 @@ use deimos_ecs::{
 };
 use deimos_render::{
     ecs::render_objects::{DynamicRenderObject, StaticRenderObject},
-    features::terrain_patches::TerrainPatchesRenderer,
+    features::{
+        static_instances::StaticInstancesRenderer, terrain_patches::TerrainPatchesRenderer,
+    },
     renderer::{Renderer, object::RenderObject},
 };
 use glam::{Vec3, Vec4Swizzles};
@@ -188,23 +190,23 @@ pub fn load_component(
                 ),
             )?;
         }
-        // 0x808085AF => {
-        //     let data = get_component_data!(SStaticInstancesCollectionComponent);
-        //     let instances: SUnk808082D5 = package_manager().read_tag_struct(data.instances)?;
-        //     world.insert_one(
-        //         entity,
-        //         StaticRenderObject::new(
-        //             renderer,
-        //             renderer.add_object(RenderObject::new(
-        //                 TfxFeatureRenderer::ChunkedInstanceObjects,
-        //                 Box::new(StaticInstancesRenderer::load_from_tag(
-        //                     renderer,
-        //                     instances.instances,
-        //                 )?),
-        //             )),
-        //         ),
-        //     )?;
-        // }
+        0x808085AF => {
+            let data = get_component_data!(SStaticInstancesCollectionComponent);
+            let instances: SUnk808082D5 = package_manager().read_tag_struct(data.instances)?;
+            world.insert_one(
+                entity,
+                StaticRenderObject::new(
+                    renderer,
+                    renderer.add_object(RenderObject::new(
+                        TfxFeatureRenderer::ChunkedInstanceObjects,
+                        Box::new(StaticInstancesRenderer::load_from_tag(
+                            renderer,
+                            instances.instances,
+                        )?),
+                    )),
+                ),
+            )?;
+        }
         // 0x80808220 => {
         //     let data = get_component_data!(SDecalCollectionComponent);
         //     if let Some(collection) = &*data.decals {

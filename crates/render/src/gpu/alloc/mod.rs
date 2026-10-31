@@ -2,6 +2,7 @@ pub mod buffer;
 pub mod descriptor;
 mod guard;
 pub mod image;
+pub mod staging;
 pub mod upload;
 
 use std::{ffi::CString, mem::ManuallyDrop, sync::Arc, time::Duration};
@@ -167,8 +168,9 @@ impl Gpu {
             total_bytes_used,
             // descriptor_heap_used: resource_heap.used(),
             // descriptor_heap_capacity: resource_heap.capacity(),
-            // descriptor_ring_used: self.previous_frame().descriptors.used(),
-            // descriptor_ring_capacity: self.previous_frame().descriptors.capacity(),
+            num_descriptor_ring_allocations: self.previous_frame().descriptors.num_allocations(),
+            descriptor_ring_used: self.previous_frame().descriptors.used(),
+            descriptor_ring_capacity: self.previous_frame().descriptors.capacity(),
             num_upload_ring_allocations: self.previous_frame().upload.num_allocations(),
             upload_ring_used: self.previous_frame().upload.used(),
             upload_ring_capacity: self.previous_frame().upload.capacity(),
@@ -179,8 +181,8 @@ impl Gpu {
 
         // let descriptor_heap_used_ratio =
         //     r.descriptor_heap_used as f64 / r.descriptor_heap_capacity as f64;
-        // let descriptor_ring_used_ratio =
-        //     r.descriptor_ring_used as f64 / r.descriptor_ring_capacity as f64;
+        let descriptor_ring_used_ratio =
+            r.descriptor_ring_used as f64 / r.descriptor_ring_capacity as f64;
         let upload_ring_used_ratio = r.upload_ring_used as f64 / r.upload_ring_capacity as f64;
 
         // if descriptor_heap_used_ratio >= 1.0 {
@@ -193,15 +195,15 @@ impl Gpu {
         //     r.high_water = true;
         // }
 
-        // if descriptor_ring_used_ratio >= 1.0 {
-        //     r.errors |= MemoryReportCategories::DESCRIPTOR_RING;
-        // } else if descriptor_ring_used_ratio >= 0.8 {
-        //     r.warnings |= MemoryReportCategories::DESCRIPTOR_RING;
-        // }
+        if descriptor_ring_used_ratio >= 1.0 {
+            r.errors |= MemoryReportCategories::DESCRIPTOR_RING;
+        } else if descriptor_ring_used_ratio >= 0.8 {
+            r.warnings |= MemoryReportCategories::DESCRIPTOR_RING;
+        }
 
-        // if descriptor_ring_used_ratio >= 0.9 {
-        //     r.high_water = true;
-        // }
+        if descriptor_ring_used_ratio >= 0.9 {
+            r.high_water = true;
+        }
 
         if upload_ring_used_ratio >= 1.0 {
             r.errors |= MemoryReportCategories::UPLOAD_RING;
@@ -222,9 +224,10 @@ pub struct MemoryStats {
 
     // pub descriptor_heap_used: usize,
     // pub descriptor_heap_capacity: usize,
+    pub num_descriptor_ring_allocations: usize,
+    pub descriptor_ring_used: usize,
+    pub descriptor_ring_capacity: usize,
 
-    // pub descriptor_ring_used: usize,
-    // pub descriptor_ring_capacity: usize,
     pub num_upload_ring_allocations: usize,
     pub upload_ring_used: usize,
     pub upload_ring_capacity: usize,

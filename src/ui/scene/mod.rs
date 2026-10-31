@@ -331,14 +331,16 @@ impl Scene {
                     memory_stats.upload_ring_capacity,
                     memory_stats.upload_ring_used,
                 );
-                // ui.monospace(format!(
-                //     "Descriptor Ring:  {}/{}",
-                //     memory_stats.descriptor_ring_used, memory_stats.descriptor_ring_capacity
-                // ));
-                // ui.capacity_bar(
-                //     memory_stats.descriptor_ring_capacity,
-                //     memory_stats.descriptor_ring_used,
-                // );
+                ui.monospace(format!(
+                    "Descriptor Ring:  {}/{} ({})",
+                    format_bytes(memory_stats.descriptor_ring_used),
+                    format_bytes(memory_stats.descriptor_ring_capacity),
+                    memory_stats.num_descriptor_ring_allocations
+                ));
+                ui.capacity_bar(
+                    memory_stats.descriptor_ring_capacity,
+                    memory_stats.descriptor_ring_used,
+                );
 
                 ui.separator();
 

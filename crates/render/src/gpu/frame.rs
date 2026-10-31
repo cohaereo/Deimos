@@ -27,12 +27,12 @@ impl FrameContext {
     ) -> anyhow::Result<Self> {
         let mb = 1024 * 1024;
         Ok(Self {
-            upload: UploadHeap::new(device.clone(), upload_memory_type_index, 32 * mb)
+            upload: UploadHeap::new(device.clone(), upload_memory_type_index, 48 * mb)
                 .context("Failed to allocate UploadHeap")?,
             descriptor_pool: unsafe {
                 device.create_descriptor_pool(
                     &vk::DescriptorPoolCreateInfo::default()
-                        .max_sets(512)
+                        .max_sets(16384)
                         .pool_sizes(&[vk::DescriptorPoolSize {
                             ty: vk::DescriptorType::COMBINED_IMAGE_SAMPLER,
                             descriptor_count: 512,

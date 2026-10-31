@@ -51,6 +51,25 @@ use crate::{
     tfx::externs::BaseExternSource,
 };
 
+/// Result of presenting a swapchain image.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum PresentStatus {
+    Ok,
+    /// The swapchain still works, but recreating it would be preferable.
+    Suboptimal,
+    /// The swapchain must be recreated before rendering again.
+    OutOfDate,
+}
+
+/// Swapchain resources that are replaced when the window is resized.
+pub struct SwapchainState {
+    pub swapchain: vk::SwapchainKHR,
+    pub images: Vec<vk::Image>,
+    pub image_views: Vec<vk::ImageView>,
+    pub extent: vk::Extent2D,
+    pub render_finished_semaphores: Vec<vk::Semaphore>,
+}
+
 pub struct Gpu {
     pub entry: ash::Entry,
     pub instance: ash::Instance,
@@ -65,15 +84,12 @@ pub struct Gpu {
 
     pub queue: vk::Queue,
     pub surface: vk::SurfaceKHR,
-    pub swapchain: vk::SwapchainKHR,
-    pub swapchain_images: Vec<vk::Image>,
-    pub swapchain_image_views: Vec<vk::ImageView>,
     pub surface_format: vk::SurfaceFormatKHR,
+    pub swapchain_state: RwLock<SwapchainState>,
 
     allocator: Mutex<Allocator>,
 
     image_available_semaphores: Vec<vk::Semaphore>,
-    render_finished_semaphores: Vec<vk::Semaphore>,
     in_flight_fences: Vec<vk::Fence>,
 
     pub command_pool: vk::CommandPool,
@@ -102,7 +118,6 @@ pub struct Gpu {
     null_storage_image: Mutex<Option<(Image, vk::ImageView)>>,
 
     debug_messenger: Option<vk::DebugUtilsMessengerEXT>,
-    pub swapchain_extent: vk::Extent2D,
 
     // Per-frame stats
     pub num_drawcalls: AtomicUsize,
@@ -304,88 +319,22 @@ impl Gpu {
 
         let descriptor_buffer = descriptor_buffer::Device::new(&instance, &device);
 
-        let surface_capabilities = unsafe {
-            surface_loader.get_physical_device_surface_capabilities(physical_device, surface)
-        }
-        .unwrap();
-        let mut desired_image_count = surface_capabilities.min_image_count + 1;
-        if surface_capabilities.max_image_count > 0
-            && desired_image_count > surface_capabilities.max_image_count
-        {
-            desired_image_count = surface_capabilities.max_image_count;
-        }
-        let swapchain_extent = match surface_capabilities.current_extent.width {
-            u32::MAX => vk::Extent2D {
+        let swapchain_loader = swapchain::Device::new(&instance, &device);
+        let swapchain_state = create_swapchain_state(
+            &device,
+            &swapchain_loader,
+            &surface_loader,
+            physical_device,
+            surface,
+            surface_format,
+            vk::SwapchainKHR::null(),
+            Some(vk::Extent2D {
                 width: resolution.0,
                 height: resolution.1,
-            },
-            _ => surface_capabilities.current_extent,
-        };
-        let pre_transform = if surface_capabilities
-            .supported_transforms
-            .contains(vk::SurfaceTransformFlagsKHR::IDENTITY)
-        {
-            vk::SurfaceTransformFlagsKHR::IDENTITY
-        } else {
-            surface_capabilities.current_transform
-        };
-        let present_modes = unsafe {
-            surface_loader
-                .get_physical_device_surface_present_modes(physical_device, surface)
-                .unwrap()
-        };
-        let present_mode = present_modes
-            .iter()
-            .cloned()
-            .find(|&mode| mode == vk::PresentModeKHR::MAILBOX)
-            .unwrap_or(vk::PresentModeKHR::FIFO);
-        let swapchain_loader = swapchain::Device::new(&instance, &device);
-
-        let swapchain_create_info = vk::SwapchainCreateInfoKHR::default()
-            .surface(surface)
-            .min_image_count(desired_image_count)
-            .image_color_space(surface_format.color_space)
-            .image_format(surface_format.format)
-            .image_extent(swapchain_extent)
-            .image_usage(vk::ImageUsageFlags::COLOR_ATTACHMENT | vk::ImageUsageFlags::TRANSFER_DST)
-            .image_sharing_mode(vk::SharingMode::EXCLUSIVE)
-            .pre_transform(pre_transform)
-            .composite_alpha(vk::CompositeAlphaFlagsKHR::OPAQUE)
-            .present_mode(present_mode)
-            .clipped(true)
-            .image_array_layers(1);
-
-        let swapchain =
-            unsafe { swapchain_loader.create_swapchain(&swapchain_create_info, None) }.unwrap();
-
-        let swapchain_images = unsafe { swapchain_loader.get_swapchain_images(swapchain) }?;
-        let swapchain_image_views = swapchain_images
-            .iter()
-            .map(|img| {
-                unsafe {
-                    device.create_image_view(
-                        &vk::ImageViewCreateInfo::default()
-                            .image(*img)
-                            .view_type(vk::ImageViewType::TYPE_2D)
-                            .format(surface_format.format)
-                            .subresource_range(
-                                vk::ImageSubresourceRange::default()
-                                    .aspect_mask(vk::ImageAspectFlags::COLOR)
-                                    .layer_count(1)
-                                    .level_count(1),
-                            ),
-                        None,
-                    )
-                }
-                .unwrap()
-            })
-            .collect();
+            }),
+        )?;
 
         let image_available_semaphores = (0..Self::MAX_FRAMES_IN_FLIGHT)
-            .map(|_| unsafe { device.create_semaphore(&vk::SemaphoreCreateInfo::default(), None) })
-            .collect::<Result<Vec<_>, _>>()?;
-
-        let render_finished_semaphores = (0..swapchain_images.len())
             .map(|_| unsafe { device.create_semaphore(&vk::SemaphoreCreateInfo::default(), None) })
             .collect::<Result<Vec<_>, _>>()?;
 
@@ -400,7 +349,7 @@ impl Gpu {
 
         info!(
             "Configured surface with format {:?} at {}x{}",
-            surface_format.format, swapchain_extent.width, swapchain_extent.height
+            surface_format.format, swapchain_state.extent.width, swapchain_state.extent.height
         );
 
         let command_pool = unsafe {
@@ -498,16 +447,12 @@ impl Gpu {
 
             queue,
             surface,
-            swapchain,
-            swapchain_extent,
-            swapchain_images,
-            swapchain_image_views,
             surface_format,
+            swapchain_state: RwLock::new(swapchain_state),
             image_available_semaphores,
 
             allocator: allocator.into(),
 
-            render_finished_semaphores,
             in_flight_fences,
 
             command_pool,
@@ -545,8 +490,93 @@ impl Gpu {
         .into())
     }
 
-    pub const fn swapchain_resolution(&self) -> (u32, u32) {
-        (self.swapchain_extent.width, self.swapchain_extent.height)
+    pub fn swapchain_resolution(&self) -> (u32, u32) {
+        let state = self.swapchain_state.read();
+        (state.extent.width, state.extent.height)
+    }
+
+    pub fn swapchain_extent(&self) -> vk::Extent2D {
+        self.swapchain_state.read().extent
+    }
+
+    /// Returns the swapchain image and its view for `index`.
+    pub fn swapchain_image(&self, index: u32) -> (vk::Image, vk::ImageView) {
+        let state = self.swapchain_state.read();
+        let index = index as usize;
+        (state.images[index], state.image_views[index])
+    }
+
+    pub fn swapchain_image_count(&self) -> usize {
+        self.swapchain_state.read().images.len()
+    }
+
+    /// Recreates the swapchain for a new window size.
+    ///
+    /// Does nothing if the extent is already current.
+    pub fn resize_swapchain(&self, width: u32, height: u32) -> anyhow::Result<()> {
+        if width == 0 || height == 0 {
+            return Ok(());
+        }
+        {
+            let state = self.swapchain_state.read();
+            if state.extent.width == width && state.extent.height == height {
+                return Ok(());
+            }
+        }
+
+        self.recreate_swapchain(width, height)
+    }
+
+    /// Recreates the swapchain, its image views, and per-image present
+    /// semaphores, even if the requested extent matches the current one.
+    ///
+    /// Waits for the GPU to go idle first, so it is safe to call from the event
+    /// loop after a window resize.
+    pub fn recreate_swapchain(&self, width: u32, height: u32) -> anyhow::Result<()> {
+        if width == 0 || height == 0 {
+            return Ok(());
+        }
+
+        // The new swapchain is created with the old one passed as oldSwapchain, so
+        // all resources currently in flight must be finished first.
+        unsafe { self.device.device_wait_idle()? };
+
+        let (old_swapchain, old_views, old_semaphores) = {
+            let state = self.swapchain_state.read();
+            (
+                state.swapchain,
+                state.image_views.clone(),
+                state.render_finished_semaphores.clone(),
+            )
+        };
+
+        let new_state = create_swapchain_state(
+            &self.device,
+            &self.swapchain_loader,
+            &self.surface_loader,
+            self.physical_device,
+            self.surface,
+            self.surface_format,
+            old_swapchain,
+            Some(vk::Extent2D { width, height }),
+        )?;
+
+        *self.swapchain_state.write() = new_state;
+
+        unsafe {
+            for view in old_views {
+                self.device.destroy_image_view(view, None);
+            }
+            for semaphore in old_semaphores {
+                self.device.destroy_semaphore(semaphore, None);
+            }
+            self.swapchain_loader.destroy_swapchain(old_swapchain, None);
+        }
+
+        let extent = self.swapchain_state.read().extent;
+        info!("Resized swapchain to {}x{}", extent.width, extent.height);
+
+        Ok(())
     }
 
     pub fn null_storage_image_view(self: &Arc<Self>) -> vk::ImageView {
@@ -672,7 +702,10 @@ impl Gpu {
         }
     }
 
-    pub fn acquire_next_image(&self) -> anyhow::Result<u32> {
+    /// Acquires the next swapchain image.
+    ///
+    /// Returns `None` if the swapchain is out of date and needs to be recreated.
+    pub fn acquire_next_image(&self) -> anyhow::Result<Option<u32>> {
         let frame = self.frame_index.load(Ordering::Relaxed) % Self::MAX_FRAMES_IN_FLIGHT;
 
         unsafe {
@@ -680,16 +713,21 @@ impl Gpu {
                 .wait_for_fences(&[self.in_flight_fences[frame]], true, u64::MAX)?;
         }
 
-        let (image_index, _suboptimal) = unsafe {
+        let swapchain = self.swapchain_state.read().swapchain;
+        let acquired = unsafe {
             self.swapchain_loader.acquire_next_image(
-                self.swapchain,
+                swapchain,
                 u64::MAX,
                 self.image_available_semaphores[frame],
                 vk::Fence::null(),
             )
-        }?;
+        };
 
-        Ok(image_index)
+        match acquired {
+            Ok((image_index, _suboptimal)) => Ok(Some(image_index)),
+            Err(vk::Result::ERROR_OUT_OF_DATE_KHR) => Ok(None),
+            Err(e) => Err(e.into()),
+        }
     }
 
     pub fn upload_command_buffer(&self) -> MutexGuard<'_, vk::CommandBuffer> {
@@ -764,7 +802,8 @@ impl Gpu {
         let command_buffers = [self.command_buffers[frame_index]];
         let wait_semaphores = [self.image_available_semaphores[frame_index]];
         let wait_stages = [vk::PipelineStageFlags::COLOR_ATTACHMENT_OUTPUT];
-        let signal_semaphores = [self.render_finished_semaphores[image_index as usize]];
+        let signal_semaphores =
+            [self.swapchain_state.read().render_finished_semaphores[image_index as usize]];
 
         let upload_cmd = self.upload_command_buffer.lock();
         if self
@@ -808,9 +847,11 @@ impl Gpu {
         Ok(())
     }
 
-    pub fn present(&self, image_index: u32) -> anyhow::Result<()> {
-        let wait_semaphores = [self.render_finished_semaphores[image_index as usize]];
-        let swapchains = [self.swapchain];
+    /// Presents the given image.
+    pub fn present(&self, image_index: u32) -> anyhow::Result<PresentStatus> {
+        let state = self.swapchain_state.read();
+        let wait_semaphores = [state.render_finished_semaphores[image_index as usize]];
+        let swapchains = [state.swapchain];
         let image_indices = [image_index];
 
         let present_info = vk::PresentInfoKHR::default()
@@ -818,12 +859,15 @@ impl Gpu {
             .swapchains(&swapchains)
             .image_indices(&image_indices);
 
-        let _suboptimal = unsafe {
+        match unsafe {
             self.swapchain_loader
                 .queue_present(self.queue, &present_info)
-        }?;
-
-        Ok(())
+        } {
+            Ok(false) => Ok(PresentStatus::Ok),
+            Ok(true) => Ok(PresentStatus::Suboptimal),
+            Err(vk::Result::ERROR_OUT_OF_DATE_KHR) => Ok(PresentStatus::OutOfDate),
+            Err(e) => Err(e.into()),
+        }
     }
 
     pub fn profiler_scope(&self, cmd: &CommandBuffer, name: &str) -> () {}
@@ -832,6 +876,116 @@ impl Gpu {
         unsafe { self.device.device_wait_idle()? };
         Ok(())
     }
+}
+
+#[allow(clippy::too_many_arguments)]
+fn create_swapchain_state(
+    device: &ash::Device,
+    swapchain_loader: &swapchain::Device,
+    surface_loader: &surface::Instance,
+    physical_device: vk::PhysicalDevice,
+    surface: vk::SurfaceKHR,
+    surface_format: vk::SurfaceFormatKHR,
+    old_swapchain: vk::SwapchainKHR,
+    requested_extent: Option<vk::Extent2D>,
+) -> anyhow::Result<SwapchainState> {
+    let capabilities = unsafe {
+        surface_loader.get_physical_device_surface_capabilities(physical_device, surface)?
+    };
+
+    let extent = if capabilities.current_extent.width != u32::MAX {
+        capabilities.current_extent
+    } else {
+        let requested = requested_extent.unwrap_or(capabilities.min_image_extent);
+        vk::Extent2D {
+            width: requested
+                .width
+                .clamp(
+                    capabilities.min_image_extent.width,
+                    capabilities.max_image_extent.width,
+                )
+                .max(1),
+            height: requested
+                .height
+                .clamp(
+                    capabilities.min_image_extent.height,
+                    capabilities.max_image_extent.height,
+                )
+                .max(1),
+        }
+    };
+
+    let mut desired_image_count = capabilities.min_image_count + 1;
+    if capabilities.max_image_count > 0 && desired_image_count > capabilities.max_image_count {
+        desired_image_count = capabilities.max_image_count;
+    }
+
+    let pre_transform = if capabilities
+        .supported_transforms
+        .contains(vk::SurfaceTransformFlagsKHR::IDENTITY)
+    {
+        vk::SurfaceTransformFlagsKHR::IDENTITY
+    } else {
+        capabilities.current_transform
+    };
+
+    let present_modes = unsafe {
+        surface_loader.get_physical_device_surface_present_modes(physical_device, surface)?
+    };
+    let present_mode = present_modes
+        .iter()
+        .cloned()
+        .find(|&mode| mode == vk::PresentModeKHR::MAILBOX)
+        .unwrap_or(vk::PresentModeKHR::FIFO);
+
+    let swapchain_create_info = vk::SwapchainCreateInfoKHR::default()
+        .surface(surface)
+        .min_image_count(desired_image_count)
+        .image_color_space(surface_format.color_space)
+        .image_format(surface_format.format)
+        .image_extent(extent)
+        .image_usage(vk::ImageUsageFlags::COLOR_ATTACHMENT | vk::ImageUsageFlags::TRANSFER_DST)
+        .image_sharing_mode(vk::SharingMode::EXCLUSIVE)
+        .pre_transform(pre_transform)
+        .composite_alpha(vk::CompositeAlphaFlagsKHR::OPAQUE)
+        .present_mode(present_mode)
+        .clipped(true)
+        .image_array_layers(1)
+        .old_swapchain(old_swapchain);
+
+    let swapchain = unsafe { swapchain_loader.create_swapchain(&swapchain_create_info, None)? };
+
+    let images = unsafe { swapchain_loader.get_swapchain_images(swapchain)? };
+    let image_views = images
+        .iter()
+        .map(|image| unsafe {
+            device.create_image_view(
+                &vk::ImageViewCreateInfo::default()
+                    .image(*image)
+                    .view_type(vk::ImageViewType::TYPE_2D)
+                    .format(surface_format.format)
+                    .subresource_range(
+                        vk::ImageSubresourceRange::default()
+                            .aspect_mask(vk::ImageAspectFlags::COLOR)
+                            .layer_count(1)
+                            .level_count(1),
+                    ),
+                None,
+            )
+        })
+        .collect::<Result<Vec<_>, _>>()?;
+
+    let render_finished_semaphores = (0..images.len())
+        .map(|_| unsafe { device.create_semaphore(&vk::SemaphoreCreateInfo::default(), None) })
+        .collect::<Result<Vec<_>, _>>()?;
+
+    Ok(SwapchainState {
+        swapchain,
+        images,
+        image_views,
+        extent,
+        render_finished_semaphores,
+    })
 }
 
 impl std::ops::Deref for Gpu {

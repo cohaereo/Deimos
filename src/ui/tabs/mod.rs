@@ -1,13 +1,13 @@
-// pub mod activity;
-// pub mod activity_list;
-// pub mod entity_list;
+pub mod activity;
+pub mod activity_list;
+pub mod entity_list;
 pub mod home;
 pub mod map;
-// pub mod map_list;
-// pub mod model_list;
-// pub mod model_view;
+pub mod map_list;
+pub mod model_list;
+pub mod model_view;
 pub mod settings;
-// pub mod static_list;
+pub mod static_list;
 
 // pub mod tag_lookup;
 // pub mod test_scene;
@@ -21,20 +21,23 @@ use home::HomeTab;
 
 use crate::ui::{
     GuiRenderer,
-    tabs::{map::MapTab, settings::SettingsTab},
+    tabs::{
+        activity::ActivityTab, activity_list::ActivityListTab, entity_list::EntityListTab,
+        map::MapTab, map_list::MapListTab, model_view::ModelViewTab, settings::SettingsTab,
+        static_list::StaticListTab,
+    },
 };
 
 pub enum Tab {
     Home,
     Settings,
-    // EntityList(Box<EntityListTab>),
-    // ModelView(Box<ModelViewTab>),
-    // StaticList(Box<StaticListTab>),
-    // MapList(MapListTab),
+    EntityList(Box<EntityListTab>),
+    ModelView(Box<ModelViewTab>),
+    StaticList(Box<StaticListTab>),
+    MapList(MapListTab),
     Map(MapTab),
-    // ActivityList(ActivityListTab),
-    // Activity(ActivityTab),
-
+    ActivityList(ActivityListTab),
+    Activity(ActivityTab),
     // TestScene(TestSceneTab),
     // TagLookup(TagLookupTab),
 }
@@ -49,15 +52,13 @@ impl Tab {
         match self {
             Self::Home
             | Self::Settings
-            // | Self::MapList(_)
-            // | Self::ActivityList(_)
-            // | Self::EntityList(_)
-            // | Self::StaticList(_)
-            => 0,
-            // Self::ModelView(tab) => tab.tag.0 as u64,
+            | Self::MapList(_)
+            | Self::ActivityList(_)
+            | Self::EntityList(_)
+            | Self::StaticList(_) => 0,
+            Self::ModelView(tab) => tab.tag.0 as u64,
             Self::Map(tab) => tab.tag.0 as u64,
-            // Self::Activity(tab) => tab.tag.0 as u64,
-
+            Self::Activity(tab) => tab.tag.0 as u64,
             // Tab::TestScene(_) => 0,
             // Tab::TagLookup(_) => 0,
         }
@@ -69,18 +70,17 @@ impl Display for Tab {
         let s = match self {
             Self::Settings => GoogleMaterialSymbols::Settings.to_string(),
             Self::Home => format!("{} Home", GoogleMaterialSymbols::Home),
-            // Self::EntityList(_) => format!("{} Entities", GoogleMaterialSymbols::ChessPawn),
-            // Self::ModelView(tab) => {
-            //     format!("{} Model {}", GoogleMaterialSymbols::_3dRotation, tab.tag)
-            // }
-            // Self::StaticList(_) => format!("{} Statics", GoogleMaterialSymbols::Landscape),
-            // Self::MapList(_) => format!("{} Maps", GoogleMaterialSymbols::Map),
+            Self::EntityList(_) => format!("{} Entities", GoogleMaterialSymbols::ChessPawn),
+            Self::ModelView(tab) => {
+                format!("{} Model {}", GoogleMaterialSymbols::_3dRotation, tab.tag)
+            }
+            Self::StaticList(_) => format!("{} Statics", GoogleMaterialSymbols::Landscape),
+            Self::MapList(_) => format!("{} Maps", GoogleMaterialSymbols::Map),
             Self::Map(tab) => format!("{} ({})", tab.name, tab.tag),
-            // Self::ActivityList(_) => {
-            //     format!("{} Activities", GoogleMaterialSymbols::StadiaController)
-            // }
-            // Self::Activity(tab) => format!("{} ({})", tab.name, tab.tag),
-
+            Self::ActivityList(_) => {
+                format!("{} Activities", GoogleMaterialSymbols::StadiaController)
+            }
+            Self::Activity(tab) => format!("{} ({})", tab.name, tab.tag),
             // Tab::TestScene(_) => format!("{} Test Scene", GoogleMaterialSymbols::Experiment),
             // Tab::TagLookup(_) => format!("{} Tag Lookup", GoogleMaterialSymbols::Search),
         };
@@ -116,32 +116,32 @@ impl<'a> egui_dock::TabViewer for TabViewer<'a> {
                     }
                     Tab::Settings => {
                         SettingsTab::ui(ui, self.shared_state);
-                    } // Tab::EntityList(tab) => {
-                    //     let res = tab.ui(ui, self.renderer);
-                    //     self.process_result(res);
-                    // }
-                    // Tab::ModelView(tab) => {
-                    //     tab.ui(ui, self.renderer);
-                    // }
-                    // Tab::StaticList(tab) => {
-                    //     let res = tab.ui(ui, self.renderer);
-                    //     self.process_result(res);
-                    // }
-                    // Tab::MapList(tab) => {
-                    //     self.process_result(tab.ui(ui));
-                    // }
+                    }
+                    Tab::EntityList(tab) => {
+                        let res = tab.ui(ui, self.renderer);
+                        self.process_result(res);
+                    }
+                    Tab::ModelView(tab) => {
+                        tab.ui(ui, self.renderer);
+                    }
+                    Tab::StaticList(tab) => {
+                        let res = tab.ui(ui, self.renderer);
+                        self.process_result(res);
+                    }
+                    Tab::MapList(tab) => {
+                        self.process_result(tab.ui(ui));
+                    }
                     Tab::Map(tab) => {
                         tab.ui(ui, self.renderer);
-                    } // Tab::ActivityList(tab) => {
-                      //     let res = tab.ui(ui);
-                      //     self.process_result(res);
-                      // }
-                      // Tab::Activity(tab) => {
+                    }
+                    Tab::ActivityList(tab) => {
+                        let res = tab.ui(ui);
+                        self.process_result(res);
+                    }
+                    Tab::Activity(tab) => {
+                        tab.ui(ui, self.renderer);
+                    } // Tab::TestScene(tab) => {
                       //     tab.ui(ui, self.renderer);
-                      // }
-
-                      // Tab::TestScene(tab) => {
-                      //     tab.ui(ui, self.egui_d3d11);
                       // }
                       // Tab::TagLookup(data) => {
                       //     self.process_result(data.ui(ui));

@@ -18,6 +18,7 @@ use crate::{
     app::SharedState,
     task::Task,
     ui::{
+        GuiRenderer,
         scene::{Scene, controller::CameraController},
         util::{DButton, UiExt},
     },
@@ -76,7 +77,7 @@ impl ActivityTab {
         })
     }
 
-    pub fn ui(&mut self, ui: &mut egui::Ui, egui_d3d12: &mut egui_d3d12::D3D12Renderer) {
+    pub fn ui(&mut self, ui: &mut egui::Ui, gui_renderer: &mut GuiRenderer) {
         if self.maps.len() > 1 {
             egui::SidePanel::left(format!("activity_{}_map_list", self.tag)).show_inside(
                 ui,
@@ -160,7 +161,7 @@ impl ActivityTab {
             ActivityLoadState::Loaded => {
                 if let Some(world) = map.world.as_mut() {
                     std::mem::swap(world, &mut self.scene.world);
-                    self.scene.show(ui, egui_d3d12, ui.available_size());
+                    self.scene.show(ui, gui_renderer, ui.available_size());
                     std::mem::swap(&mut self.scene.world, world);
                 }
             }

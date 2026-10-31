@@ -5,7 +5,13 @@ use google_material_symbols::GoogleMaterialSymbols;
 
 use crate::{
     app::SharedState,
-    ui::{tabs::TabResult, util::UiExt},
+    ui::{
+        tabs::{
+            Tab, TabResult, activity_list::ActivityListTab, entity_list::EntityListTab,
+            map_list::MapListTab, static_list::StaticListTab,
+        },
+        util::UiExt,
+    },
 };
 
 pub struct HomeTab;
@@ -36,31 +42,31 @@ impl HomeTab {
                 ))
                 .clicked()
             {
-                // result = TabResult::Open(Tab::ActivityList(ActivityListTab::new(shared_state)));
+                result = TabResult::Open(Tab::ActivityList(ActivityListTab::new(shared_state)));
             }
             if uis[0]
                 .d_button(format!("{} MAPS", GoogleMaterialSymbols::Map))
                 .clicked()
             {
-                // result = TabResult::Open(Tab::MapList(MapListTab::new(shared_state)));
+                result = TabResult::Open(Tab::MapList(MapListTab::new(shared_state)));
             }
             if uis[0]
                 .d_button(format!("{} ENTITIES", GoogleMaterialSymbols::ChessPawn))
                 .clicked()
             {
-                // result = TabResult::Open(Tab::EntityList(Box::new(EntityListTab::new(
-                //     &shared_state.renderer,
-                //     &shared_state,
-                // ))));
+                result = TabResult::Open(Tab::EntityList(Box::new(EntityListTab::new(
+                    &shared_state.renderer,
+                    &shared_state,
+                ))));
             }
             if uis[0]
                 .d_button(format!("{} STATICS", GoogleMaterialSymbols::Landscape))
                 .clicked()
             {
-                // result = TabResult::Open(Tab::StaticList(Box::new(StaticListTab::new(
-                //     &shared_state.renderer,
-                //     &shared_state,
-                // ))));
+                result = TabResult::Open(Tab::StaticList(Box::new(StaticListTab::new(
+                    &shared_state.renderer,
+                    &shared_state,
+                ))));
             }
 
             uis[1].heading("2D");

@@ -21,7 +21,10 @@ use tiger_pkg::{TagHash, package_manager};
 use super::TabResult;
 use crate::{
     app::SharedState,
-    ui::tabs::model_list::{ModelEntry, ModelListBase, ModelProvider},
+    ui::{
+        GuiRenderer,
+        tabs::model_list::{ModelEntry, ModelListBase, ModelProvider},
+    },
 };
 
 pub struct StaticListTab {
@@ -35,8 +38,8 @@ impl StaticListTab {
         }
     }
 
-    pub fn ui(&mut self, ui: &mut Ui, egui_d3d11: &mut egui_d3d12::D3D12Renderer) -> TabResult {
-        self.base.ui(ui, egui_d3d11)
+    pub fn ui(&mut self, ui: &mut Ui, gui_renderer: &mut GuiRenderer) -> TabResult {
+        self.base.ui(ui, gui_renderer)
     }
 }
 

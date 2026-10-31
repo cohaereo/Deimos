@@ -23,6 +23,7 @@ use super::TabResult;
 use crate::{
     app::SharedState,
     ui::{
+        GuiRenderer,
         scene::{
             Scene,
             controller::{CameraController, egui_to_glam_vec2},
@@ -241,7 +242,7 @@ impl<P: ModelProvider> ModelListBase<P> {
         }
     }
 
-    pub fn ui(&mut self, ui: &mut Ui, egui_d3d11: &mut egui_d3d12::D3D12Renderer) -> TabResult {
+    pub fn ui(&mut self, ui: &mut Ui, gui_renderer: &mut GuiRenderer) -> TabResult {
         let mut result = TabResult::Continue;
 
         self.provider.load_package(self.current_package);
@@ -580,7 +581,7 @@ impl<P: ModelProvider> ModelListBase<P> {
                 }
 
                 // egui::CentralPanel::default().show_inside(ui, |ui| {
-                self.scene.show(ui, egui_d3d11, ui.available_size());
+                self.scene.show(ui, gui_renderer, ui.available_size());
                 // });
             });
 
@@ -729,11 +730,12 @@ impl<P: ModelProvider> ModelListBase<P> {
                                     thumbnail
                                 };
 
-                                let tid = egui_d3d11.textures_mut().allocate_dx_temporary(
-                                    srv.cpu_handle(),
-                                    Some(egui::TextureFilter::Linear),
-                                    false, // TODO(cohae): we're currently copying albedo which is fully transparent (technically)
-                                );
+                                let tid = gui_renderer.add_user_texture(srv);
+                                // let tid = egui_d3d11.textures_mut().allocate_dx_temporary(
+                                //     srv.cpu_handle(),
+                                //     Some(egui::TextureFilter::Linear),
+                                //     false, // TODO(cohae): we're currently copying albedo which is fully transparent (technically)
+                                // );
                                 card_painter.image(
                                     tid,
                                     card_image_rect,

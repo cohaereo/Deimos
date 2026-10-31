@@ -5,10 +5,13 @@ use ash::vk;
 use deimos_data::tfx::ShaderStage;
 use gpu_allocator::MemoryLocation;
 
-use crate::gpu::{
-    Gpu,
-    alloc::{BufferAllocDesc, buffer::Buffer},
-    command_list::{CommandList, ConstantBufferView},
+use crate::{
+    gpu::{
+        Gpu,
+        alloc::{BufferAllocDesc, buffer::Buffer},
+        command_list::{BufferResource, CommandList, ConstantBufferView},
+    },
+    util::once,
 };
 
 // pub struct DynamicBuffer {
@@ -214,19 +217,25 @@ impl ImmutableBuffer {
         })
     }
 
-    // pub fn create_srv(&self, gpu: &Gpu, bytes_range: Range<u64>) -> ResourceView {
-    //     gpu.resource_heap.lock().allocate_srv(
-    //         "immutable_buffer_slice",
-    //         self.resource.resource(),
-    //         &d3d12::ShaderResourceViewDesc::buffer(
-    //             self.view_format,
-    //             self.view_format.buffer_element_count(bytes_range.start)
-    //                 ..self.view_format.buffer_element_count(bytes_range.end),
-    //             0,
-    //             BufferSrvFlags::empty(),
-    //         ),
-    //     )
-    // }
+    pub fn create_srv(&self, bytes_range: Range<u64>) -> vk::BufferView {
+        unsafe {
+            self.gpu
+                .device
+                .create_buffer_view(
+                    &vk::BufferViewCreateInfo::default()
+                        .buffer(self.buffer.vk_buffer())
+                        .format(self.view_format)
+                        .offset(bytes_range.start)
+                        .range(bytes_range.end - bytes_range.start),
+                    None,
+                )
+                .expect("Failed to create buffer view")
+        }
+    }
+
+    pub const fn buffer_view(&self) -> vk::BufferView {
+        self.view
+    }
 
     pub const fn size(&self) -> u64 {
         self.size
@@ -236,17 +245,21 @@ impl ImmutableBuffer {
         self.buffer.cbv()
     }
 
-    // pub const fn resource_view(&self) -> ResourceView {
-    //     self.srv
-    // }
+    pub fn buffer(&self) -> &Buffer {
+        &self.buffer
+    }
 
-    // pub fn constant_buffer_view(&self) -> d3d12::GpuVirtualAddress {
-    //     self.resource.resource().gpu_virtual_address()
-    // }
+    pub fn srv(&self, offset: u64, size: u64) -> BufferResource {
+        BufferResource {
+            addr: self.buffer.device_address() + offset,
+            size,
+            format: self.view_format,
+        }
+    }
 
-    // pub fn bind_srv(&self, cmd: &mut CommandList, stage: ShaderStage, slot: u32) {
-    //     cmd.set_shader_resource_view(stage, slot, Some(self.resource_view()));
-    // }
+    pub fn bind_srv(&self, cmd: &mut CommandList, stage: ShaderStage, slot: u32) {
+        cmd.set_shader_resource_buffer(stage, slot, Some(self.srv(0, self.size)));
+    }
 
     pub fn bind_cbv(&self, cmd: &mut CommandList, stage: ShaderStage, slot: u32) {
         cmd.set_shader_constant_buffer_view(stage, slot, Some(self.cbv()));

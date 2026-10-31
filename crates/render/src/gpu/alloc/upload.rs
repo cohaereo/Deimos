@@ -86,6 +86,8 @@ impl UploadHeap {
                 ptr: unsafe { self.mapped_ptr.add(start) },
                 len: size,
                 capacity: size_aligned,
+                buffer: self.buffer,
+                offset: start,
                 gpu_va: self.gpu_base + start as u64,
             };
 
@@ -105,12 +107,12 @@ impl UploadHeap {
         })
     }
 
-    pub fn upload_bytes(&self, data: &[u8]) -> anyhow::Result<vk::DeviceAddress> {
+    pub fn upload_bytes(&self, data: &[u8]) -> anyhow::Result<RingSlice> {
         let slice = self.alloc_slice(data.len())?;
         unsafe {
             std::ptr::copy_nonoverlapping(data.as_ptr(), slice.ptr, data.len());
         }
-        Ok(slice.gpu_va)
+        Ok(slice)
     }
 
     pub const fn null(&self) -> vk::DeviceAddress {
@@ -145,6 +147,8 @@ pub struct RingSlice {
     len: usize,
     capacity: usize,
 
+    buffer: vk::Buffer,
+    offset: usize,
     gpu_va: vk::DeviceAddress,
 }
 
@@ -167,6 +171,15 @@ impl RingSlice {
 
     pub const fn is_empty(&self) -> bool {
         self.len == 0
+    }
+
+    pub const fn buffer(&self) -> vk::Buffer {
+        self.buffer
+    }
+
+    /// Returns the offset relative to the buffer
+    pub const fn offset(&self) -> usize {
+        self.offset
     }
 
     pub const fn as_slice(&self) -> &[u8] {

@@ -18,7 +18,11 @@ use deimos_data::{
     strings::{StringContainer, StringContainerShared},
     tag::WideHash,
 };
-use deimos_render::{gpu::Gpu, renderer::Renderer, util::fps_histogram::FrametimeHistogram};
+use deimos_render::{
+    gpu::{Gpu, PresentStatus},
+    renderer::Renderer,
+    util::fps_histogram::FrametimeHistogram,
+};
 use parking_lot::RwLock;
 use sdl3::video::Window;
 use tiger_parse::TigerReadable;
@@ -108,11 +112,19 @@ impl App {
                 self.running = false;
             }
             sdl3::event::Event::Window { win_event, .. } => match win_event {
-                &sdl3::event::WindowEvent::Resized(new_width, new_height) => {
-                    // self.gpu.wait_for_idle();
-                    // self.gpu
-                    //     .resize_swapchain((new_width as u32, new_height as u32));
-                    tracing::error!("TODO: implement swapchain resize");
+                &sdl3::event::WindowEvent::Resized(..) => {
+                    let (width, height) = self.window.size_in_pixels();
+                    if let Err(e) = self.gpu.resize_swapchain(width, height) {
+                        error!("Failed to resize swapchain: {e:?}");
+                    }
+                }
+                &sdl3::event::WindowEvent::PixelSizeChanged(width, height) => {
+                    if let Err(e) = self
+                        .gpu
+                        .resize_swapchain(width.max(0) as u32, height.max(0) as u32)
+                    {
+                        error!("Failed to resize swapchain: {e:?}");
+                    }
                 }
                 sdl3::event::WindowEvent::CloseRequested => {
                     self.running = false;
@@ -137,8 +149,15 @@ impl App {
         self.frametime_histogram.push(delta_time);
 
         let gpu = &self.gpu;
-        let frame = self.gpu.begin_frame();
-        let image_index = gpu.acquire_next_image()?;
+        let _frame = self.gpu.begin_frame();
+        let Some(image_index) = gpu.acquire_next_image()? else {
+            // The swapchain went out of date (typically during a live resize).
+            let (width, height) = self.window.size_in_pixels();
+            if let Err(e) = self.gpu.recreate_swapchain(width, height) {
+                error!("Failed to recreate out-of-date swapchain: {e:?}");
+            }
+            return Ok(());
+        };
         let cmd = gpu.current_command_buffer();
 
         unsafe {
@@ -146,7 +165,8 @@ impl App {
             gpu.begin_command_buffer(*cmd, &vk::CommandBufferBeginInfo::default())?;
         }
 
-        let backbuffer_image = gpu.swapchain_images[image_index as usize];
+        let (backbuffer_image, backbuffer_view) = gpu.swapchain_image(image_index);
+        let swapchain_extent = gpu.swapchain_extent();
         gpu.cmd_image_layout_barrier(
             *cmd,
             backbuffer_image,
@@ -168,7 +188,7 @@ impl App {
                 // let (back_buffer_handle, back_buffer) = self.gpu.swapchain.lock().get_back_buffer();
 
                 let attachment_info = vk::RenderingAttachmentInfo::default()
-                    .image_view(gpu.swapchain_image_views[image_index as usize])
+                    .image_view(backbuffer_view)
                     .image_layout(vk::ImageLayout::COLOR_ATTACHMENT_OPTIMAL)
                     .load_op(vk::AttachmentLoadOp::CLEAR)
                     .store_op(vk::AttachmentStoreOp::STORE)
@@ -179,7 +199,7 @@ impl App {
                     });
 
                 cmd.begin_rendering(
-                    (gpu.swapchain_extent.width, gpu.swapchain_extent.height),
+                    (swapchain_extent.width, swapchain_extent.height),
                     &[attachment_info],
                     None,
                 )?;
@@ -205,9 +225,27 @@ impl App {
         unsafe {
             gpu.end_command_buffer(*cmd)?;
         }
-        self.gpu.submit(image_index);
+        self.gpu.submit(image_index)?;
         // self.gpu.present(self.shared_state.config.read().vsync);
-        self.gpu.present(image_index);
+        let present_status = match self.gpu.present(image_index) {
+            Ok(status) => status,
+            Err(e) => {
+                error!("Failed to present image: {e:?}");
+                PresentStatus::OutOfDate
+            }
+        };
+
+        if present_status != PresentStatus::Ok {
+            let (width, height) = self.window.size_in_pixels();
+            let result = if present_status == PresentStatus::OutOfDate {
+                self.gpu.recreate_swapchain(width, height)
+            } else {
+                self.gpu.resize_swapchain(width, height)
+            };
+            if let Err(e) = result {
+                error!("Failed to recreate swapchain after present: {e:?}");
+            }
+        }
 
         let config = self.shared_state.config.read();
         if config.framelimiter_enabled {

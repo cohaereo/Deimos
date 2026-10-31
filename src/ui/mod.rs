@@ -469,7 +469,7 @@ impl GuiRenderer {
 
         if let Err(e) = self.renderer.cmd_draw(
             *cmd,
-            self.gpu.swapchain_extent,
+            self.gpu.swapchain_extent(),
             pixels_per_point,
             &primitives,
         ) {
