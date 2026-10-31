@@ -455,8 +455,12 @@ impl Gpu {
             device: device.clone(),
             physical_device,
             debug_settings: Default::default(),
-            buffer_device_address: false,
-            allocation_sizes: Default::default(),
+            buffer_device_address: true,
+            // cohae: Keeping device_memblock_size to 16MB fixes an VK_ERROR_OUT_OF_DEVICE_MEMORY error when replaying captures in renderdoc
+            allocation_sizes: gpu_allocator::AllocationSizes::new(
+                16 * 1024 * 1024,
+                64 * 1024 * 1024,
+            ),
         })?;
 
         let memory_types =
