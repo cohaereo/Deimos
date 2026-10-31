@@ -1,6 +1,6 @@
 pub mod decals;
 pub mod decorators;
-// pub mod light;
+pub mod light;
 pub mod rigid_model;
 mod shared;
 mod skinning;

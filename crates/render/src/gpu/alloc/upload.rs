@@ -36,7 +36,9 @@ impl UploadHeap {
                     vk::BufferUsageFlags::TRANSFER_SRC
                         | vk::BufferUsageFlags::TRANSFER_DST
                         | vk::BufferUsageFlags::UNIFORM_BUFFER
+                        | vk::BufferUsageFlags::UNIFORM_TEXEL_BUFFER
                         | vk::BufferUsageFlags::VERTEX_BUFFER
+                        | vk::BufferUsageFlags::INDEX_BUFFER
                         | vk::BufferUsageFlags::SHADER_DEVICE_ADDRESS,
                 ),
                 None,

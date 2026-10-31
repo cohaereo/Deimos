@@ -23,8 +23,9 @@ use deimos_ecs::{
 use deimos_render::{
     ecs::render_objects::{DynamicRenderObject, StaticRenderObject},
     features::{
-        decals::DecalCollectionRenderer, rigid_model::DynamicModel,
-        static_instances::StaticInstancesRenderer, terrain_patches::TerrainPatchesRenderer,
+        decals::DecalCollectionRenderer, decorators::DecoratorRenderer, light::LightRenderer,
+        rigid_model::DynamicModel, static_instances::StaticInstancesRenderer,
+        terrain_patches::TerrainPatchesRenderer,
     },
     renderer::{Renderer, object::RenderObject},
 };
@@ -227,156 +228,156 @@ pub fn load_component(
                 )?;
             }
         }
-        // 0x808085A9 => {
-        //     let data = get_component_data!(SDecoratorsComponent);
-        //     if let Some(decorators) = data.decorators.0.as_ref() {
-        //         let decorator_renderer = DecoratorRenderer::load(
-        //             renderer,
-        //             data.decorators.taghash(),
-        //             decorators.clone(),
-        //         )?;
-        //         world.insert_one(
-        //             entity,
-        //             StaticRenderObject::new(
-        //                 renderer,
-        //                 renderer.add_object(RenderObject::new(
-        //                     TfxFeatureRenderer::SpeedtreeTrees,
-        //                     Box::new(decorator_renderer),
-        //                 )),
-        //             ),
-        //         )?;
-        //     }
-        // }
-        // 0x80808377 => {
-        //     let data = get_component_data!(SSkyObjectCollectionComponent);
-        //     let Some(objects) = &*data.objects else {
-        //         return Ok(ComponentLoadResult::Skipped);
-        //     };
-        //     for obj in &objects.unk8 {
-        //         // cohae: Objects with unk70 set to 5 are a solid red? These don't show up in-game
-        //         if obj.unk70 == 5 {
-        //             continue;
-        //         }
+        0x808085A9 => {
+            let data = get_component_data!(SDecoratorsComponent);
+            if let Some(decorators) = data.decorators.0.as_ref() {
+                let decorator_renderer = DecoratorRenderer::load(
+                    renderer,
+                    data.decorators.taghash(),
+                    decorators.clone(),
+                )?;
+                world.insert_one(
+                    entity,
+                    StaticRenderObject::new(
+                        renderer,
+                        renderer.add_object(RenderObject::new(
+                            TfxFeatureRenderer::SpeedtreeTrees,
+                            Box::new(decorator_renderer),
+                        )),
+                    ),
+                )?;
+            }
+        }
+        0x80808377 => {
+            let data = get_component_data!(SSkyObjectCollectionComponent);
+            let Some(objects) = &*data.objects else {
+                return Ok(ComponentLoadResult::Skipped);
+            };
+            for obj in &objects.unk8 {
+                // cohae: Objects with unk70 set to 5 are a solid red? These don't show up in-game
+                if obj.unk70 == 5 {
+                    continue;
+                }
 
-        //         let (scale, rotation, translation) = obj.transform.to_scale_rotation_translation();
+                let (scale, rotation, translation) = obj.transform.to_scale_rotation_translation();
 
-        //         let render_obj = RenderObject::new(
-        //             TfxFeatureRenderer::SkyTransparent,
-        //             DynamicModel::load(renderer, obj.model_ref.entity_model, vec![], vec![])?,
-        //         );
+                let render_obj = RenderObject::new(
+                    TfxFeatureRenderer::SkyTransparent,
+                    DynamicModel::load(renderer, obj.model_ref.entity_model, vec![], vec![])?,
+                );
 
-        //         // TODO(cohae): Again, spawning new entities for each object is kinda dumb
-        //         world.spawn((
-        //             Transform::new(translation, rotation, scale),
-        //             DynamicRenderObject::new(renderer, renderer.add_object(render_obj)),
-        //         ));
-        //     }
-        // }
-        // 0x80808543 => {
-        //     let data = get_component_data!(SShadowingLightComponent);
-        //     let light = if let Some(light) = data.light.0.as_ref() {
-        //         light.clone()
-        //     } else {
-        //         let mut cur = Cursor::new(package_manager().read_tag(component.taghash())?);
-        //         cur.seek(SeekFrom::Start(component.definition.offset + 0x130))?;
-        //         let light = OptionalTagRef::<SShadowingLight>::read_ds(&mut cur)?;
+                // TODO(cohae): Again, spawning new entities for each object is kinda dumb
+                world.spawn((
+                    Transform::new(translation, rotation, scale),
+                    DynamicRenderObject::new(renderer, renderer.add_object(render_obj)),
+                ));
+            }
+        }
+        0x80808543 => {
+            let data = get_component_data!(SShadowingLightComponent);
+            let light = if let Some(light) = data.light.0.as_ref() {
+                light.clone()
+            } else {
+                let mut cur = Cursor::new(package_manager().read_tag(component.taghash())?);
+                cur.seek(SeekFrom::Start(component.definition.offset + 0x130))?;
+                let light = OptionalTagRef::<SShadowingLight>::read_ds(&mut cur)?;
 
-        //         let Some(light) = light.0 else {
-        //             return Ok(ComponentLoadResult::Loaded);
-        //         };
-        //         light
-        //     };
+                let Some(light) = light.0 else {
+                    return Ok(ComponentLoadResult::Loaded);
+                };
+                light
+            };
 
-        //     let _transform = world
-        //         .get::<&Transform>(entity)
-        //         .clone()
-        //         .map(|c| *c)
-        //         .unwrap_or_default();
-        //     // let shadowmap = ShadowMap::create(
-        //     //     transform,
-        //     //     (light.half_fov * 2.0).to_degrees(),
-        //     //     0.5,
-        //     //     light.far_plane,
-        //     // );
+            let _transform = world
+                .get::<&Transform>(entity)
+                .clone()
+                .map(|c| *c)
+                .unwrap_or_default();
+            // let shadowmap = ShadowMap::create(
+            //     transform,
+            //     (light.half_fov * 2.0).to_degrees(),
+            //     0.5,
+            //     light.far_plane,
+            // );
 
-        //     let mut light_renderer = LightRenderer::new_shadowing(renderer, &light)
-        //         .context("reading shadowing light")?;
-        //     let bb = light_renderer.calculate_bounds();
+            let mut light_renderer = LightRenderer::new_shadowing(renderer, &light)
+                .context("reading shadowing light")?;
+            let bb = light_renderer.calculate_bounds();
 
-        //     // let mut view = View::new_shadow(
-        //     //     format!("shadow_{}", data.light.taghash()),
-        //     //     &renderer.gpu,
-        //     //     (
-        //     //         ShadowView::SHADOWMAP_RESOLUTION,
-        //     //         ShadowView::SHADOWMAP_RESOLUTION,
-        //     //     ),
-        //     // )
-        //     // .expect("Failed to create shadowmap view");
+            // let mut view = View::new_shadow(
+            //     format!("shadow_{}", data.light.taghash()),
+            //     &renderer.gpu,
+            //     (
+            //         ShadowView::SHADOWMAP_RESOLUTION,
+            //         ShadowView::SHADOWMAP_RESOLUTION,
+            //     ),
+            // )
+            // .expect("Failed to create shadowmap view");
 
-        //     // if once!() {
-        //     //     warn!("Culling is disabled for shadow views");
-        //     // }
-        //     // view.disable_culling = true;
+            // if once!() {
+            //     warn!("Culling is disabled for shadow views");
+            // }
+            // view.disable_culling = true;
 
-        //     // let ViewKind::Shadow(v) = &view.kind else {
-        //     //     unreachable!("view is not a shadow view even though we just created it");
-        //     // };
+            // let ViewKind::Shadow(v) = &view.kind else {
+            //     unreachable!("view is not a shadow view even though we just created it");
+            // };
 
-        //     // let surf = &v.shadow_map;
-        //     // light_renderer.shadow_view =
-        //     //     Some((surf.texture.clone(), surf.srv(0).unwrap().clone()));
+            // let surf = &v.shadow_map;
+            // light_renderer.shadow_view =
+            //     Some((surf.texture.clone(), surf.srv(0).unwrap().clone()));
 
-        //     let render_obj = RenderObject::new(TfxFeatureRenderer::DeferredLights, light_renderer);
+            let render_obj = RenderObject::new(TfxFeatureRenderer::DeferredLights, light_renderer);
 
-        //     world.insert(
-        //         entity,
-        //         (
-        //             DynamicRenderObject::new(renderer, renderer.add_object(render_obj)),
-        //             bb,
-        //             // shadowmap,
-        //         ),
-        //     )?;
-        // }
-        // 0x80808334 => {
-        //     let data = get_component_data!(SLightCollectionComponent);
-        //     let Some(lights) = data.lights.0.as_ref() else {
-        //         return Ok(ComponentLoadResult::Skipped);
-        //     };
+            world.insert(
+                entity,
+                (
+                    DynamicRenderObject::new(renderer, renderer.add_object(render_obj)),
+                    bb,
+                    // shadowmap,
+                ),
+            )?;
+        }
+        0x80808334 => {
+            let data = get_component_data!(SLightCollectionComponent);
+            let Some(lights) = data.lights.0.as_ref() else {
+                return Ok(ComponentLoadResult::Skipped);
+            };
 
-        //     for (light, transform, bounds) in multizip((
-        //         &lights.lights,
-        //         &lights.transforms,
-        //         &lights.occlusion_bounds.bounds,
-        //     )) {
-        //         let mut light_renderer = LightRenderer::new(renderer, light, bounds.bb)
-        //             .context("Failed to load light")?;
-        //         let bb = light_renderer.calculate_bounds();
-        //         let render_obj = renderer.add_object(RenderObject::new(
-        //             TfxFeatureRenderer::ChunkedLights,
-        //             light_renderer,
-        //         ));
+            for (light, transform, bounds) in multizip((
+                &lights.lights,
+                &lights.transforms,
+                &lights.occlusion_bounds.bounds,
+            )) {
+                let mut light_renderer = LightRenderer::new(renderer, light, bounds.bb)
+                    .context("Failed to load light")?;
+                let bb = light_renderer.calculate_bounds();
+                let render_obj = renderer.add_object(RenderObject::new(
+                    TfxFeatureRenderer::ChunkedLights,
+                    light_renderer,
+                ));
 
-        //         // TODO(cohae): ChunkedLights need to be chunked like static geometry
-        //         world.spawn((
-        //             Transform::new(transform.translation.xyz(), transform.rotation, Vec3::ONE),
-        //             DynamicRenderObject::new(renderer, render_obj),
-        //             bb,
-        //         ));
-        //     }
-        // }
-        // 0x80807F3B => {
-        //     let _data = get_component_data!(SCubemapComponent);
+                // TODO(cohae): ChunkedLights need to be chunked like static geometry
+                world.spawn((
+                    Transform::new(transform.translation.xyz(), transform.rotation, Vec3::ONE),
+                    DynamicRenderObject::new(renderer, render_obj),
+                    bb,
+                ));
+            }
+        }
+        0x80807F3B => {
+            let _data = get_component_data!(SCubemapComponent);
 
-        //     //     let render_obj = RenderObject::new(
-        //     //         TfxFeatureRenderer::Cubemaps,
-        //     //         Box::new(CubemapRenderer::load(&renderer.gpu, data)?),
-        //     //     );
+            //     let render_obj = RenderObject::new(
+            //         TfxFeatureRenderer::Cubemaps,
+            //         Box::new(CubemapRenderer::load(&renderer.gpu, data)?),
+            //     );
 
-        //     //     world.insert_one(
-        //     //         entity,
-        //     //         DynamicRenderObject::new(renderer.add_object(render_obj)),
-        //     //     )?;
-        // }
+            //     world.insert_one(
+            //         entity,
+            //         DynamicRenderObject::new(renderer.add_object(render_obj)),
+            //     )?;
+        }
         0x808085DD => {
             let data = get_component_data!(SUmbraTomeComponent);
             let Some(tomes) = &*data.tag else {
