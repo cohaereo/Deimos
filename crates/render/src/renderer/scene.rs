@@ -559,7 +559,7 @@ impl SceneRenderer {
         let frame_packet = &self.frame_packet;
         let render_objects = self.parent.objects.read();
 
-        cmd.begin_debug_utils_label(&stage.to_string(), [0.0, 1.0, 0.0, 1.0]);
+        let _stage_scope = cmd.event_scope(stage.to_string(), [0.0, 1.0, 0.0]);
 
         for submit_node in view.submit_node_blocks.block(stage) {
             let view_node = &view.view_nodes[submit_node.view_node];
@@ -571,141 +571,12 @@ impl SceneRenderer {
                 );
                 continue;
             };
+            let _obj_scope = cmd.event_scope(&render_object.name, [0.2, 0.2, 1.0]);
             render_object
                 .renderer
                 .submit(cmd, stage, frame_node, view_node, submit_node.key);
         }
-
-        cmd.end_debug_utils_label();
     }
-
-    // pub fn submit_stage(
-    //     &self,
-    //     cmd: &mut CommandList,
-    //     stream: &FrameCommandStream,
-    //     view: &ViewPacket,
-    //     stage: RenderStage,
-    // ) {
-    //     let block = stream.begin_parallel(cmd);
-    //     let context = TempSubmitContext {
-    //         renderer: self.parent.clone(),
-    //         block: block.clone(),
-    //         frame_packet: &self.frame_packet,
-    //     };
-    //     cmd.begin_event_str(stage.to_string());
-
-    //     let range = 0..view.submit_node_blocks.block(stage).len();
-
-    //     let mut job_handles = vec![];
-    //     for chunk in RangeChunks::new(range, 64) {
-    //         let ctx = context.clone();
-    //         let view_id = view.id;
-    //         let h = SCHEDULER
-    //             .job_builder("scene_submit_parallel")
-    //             .spawn(move || {
-    //                 let ctx = ctx;
-    //                 let mut cmd = ctx.block.cmd();
-    //                 let render_objects = ctx.renderer.objects.read();
-
-    //                 let frame_packet = unsafe { &*ctx.frame_packet };
-    //                 let view = &frame_packet.views[view_id];
-    //                 for submit_node in &view.submit_node_blocks.block(stage)[chunk] {
-    //                     let view_node = &view.view_nodes[submit_node.view_node];
-    //                     let frame_node = &frame_packet.per_frame_nodes[view_node.frame_node];
-    //                     let Some(render_object) = render_objects.get(frame_node.object) else {
-    //                         error!(
-    //                             "Render object with handle {:?} not found",
-    //                             frame_node.object
-    //                         );
-    //                         continue;
-    //                     };
-    //                     render_object.renderer.submit(
-    //                         &mut cmd,
-    //                         stage,
-    //                         frame_node,
-    //                         view_node,
-    //                         submit_node.key,
-    //                     );
-    //                 }
-    //             });
-    //         job_handles.push(h);
-    //     }
-
-    //     let sync_job = SCHEDULER
-    //         .job_builder("scene_submit_parallel_sync")
-    //         .dependencies(job_handles)
-    //         .spawn(|| {});
-
-    //     sync_job.wait();
-
-    //     stream.end_parallel(block);
-
-    //     cmd.end_event();
-    // }
-
-    // pub fn submit_stage_serial(
-    //     &self,
-    //     cmd: &mut CommandList,
-    //     stream: &FrameCommandStream,
-    //     view: &ViewPacket,
-    //     stage: RenderStage,
-    // ) {
-    //     let block = stream.begin_parallel(cmd);
-    //     let context = TempSubmitContext {
-    //         renderer: self.parent.clone(),
-    //         block: block.clone(),
-    //         frame_packet: &self.frame_packet,
-    //     };
-    //     cmd.begin_event_str(stage.to_string());
-
-    //     let range = 0..view.submit_node_blocks.block(stage).len();
-
-    //     let mut job_handles = vec![];
-    //     for (i, chunk) in
-    //         RangeChunks::new(range.clone(), range.len().div_ceil(SCHEDULER.num_workers()))
-    //             .enumerate()
-    //     {
-    //         let ctx = context.clone();
-    //         let h = SCHEDULER.job_builder("scene_submit_serial").spawn(move || {
-    //             let ctx = ctx;
-    //             let mut cmd = ctx.block.cmd_manual(i);
-    //             let render_objects = ctx.renderer.objects.read();
-
-    //             let frame_packet = unsafe { &*ctx.frame_packet };
-    //             let view = &frame_packet.views[0];
-    //             for submit_node in &view.submit_node_blocks.block(stage)[chunk] {
-    //                 let view_node = &view.view_nodes[submit_node.view_node];
-    //                 let frame_node = &frame_packet.per_frame_nodes[view_node.frame_node];
-    //                 let Some(render_object) = render_objects.get(frame_node.object) else {
-    //                     error!(
-    //                         "Render object with handle {:?} not found",
-    //                         frame_node.object
-    //                     );
-    //                     continue;
-    //                 };
-    //                 render_object.renderer.submit(
-    //                     &mut cmd,
-    //                     stage,
-    //                     frame_node,
-    //                     view_node,
-    //                     submit_node.key,
-    //                 );
-    //             }
-    //         });
-    //         job_handles.push(h);
-    //     }
-
-    //     let sync_job = SCHEDULER
-    //         .job_builder("scene_submit_serial_sync")
-    //         .dependencies(job_handles)
-    //         .spawn(|| {});
-
-    //     sync_job.wait();
-
-    //     stream.end_parallel(block);
-
-    //     cmd.end_event();
-    // }
 
     /// Sets the value of the given global channel by ID
     /// Returns `Some` with the previous value if the channel exists, `None` otherwise
@@ -736,15 +607,6 @@ impl SceneRenderer {
             .map(|pos| self.global_channels[pos])
     }
 }
-
-// #[derive(Clone)]
-// struct TempSubmitContext {
-//     renderer: Arc<Renderer>,
-//     block: Arc<ParallelCommandBlock>,
-//     frame_packet: *const FramePacket,
-// }
-
-// unsafe impl Send for TempSubmitContext {}
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum DebugPipeline {

@@ -7,14 +7,20 @@ slotmap::new_key_type! {
 }
 
 pub struct RenderObject {
+    pub name: Box<str>,
     pub renderer: Box<dyn FeatureRenderer>,
     pub feature_type: TfxFeatureRenderer,
     pub stages: RenderStageSubscription,
 }
 
 impl RenderObject {
-    pub fn new(kind: TfxFeatureRenderer, renderer: Box<dyn FeatureRenderer>) -> Self {
+    pub fn new(
+        name: impl AsRef<str>,
+        kind: TfxFeatureRenderer,
+        renderer: Box<dyn FeatureRenderer>,
+    ) -> Self {
         Self {
+            name: name.as_ref().into(),
             stages: renderer.subscribed_stages(),
             renderer,
             feature_type: kind,

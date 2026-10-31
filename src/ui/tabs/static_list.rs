@@ -171,6 +171,7 @@ fn load_static_mesh(
     let model_renderer = StaticInstancesRenderer::new(&renderer.gpu, vec![model], upload0);
 
     let obj = renderer.add_object(RenderObject::new(
+        format!("static_model {}", hash),
         TfxFeatureRenderer::StaticObjects,
         Box::new(model_renderer),
     ));

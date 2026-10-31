@@ -99,13 +99,9 @@ impl AssetManager {
         let num_loaded = self.num_loading.clone();
         let asset_manager = self.clone();
 
-        // once! {
-        //     warn!("TODO: Re-enable asynchronous asset loading (blocked by command buffer async issue)")
-        // }
-
-        // rayon::spawn(move || {
-        load_asset(request, asset_manager, &gpu, &num_loaded);
-        // });
+        rayon::spawn(move || {
+            load_asset(request, asset_manager, &gpu, &num_loaded);
+        });
 
         // SAFETY: The type ID was checked above
         Some(unsafe { handle.clone_as_typed_unchecked() })

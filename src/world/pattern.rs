@@ -95,8 +95,11 @@ pub fn load_component(
             )?;
 
             let default_permutation = model.default_permutation;
-            let obj =
-                renderer.add_object(RenderObject::new(TfxFeatureRenderer::RigidObject, model));
+            let obj = renderer.add_object(RenderObject::new(
+                format!("dynamic_model {}", model.hash),
+                TfxFeatureRenderer::RigidObject,
+                model,
+            ));
             let mut obj_component = DynamicRenderObject::new(renderer, obj);
             obj_component.permutation = default_permutation;
             world.insert_one(entity, obj_component)?;
@@ -107,7 +110,11 @@ pub fn load_component(
             let model = DynamicModel::load(renderer, data.model, vec![], vec![])?;
             world.insert_one(entity, data.bounds)?;
 
-            let obj = renderer.add_object(RenderObject::new(TfxFeatureRenderer::Water, model));
+            let obj = renderer.add_object(RenderObject::new(
+                format!("water_plane {}", data.model),
+                TfxFeatureRenderer::Water,
+                model,
+            ));
             let obj_component = DynamicRenderObject::new(renderer, obj);
             world.insert_one(entity, obj_component)?;
         }
@@ -184,6 +191,7 @@ pub fn load_component(
                     StaticRenderObject::new(
                         renderer,
                         renderer.add_object(RenderObject::new(
+                            format!("terrain_patch_set {}", data.terrain),
                             TfxFeatureRenderer::TerrainPatch,
                             feature_renderer,
                         )),
@@ -200,6 +208,7 @@ pub fn load_component(
                 StaticRenderObject::new(
                     renderer,
                     renderer.add_object(RenderObject::new(
+                        format!("instance_collection {}", data.instances),
                         TfxFeatureRenderer::ChunkedInstanceObjects,
                         Box::new(StaticInstancesRenderer::load_from_tag(
                             renderer,
@@ -221,6 +230,7 @@ pub fn load_component(
                     StaticRenderObject::new(
                         renderer,
                         renderer.add_object(RenderObject::new(
+                            format!("decal_collection {}", data.decals.taghash()),
                             TfxFeatureRenderer::DynamicDecals,
                             decal_renderer,
                         )),
@@ -241,6 +251,7 @@ pub fn load_component(
                     StaticRenderObject::new(
                         renderer,
                         renderer.add_object(RenderObject::new(
+                            format!("decorator_collection {}", data.decorators.taghash()),
                             TfxFeatureRenderer::SpeedtreeTrees,
                             Box::new(decorator_renderer),
                         )),
@@ -262,6 +273,7 @@ pub fn load_component(
                 let (scale, rotation, translation) = obj.transform.to_scale_rotation_translation();
 
                 let render_obj = RenderObject::new(
+                    format!("sky_object {}", obj.model_ref.entity_model),
                     TfxFeatureRenderer::SkyTransparent,
                     DynamicModel::load(renderer, obj.model_ref.entity_model, vec![], vec![])?,
                 );
@@ -291,8 +303,7 @@ pub fn load_component(
             let _transform = world
                 .get::<&Transform>(entity)
                 .clone()
-                .map(|c| *c)
-                .unwrap_or_default();
+                .map_or_default(|c| *c);
             // let shadowmap = ShadowMap::create(
             //     transform,
             //     (light.half_fov * 2.0).to_degrees(),
@@ -327,7 +338,11 @@ pub fn load_component(
             // light_renderer.shadow_view =
             //     Some((surf.texture.clone(), surf.srv(0).unwrap().clone()));
 
-            let render_obj = RenderObject::new(TfxFeatureRenderer::DeferredLights, light_renderer);
+            let render_obj = RenderObject::new(
+                format!("deferred_light {}", data.light.taghash()),
+                TfxFeatureRenderer::DeferredLights,
+                light_renderer,
+            );
 
             world.insert(
                 entity,
@@ -344,15 +359,18 @@ pub fn load_component(
                 return Ok(ComponentLoadResult::Skipped);
             };
 
-            for (light, transform, bounds) in multizip((
+            for (idx, (light, transform, bounds)) in multizip((
                 &lights.lights,
                 &lights.transforms,
                 &lights.occlusion_bounds.bounds,
-            )) {
+            ))
+            .enumerate()
+            {
                 let mut light_renderer = LightRenderer::new(renderer, light, bounds.bb)
                     .context("Failed to load light")?;
                 let bb = light_renderer.calculate_bounds();
                 let render_obj = renderer.add_object(RenderObject::new(
+                    format!("chunked_light {}+{}", data.lights.taghash(), idx),
                     TfxFeatureRenderer::ChunkedLights,
                     light_renderer,
                 ));
