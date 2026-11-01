@@ -341,54 +341,83 @@ impl SceneRenderer {
         }
         cmd.end_rendering();
 
+        {
+            let _scope = self
+                .parent
+                .gpu
+                .profiler_scope(cmd, "submit_decals_additive");
+            cmd.set_ffstate(FixedFunctionState::new(Some(8), Some(15), Some(2), Some(1)));
+            cmd.flush_states();
+            self.submit_stage(cmd, view, RenderStage::DecalsAdditive);
+        }
+
+        self.main_view
+            .gbuffer
+            .depth
+            .transition(cmd, IMAGE_STATE_DEPTH_ATTACHMENT);
         self.main_view
             .gbuffer
             .transition(cmd, IMAGE_STATE_SHADER_READ);
+        self.main_view
+            .light
+            .transition(cmd, IMAGE_STATE_COLOR_ATTACHMENT);
 
-        //     {
-        //         let _scope = self
-        //             .parent
-        //             .gpu
-        //             .profiler_scope(cmd, "submit_decals_additive");
-        //         cmd.set_ffstate(FixedFunctionState::new(Some(8), Some(15), Some(2), Some(1)));
-        //         cmd.flush_states();
-        //         self.submit_stage_serial(cmd, stream, view, RenderStage::DecalsAdditive);
-        //     }
+        {
+            let _scope = self.parent.gpu.profiler_scope(cmd, "submit_lighting_apply");
 
-        //     self.main_view
-        //         .gbuffer
-        //         .depth
-        //         .transition(cmd, d3d12::ResourceStates::DEPTH_READ);
-        //     self.main_view
-        //         .gbuffer
-        //         .transition(cmd, IMAGE_STATE_SHADER_READ);
-        //     self.main_view
-        //         .light
-        //         .transition(cmd, IMAGE_STATE_COLOR_ATTACHMENT);
+            cmd.set_render_target_formats(
+                &[
+                    self.main_view.light.light_diffuse.output_format(),
+                    self.main_view.light.light_specular.output_format(),
+                ],
+                None,
+            );
+            cmd.begin_rendering(
+                self.main_view.light.light_diffuse.resolution(),
+                &[
+                    vk::RenderingAttachmentInfo::default()
+                        .image_view(self.main_view.light.light_diffuse.view())
+                        .image_layout(vk::ImageLayout::COLOR_ATTACHMENT_OPTIMAL)
+                        .load_op(vk::AttachmentLoadOp::CLEAR)
+                        .clear_value(vk::ClearValue {
+                            color: vk::ClearColorValue {
+                                float32: [0.0, 0.0, 0.0, 0.0],
+                            },
+                        })
+                        .store_op(vk::AttachmentStoreOp::STORE),
+                    vk::RenderingAttachmentInfo::default()
+                        .image_view(self.main_view.light.light_specular.view())
+                        .image_layout(vk::ImageLayout::COLOR_ATTACHMENT_OPTIMAL)
+                        .load_op(vk::AttachmentLoadOp::CLEAR)
+                        .clear_value(vk::ClearValue {
+                            color: vk::ClearColorValue {
+                                float32: [0.0, 0.0, 0.0, 0.0],
+                            },
+                        })
+                        .store_op(vk::AttachmentStoreOp::STORE),
+                ],
+                None,
+            );
 
-        //     {
-        //         let _scope = self.parent.gpu.profiler_scope(cmd, "submit_lighting_apply");
-        //         self.main_view.light.clear(cmd);
+            //         if use_hdri {
+            //             self.main_view.light.bind_for_cubemaps(cmd);
+            //             let sv = &self.main_view.shadow_views;
+            //             self.parent.apply_hdri_light(
+            //                 cmd,
+            //                 &[
+            //                     (sv[0].world_to_projective(), sv[0].depth.view()),
+            //                     (sv[1].world_to_projective(), sv[1].depth.view()),
+            //                     (sv[2].world_to_projective(), sv[2].depth.view()),
+            //                     (sv[3].world_to_projective(), sv[3].depth.view()),
+            //                 ],
+            //             );
+            //         }
 
-        //         if use_hdri {
-        //             self.main_view.light.bind_for_cubemaps(cmd);
-        //             let sv = &self.main_view.shadow_views;
-        //             self.parent.apply_hdri_light(
-        //                 cmd,
-        //                 &[
-        //                     (sv[0].world_to_projective(), sv[0].depth.view()),
-        //                     (sv[1].world_to_projective(), sv[1].depth.view()),
-        //                     (sv[2].world_to_projective(), sv[2].depth.view()),
-        //                     (sv[3].world_to_projective(), sv[3].depth.view()),
-        //                 ],
-        //             );
-        //         }
-
-        //         self.main_view.light.bind_for_lights(cmd);
-        //         cmd.set_ffstate(FixedFunctionState::new(Some(2), None, Some(2), Some(2)));
-        //         cmd.flush_states();
-        //         self.submit_stage(cmd, stream, view, RenderStage::LightingApply);
-        //     }
+            cmd.set_ffstate(FixedFunctionState::new(Some(2), None, Some(2), Some(2)));
+            cmd.flush_states();
+            self.submit_stage(cmd, view, RenderStage::LightingApply);
+            cmd.end_rendering();
+        }
 
         //     {
         //         self.main_view
@@ -412,60 +441,72 @@ impl SceneRenderer {
         //             .transition(cmd, IMAGE_STATE_SHADER_READ);
         //     }
 
-        //     self.main_view
-        //         .light
-        //         .transition(cmd, IMAGE_STATE_SHADER_READ);
-        //     self.main_view
-        //         .output
-        //         .transition(cmd, IMAGE_STATE_COLOR_ATTACHMENT);
-        //     cmd.clear_render_target_view(self.main_view.output.cpu_handle(), &[0.0, 0.0, 0.0, 1.0]);
+        self.main_view
+            .light
+            .transition(cmd, IMAGE_STATE_SHADER_READ);
+        self.main_view
+            .output
+            .transition(cmd, IMAGE_STATE_COLOR_ATTACHMENT);
 
-        //     cmd.set_ffstate(FixedFunctionState::new(Some(8), Some(15), Some(2), Some(1)));
-        //     if let Some(debug_pipeline) = debug_pipeline {
-        //         cmd.set_render_targets(&[&self.main_view.output], None);
+        cmd.set_ffstate(FixedFunctionState::new(Some(0), Some(15), Some(1), Some(1)));
 
-        //         let p = &self.parent.globals.pipelines;
-        //         let technique = match debug_pipeline {
-        //             DebugPipeline::LookDev => &p.deferred_shading,
-        //             DebugPipeline::GlobalLightingShading => &p.global_lighting_and_shading,
-        //             DebugPipeline::DeferredShading => &p.deferred_shading,
-        //             DebugPipeline::DeferredShadingNoAtm => &p.deferred_shading_no_atm,
-        //             DebugPipeline::Albedo => &p.debug_source_color,
-        //             DebugPipeline::Smoothness => &p.debug_specular_smoothness,
-        //             DebugPipeline::Metalness => &p.debug_metalness,
-        //             DebugPipeline::AmbientOcclusion => &p.debug_ambient_occlusion,
-        //             DebugPipeline::Emission => &p.debug_emissive,
-        //             DebugPipeline::EmissionIntensity => &p.debug_emissive_intensity,
-        //             DebugPipeline::Transmission => &p.debug_transmission,
-        //             DebugPipeline::Overcoat => &p.debug_colored_overcoat_id,
-        //             DebugPipeline::DepthEdges => &p.debug_depth_edges,
-        //             DebugPipeline::WorldNormal => &p.debug_world_normal,
-        //             DebugPipeline::LightDiffuse => &p.debug_diffuse_light,
-        //             DebugPipeline::LightSpecular => &p.debug_specular_light,
+        cmd.set_render_target_formats(&[self.main_view.output.output_format()], None);
+        if let Some(debug_pipeline) = debug_pipeline {
+            cmd.begin_rendering(
+                self.main_view.light.light_diffuse.resolution(),
+                &[vk::RenderingAttachmentInfo::default()
+                    .image_view(self.main_view.output.view())
+                    .image_layout(vk::ImageLayout::COLOR_ATTACHMENT_OPTIMAL)
+                    .load_op(vk::AttachmentLoadOp::CLEAR)
+                    .clear_value(vk::ClearValue {
+                        color: vk::ClearColorValue {
+                            float32: [0.0, 0.0, 0.0, 1.0],
+                        },
+                    })
+                    .store_op(vk::AttachmentStoreOp::STORE)],
+                None,
+            );
 
-        //             DebugPipeline::Overdraw => &p.global_lighting_and_shading,
-        //         };
+            let p = &self.parent.globals.pipelines;
+            let technique = match debug_pipeline {
+                DebugPipeline::LookDev => &p.deferred_shading,
+                DebugPipeline::GlobalLightingShading => &p.global_lighting_and_shading,
+                DebugPipeline::DeferredShading => &p.deferred_shading,
+                DebugPipeline::DeferredShadingNoAtm => &p.deferred_shading_no_atm,
+                DebugPipeline::Albedo => &p.debug_source_color,
+                DebugPipeline::Smoothness => &p.debug_specular_smoothness,
+                DebugPipeline::Metalness => &p.debug_metalness,
+                DebugPipeline::AmbientOcclusion => &p.debug_ambient_occlusion,
+                DebugPipeline::Emission => &p.debug_emissive,
+                DebugPipeline::EmissionIntensity => &p.debug_emissive_intensity,
+                DebugPipeline::Transmission => &p.debug_transmission,
+                DebugPipeline::Overcoat => &p.debug_colored_overcoat_id,
+                DebugPipeline::DepthEdges => &p.debug_depth_edges,
+                DebugPipeline::WorldNormal => &p.debug_world_normal,
+                DebugPipeline::LightDiffuse => &p.debug_diffuse_light,
+                DebugPipeline::LightSpecular => &p.debug_specular_light,
 
-        //         self.parent
-        //             .execute_global_pipeline(cmd, technique, &format!("{debug_pipeline:?}"));
-        //     } else {
-        //         self.main_view
-        //             .gbuffer
-        //             .albedo
-        //             .transition(cmd, IMAGE_STATE_TRANSFER_SRC);
-        //         self.main_view
-        //             .output
-        //             .transition(cmd, IMAGE_STATE_TRANSFER_DST);
+                DebugPipeline::Overdraw => &p.global_lighting_and_shading,
+            };
 
-        //         cmd.copy_resource(
-        //             self.main_view.gbuffer.albedo.resource.resource(),
-        //             self.main_view.output.resource.resource(),
-        //         );
-        //     }
+            self.parent
+                .execute_global_pipeline(cmd, technique, &format!("{debug_pipeline:?}"));
+            cmd.end_rendering();
+        } else {
+            self.main_view
+                .gbuffer
+                .albedo
+                .transition(cmd, IMAGE_STATE_TRANSFER_SRC);
+            self.main_view
+                .output
+                .transition(cmd, IMAGE_STATE_TRANSFER_DST);
 
-        //     self.main_view
-        //         .output
-        //         .transition(cmd, IMAGE_STATE_COLOR_ATTACHMENT);
+            cmd.copy_render_target(&self.main_view.gbuffer.albedo, &self.main_view.output);
+        }
+
+        self.main_view
+            .output
+            .transition(cmd, IMAGE_STATE_SHADER_READ);
 
         //     if use_hdri {
         //         cmd.set_render_targets(&[&self.main_view.output], None);

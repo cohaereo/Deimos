@@ -176,9 +176,7 @@ impl Scene {
             // let r = ui.allocate_response(size, Sense::CLICK | Sense::DRAG | Sense::HOVER);
             let r = ui
                 .image(SizedTexture {
-                    // id: renderer.add_user_texture(self.output_srv()),
-                    id: renderer
-                        .add_user_texture(self.scene_renderer.main_view.gbuffer.albedo.view()),
+                    id: renderer.add_user_texture(self.scene_renderer.main_view.output.view()),
                     size,
                 })
                 .interact(Sense::CLICK | Sense::DRAG | Sense::HOVER);
