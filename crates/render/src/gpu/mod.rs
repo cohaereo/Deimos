@@ -457,7 +457,11 @@ impl Gpu {
         );
 
         Ok(Self {
-            pipeline_cache: RwLock::new(PipelineCache::new(&instance, device.clone())),
+            pipeline_cache: RwLock::new(PipelineCache::new(
+                &instance,
+                device.clone(),
+                descriptor_buffer.clone(),
+            )),
             #[cfg(debug_assertions)]
             debug_loader: debug_utils::Device::new(&instance, &device),
             entry,

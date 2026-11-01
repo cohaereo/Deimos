@@ -286,21 +286,20 @@ impl DynamicModel {
                 );
 
                 let mut all_scopes = TfxScopeBits::empty();
-                if let Some(technique) = mesh_techniques[part_index].get() {
+                if let Some(scopes) = mesh_techniques[part_index].get_ref(|technique| {
                     technique.bind_with_channels(cmd, Some(&self.channels));
-                    // technique
-                    //     .bind_with_channels(cmd, Some(&self.channels))
-                    //     .expect("Failed to bind technique");
-                    all_scopes |= technique.data.used_scopes;
+                    technique.data.used_scopes
+                }) {
+                    all_scopes |= scopes;
                 }
 
                 if let Some(technique) = &variant_material
-                    && let Some(technique) = technique.get()
+                    && let Some(scopes) = technique.get_ref(|technique| {
+                        technique.bind_with_channels(cmd, Some(&self.channels));
+                        technique.data.used_scopes
+                    })
                 {
-                    technique.bind_with_channels(cmd, Some(&self.channels));
-                    // tech.bind_with_channels(cmd, Some(&self.channels))
-                    //     .expect("Failed to bind variant technique");
-                    all_scopes |= technique.data.used_scopes;
+                    all_scopes |= scopes;
                 }
 
                 // No technique, no scopes, no draw

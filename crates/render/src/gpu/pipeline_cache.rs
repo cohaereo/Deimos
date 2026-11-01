@@ -1,11 +1,12 @@
-use std::{collections::hash_map::Entry, ffi::CString};
+use std::{collections::hash_map::Entry, ffi::CString, sync::Arc};
 
 use ahash::HashMap;
 use anyhow::Context;
 #[cfg(debug_assertions)]
 use ash::ext::debug_utils;
-use ash::vk;
+use ash::{ext::descriptor_buffer, vk};
 use deimos_data::tfx::{FixedFunctionState, ShaderStage};
+use smallvec::SmallVec;
 use tiger_pkg::{TagHash, package_manager};
 
 use crate::gpu::{command_list::DepthMode, global_state::RenderStates};
@@ -28,7 +29,7 @@ pub struct PipelineKey {
     pub fixed_function_state: FixedFunctionState,
     pub topology: vk::PrimitiveTopology,
     pub input_layout: u8,
-    pub color_formats: Vec<vk::Format>,
+    pub color_formats: SmallVec<[vk::Format; 8]>,
     pub depth_format: Option<vk::Format>,
 }
 
@@ -47,7 +48,7 @@ impl ShaderInfo {
     }
 }
 
-#[derive(Clone, Copy)]
+#[derive(Clone)]
 pub struct TechniqueLayout {
     pub pipeline_layout: vk::PipelineLayout,
     pub set_layouts: [vk::DescriptorSetLayout; TOTAL_SETS],
@@ -67,7 +68,11 @@ pub struct PipelineCache {
 }
 
 impl PipelineCache {
-    pub fn new(instance: &ash::Instance, device: ash::Device) -> Self {
+    pub fn new(
+        instance: &ash::Instance,
+        device: ash::Device,
+        descriptor_buffer: descriptor_buffer::Device,
+    ) -> Self {
         let empty_layout = unsafe {
             device.create_descriptor_set_layout(
                 &vk::DescriptorSetLayoutCreateInfo::default()
@@ -86,6 +91,7 @@ impl PipelineCache {
             #[cfg(debug_assertions)]
             debug_loader: debug_utils::Device::new(instance, &device),
             device,
+            descriptor_buffer,
         }
     }
 

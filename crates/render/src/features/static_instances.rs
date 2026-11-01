@@ -263,9 +263,11 @@ impl StaticModelRenderer {
 
             cmd.set_input_layout(mesh.input_layout_index as usize);
             cmd.set_input_topology(mesh.primitive_type);
-            if let Some(technique) = mesh.technique.get() {
-                technique.bind(cmd);
-            } else {
+            if mesh
+                .technique
+                .get_ref(|technique| technique.bind(cmd))
+                .is_none()
+            {
                 return;
             }
 
@@ -286,14 +288,13 @@ impl StaticModelRenderer {
             cmd.set_input_layout(group.input_layout_index as usize);
             cmd.set_input_topology(part.primitive_type);
 
-            if let Some(technique) = &self
+            if self
                 .model
                 .materials_by_group
                 .get(mesh_index)
-                .and_then(|h| h.get())
+                .and_then(|handle| handle.get_ref(|technique| technique.bind(cmd)))
+                .is_none()
             {
-                technique.bind(cmd);
-            } else {
                 return;
             }
 

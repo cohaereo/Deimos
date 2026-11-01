@@ -144,10 +144,13 @@ impl FeatureRenderer for DecalCollectionRenderer {
             }));
         }
 
-        let Some(t) = set.technique.get() else {
+        if set
+            .technique
+            .get_ref(|technique| technique.bind(cmd))
+            .is_none()
+        {
             return;
-        };
-        t.bind(cmd);
+        }
         cmd.draw_instanced(0..36, set.start as u32..(set.start + set.count) as u32);
 
         cmd.set_depth_mode(DepthMode::Reverse);

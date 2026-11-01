@@ -15,17 +15,17 @@ pub struct DescriptorSizes {
     pub storage_buffer: usize,
 }
 
-pub struct DescriptorWriter {
-    gpu: Arc<Gpu>,
-    layout: vk::DescriptorSetLayout,
+pub struct DescriptorWriter<'a> {
+    gpu: &'a Arc<Gpu>,
+    offsets: &'a [u64; 32],
     base_ptr: *mut u8,
 }
 
-impl DescriptorWriter {
-    pub const fn new(gpu: Arc<Gpu>, layout: vk::DescriptorSetLayout, base_ptr: *mut u8) -> Self {
+impl<'a> DescriptorWriter<'a> {
+    pub const fn new(gpu: &'a Arc<Gpu>, offsets: &'a [u64; 32], base_ptr: *mut u8) -> Self {
         Self {
             gpu,
-            layout,
+            offsets,
             base_ptr,
         }
     }
@@ -33,10 +33,7 @@ impl DescriptorWriter {
     #[allow(clippy::mut_from_ref)]
     fn descriptor_ptr(&self, binding: u32, size: usize) -> &mut [u8] {
         unsafe {
-            let offset = self
-                .gpu
-                .descriptor_buffer
-                .get_descriptor_set_layout_binding_offset(self.layout, binding);
+            let offset = self.offsets[binding as usize];
 
             debug_assert!(size > 0, "descriptor size is zero");
             std::slice::from_raw_parts_mut(self.base_ptr.add(offset as usize), size)
@@ -203,7 +200,7 @@ impl DescriptorWriter {
         self.gpu
             .magic_textures
             .get_texture(
-                &self.gpu,
+                self.gpu,
                 "descriptor-fallback".to_string(),
                 Some([0, 0, 0, 0]),
             )

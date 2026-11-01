@@ -181,9 +181,7 @@ impl TerrainPatchesRenderer {
             _ => return,
         };
 
-        if let Some(technique) = technique.get() {
-            technique.bind(cmd);
-        } else {
+        if technique.get_ref(|technique| technique.bind(cmd)).is_none() {
             return;
         }
 
