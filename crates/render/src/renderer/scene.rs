@@ -363,6 +363,49 @@ impl SceneRenderer {
             .transition(cmd, IMAGE_STATE_COLOR_ATTACHMENT);
 
         {
+            let _scope = self.parent.gpu.profiler_scope(cmd, "submit_cubemaps");
+
+            cmd.set_render_target_formats(
+                &[
+                    self.main_view.light.light_diffuse.output_format(),
+                    self.main_view.light.light_specular_ibl.output_format(),
+                ],
+                None,
+            );
+            cmd.begin_rendering(
+                self.main_view.light.light_diffuse.resolution(),
+                &[
+                    vk::RenderingAttachmentInfo::default()
+                        .image_view(self.main_view.light.light_diffuse.view())
+                        .image_layout(vk::ImageLayout::COLOR_ATTACHMENT_OPTIMAL)
+                        .load_op(vk::AttachmentLoadOp::CLEAR)
+                        .clear_value(vk::ClearValue {
+                            color: vk::ClearColorValue {
+                                float32: [0.0, 0.0, 0.0, 0.0],
+                            },
+                        })
+                        .store_op(vk::AttachmentStoreOp::STORE),
+                    vk::RenderingAttachmentInfo::default()
+                        .image_view(self.main_view.light.light_specular_ibl.view())
+                        .image_layout(vk::ImageLayout::COLOR_ATTACHMENT_OPTIMAL)
+                        .load_op(vk::AttachmentLoadOp::CLEAR)
+                        .clear_value(vk::ClearValue {
+                            color: vk::ClearColorValue {
+                                float32: [0.0, 0.0, 0.0, 0.0],
+                            },
+                        })
+                        .store_op(vk::AttachmentStoreOp::STORE),
+                ],
+                None,
+            );
+
+            cmd.set_ffstate(FixedFunctionState::new(Some(2), None, Some(2), Some(2)));
+            cmd.flush_states();
+            self.submit_stage(cmd, view, RenderStage::Cubemaps);
+            cmd.end_rendering();
+        }
+
+        {
             let _scope = self.parent.gpu.profiler_scope(cmd, "submit_lighting_apply");
 
             cmd.set_render_target_formats(

@@ -1,3 +1,4 @@
+pub mod cubemap;
 pub mod decals;
 pub mod decorators;
 pub mod light;

@@ -1253,7 +1253,7 @@ extern_struct! {
 
 extern_struct! {
     struct Cubemaps("cubemaps") {
-        0x00 => unk00: TextureView,
+        0x00 => specular_ibl: TextureView,
     }
 }
 

@@ -23,8 +23,8 @@ use deimos_ecs::{
 use deimos_render::{
     ecs::render_objects::{DynamicRenderObject, StaticRenderObject},
     features::{
-        decals::DecalCollectionRenderer, decorators::DecoratorRenderer, light::LightRenderer,
-        rigid_model::DynamicModel, static_instances::StaticInstancesRenderer,
+        cubemap::CubemapRenderer, decals::DecalCollectionRenderer, decorators::DecoratorRenderer,
+        light::LightRenderer, rigid_model::DynamicModel, static_instances::StaticInstancesRenderer,
         terrain_patches::TerrainPatchesRenderer,
     },
     renderer::{Renderer, object::RenderObject},
@@ -384,17 +384,18 @@ pub fn load_component(
             }
         }
         0x80807F3B => {
-            let _data = get_component_data!(SCubemapComponent);
+            let data = get_component_data!(SCubemapComponent);
 
-            //     let render_obj = RenderObject::new(
-            //         TfxFeatureRenderer::Cubemaps,
-            //         Box::new(CubemapRenderer::load(&renderer.gpu, data)?),
-            //     );
+            let render_obj = RenderObject::new(
+                format!("cubemap {}", data.texture_cube_specular_ibl),
+                TfxFeatureRenderer::Cubemaps,
+                CubemapRenderer::load(renderer, data)?,
+            );
 
-            //     world.insert_one(
-            //         entity,
-            //         DynamicRenderObject::new(renderer.add_object(render_obj)),
-            //     )?;
+            world.insert_one(
+                entity,
+                DynamicRenderObject::new(renderer, renderer.add_object(render_obj)),
+            )?;
         }
         0x808085DD => {
             let data = get_component_data!(SUmbraTomeComponent);
