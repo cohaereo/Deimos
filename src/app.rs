@@ -225,7 +225,6 @@ impl App {
             gpu.end_command_buffer(*cmd)?;
         }
         self.gpu.submit(image_index)?;
-        // self.gpu.present(self.shared_state.config.read().vsync);
         let present_status = match self.gpu.present(image_index) {
             Ok(status) => status,
             Err(e) => {

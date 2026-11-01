@@ -7,10 +7,7 @@ use ash::vk;
 use deimos_data::tfx::{FixedFunctionState, PrimitiveType, ShaderStage};
 use tiger_pkg::TagHash;
 
-use crate::{
-    gpu::{alloc::upload::UploadHeap, command_buffer::CommandBuffer},
-    tfx::externs::LocalExternContainer,
-};
+use crate::{gpu::command_buffer::CommandBuffer, tfx::externs::LocalExternContainer};
 
 use super::Gpu;
 
@@ -90,6 +87,59 @@ impl CommandList {
 
     pub fn into_inner(self) -> CommandBuffer {
         self.cmd
+    }
+
+    pub fn fork_state(&self) -> CommandListForkState {
+        CommandListForkState {
+            state: self.state.clone(),
+            current_stencil_ref: self.current_stencil_ref,
+            current_topology: self.current_topology,
+            current_input_layout: self.current_input_layout,
+            color_formats: self.current_color_formats.clone(),
+            depth_format: self.current_depth_format,
+            externs: self.externs.clone(),
+            smart_rebind: self.smart_rebind,
+            tag: self.tag,
+        }
+    }
+
+    pub fn from_fork_state(gpu: &Arc<Gpu>, cmd: CommandBuffer, fork: CommandListForkState) -> Self {
+        let mut list = Self {
+            gpu: gpu.clone(),
+            cmd,
+            state: fork.state,
+            current_blend_state: usize::MAX,
+            current_depth_state: usize::MAX,
+            current_rasterizer_state: usize::MAX,
+            current_depth_bias: usize::MAX,
+            current_input_layout: fork.current_input_layout,
+            current_stencil_ref: fork.current_stencil_ref,
+            current_topology: fork.current_topology,
+            smart_rebind: fork.smart_rebind,
+            bound_technique: TagHash::NONE,
+            descriptor_buffer_bound: false,
+            current_color_formats: fork.color_formats,
+            current_depth_format: fork.depth_format,
+            externs: fork.externs,
+            tag: fork.tag,
+        };
+
+        if !list.state.viewports.is_empty() {
+            let viewports = list.state.viewports.clone();
+            list.set_viewports(&viewports);
+        }
+        if !list.state.scissor_rects.is_empty() {
+            let scissor_rects = list.state.scissor_rects.clone();
+            list.set_scissor_rects(&scissor_rects);
+        }
+        list.cmd.set_primitive_topology(list.current_topology);
+
+        list.cmd.set_stencil_reference(
+            vk::StencilFaceFlags::FRONT_AND_BACK,
+            list.current_stencil_ref,
+        );
+
+        list
     }
 
     // pub fn new_sublist(&self) -> Self {
@@ -309,18 +359,21 @@ impl CommandList {
     }
 
     pub fn set_scissor_rects(&mut self, rects: &[vk::Rect2D]) {
-        // self.state.output.scissor_rects = rects.iter().cloned().collect();
+        self.state.scissor_rects.clear();
+        self.state.scissor_rects.extend_from_slice(rects);
         self.cmd.set_scissor(0, rects);
     }
 
     pub fn set_viewports(&mut self, viewports: &[vk::Viewport]) {
+        self.state.viewports.clear();
+        self.state.viewports.extend_from_slice(viewports);
+
         let mut viewports = viewports.to_vec();
         // Flip D3D viewports to Vulkan
         for v in &mut viewports {
             v.y += v.height;
             v.height = -v.height;
         }
-        // self.state.output.viewports = viewports.iter().cloned().collect();
         self.cmd.set_viewport(0, &viewports);
     }
 
@@ -569,10 +622,36 @@ macro_rules! cmd_event_span {
 }
 
 #[derive(Clone)]
+pub struct CommandListForkState {
+    state: CommandListState,
+    current_stencil_ref: u32,
+    current_topology: vk::PrimitiveTopology,
+    current_input_layout: usize,
+    color_formats: Vec<vk::Format>,
+    depth_format: Option<vk::Format>,
+    externs: LocalExternContainer,
+    smart_rebind: bool,
+    tag: Option<u64>,
+}
+
+impl CommandListForkState {
+    pub fn color_formats(&self) -> &[vk::Format] {
+        &self.color_formats
+    }
+
+    pub const fn depth_format(&self) -> Option<vk::Format> {
+        self.depth_format
+    }
+}
+
+#[derive(Clone)]
 pub struct CommandListState {
     pub ffstate: FixedFunctionState,
     pub ffstate_override: FixedFunctionState,
     pub(super) depth_mode: DepthMode,
+
+    pub viewports: Vec<vk::Viewport>,
+    pub scissor_rects: Vec<vk::Rect2D>,
 
     resources: [StageResources; 6],
     // pub(crate) resources_vs: StageResources,
@@ -590,6 +669,9 @@ impl Default for CommandListState {
             ffstate_override: FixedFunctionState::default(),
 
             depth_mode: DepthMode::Reverse,
+
+            viewports: Vec::new(),
+            scissor_rects: Vec::new(),
 
             resources: std::array::from_fn(|_| StageResources::default()),
             // resources_vs: StageResources::default(),

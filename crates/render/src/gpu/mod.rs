@@ -9,6 +9,7 @@ pub mod frame;
 pub mod global_state;
 pub mod magic_textures;
 pub mod pipeline_cache;
+pub mod profiler;
 pub mod render_target;
 
 use std::{
@@ -48,6 +49,7 @@ use crate::{
         frame::FrameContext,
         magic_textures::MagicTextureContainer,
         pipeline_cache::PipelineCache,
+        profiler::ScopeGuard,
     },
     tfx::{d3d12_sampler::D3D12SamplerDesc, externs::BaseExternSource},
 };
@@ -113,7 +115,7 @@ pub struct Gpu {
     pub extern_source: RwLock<BaseExternSource>,
 
     pub magic_textures: MagicTextureContainer,
-    pub pipeline_cache: Mutex<PipelineCache>,
+    pub pipeline_cache: RwLock<PipelineCache>,
     pub descriptor_sizes: DescriptorSizes,
     pub default_sampler: vk::Sampler,
     null_storage_image: Mutex<Option<(Image, vk::ImageView)>>,
@@ -288,6 +290,7 @@ impl Gpu {
                         &mut vk::PhysicalDeviceVulkan12Features::default()
                             .timeline_semaphore(true)
                             .buffer_device_address(true)
+                            .host_query_reset(true)
                             .vulkan_memory_model(true)
                             .vulkan_memory_model_device_scope(true),
                     )
@@ -454,7 +457,7 @@ impl Gpu {
         );
 
         Ok(Self {
-            pipeline_cache: Mutex::new(PipelineCache::new(&instance, device.clone())),
+            pipeline_cache: RwLock::new(PipelineCache::new(&instance, device.clone())),
             #[cfg(debug_assertions)]
             debug_loader: debug_utils::Device::new(&instance, &device),
             entry,
@@ -487,6 +490,9 @@ impl Gpu {
                     device.clone(),
                     upload_memory_type_index,
                     descriptor_offset_alignment,
+                    graphics_queue_family_idx as u32,
+                    rayon::current_num_threads() + 1,
+                    props.limits.timestamp_period,
                 )
                 .expect("Failed to create frame context")
             }),
@@ -767,7 +773,12 @@ impl Gpu {
     }
 
     pub fn previous_frame(&self) -> &FrameContext {
-        &self.frames[(self.frame_index() - 1) % Self::MAX_FRAMES_IN_FLIGHT]
+        let index = if self.frame_index() == 0 {
+            Self::MAX_FRAMES_IN_FLIGHT - 1
+        } else {
+            self.frame_index() - 1
+        };
+        &self.frames[index]
     }
 
     pub fn begin_frame(&self) -> &FrameContext {
@@ -779,6 +790,16 @@ impl Gpu {
         // self.swapchain.lock().wait_on_present();
         let frame_index = self.frame_index.load(std::sync::atomic::Ordering::Relaxed);
         let frame = &self.frames[frame_index % Self::MAX_FRAMES_IN_FLIGHT];
+
+        unsafe {
+            self.device
+                .wait_for_fences(
+                    &[self.in_flight_fences[frame_index % Self::MAX_FRAMES_IN_FLIGHT]],
+                    true,
+                    u64::MAX,
+                )
+                .expect("wait for in-flight fence");
+        }
         frame
             .wait_for_completion(&self.frame_fence)
             .expect("wait for frame completion");
@@ -816,9 +837,6 @@ impl Gpu {
         // frame.stream.submit(&self.queue);
         frame.signal(&self.frame_fence, &self.queue)?;
         // self.cmd_ring.advance().expect("advance command ring");
-
-        self.frame_index
-            .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
 
         let command_buffers = [self.command_buffers[frame_index]];
         let wait_semaphores = [self.image_available_semaphores[frame_index]];
@@ -891,11 +909,64 @@ impl Gpu {
         }
     }
 
-    pub fn profiler_scope(&self, cmd: &CommandBuffer, name: &str) -> () {}
+    /// Acquires and begins a secondary command buffer for the current frame.
+    ///
+    /// Returns `None` when the frame uses more secondary buffers than were allocated for it.
+    pub fn acquire_secondary_command_buffer(
+        self: &Arc<Self>,
+        color_formats: &[vk::Format],
+        depth_format: Option<vk::Format>,
+    ) -> anyhow::Result<Option<CommandBuffer>> {
+        let secondary = &self.frame().secondary;
+        let pool_count = secondary.pool_count();
+        // Each rayon worker uses its own command pool. The last pool is the fallback for threads that are not part of the pool.
+        let pool_index = match rayon::current_thread_index() {
+            Some(index) if index + 1 < pool_count => index,
+            _ => pool_count - 1,
+        };
+
+        let Some(buffer) = secondary.acquire(pool_index)? else {
+            return Ok(None);
+        };
+
+        secondary.reset_buffer(buffer)?;
+
+        let mut inheritance_rendering = vk::CommandBufferInheritanceRenderingInfo::default()
+            .color_attachment_formats(color_formats)
+            .depth_attachment_format(depth_format.unwrap_or(vk::Format::UNDEFINED))
+            .rasterization_samples(vk::SampleCountFlags::TYPE_1)
+            .view_mask(0);
+
+        let inheritance =
+            vk::CommandBufferInheritanceInfo::default().push_next(&mut inheritance_rendering);
+
+        let begin_info = vk::CommandBufferBeginInfo::default()
+            .flags(
+                vk::CommandBufferUsageFlags::RENDER_PASS_CONTINUE
+                    | vk::CommandBufferUsageFlags::ONE_TIME_SUBMIT,
+            )
+            .inheritance_info(&inheritance);
+
+        secondary.begin_buffer(buffer, &begin_info)?;
+
+        Ok(Some(CommandBuffer::from_native_command_list(self, buffer)))
+    }
+
+    pub fn end_secondary_command_buffer(&self, buffer: vk::CommandBuffer) -> anyhow::Result<()> {
+        self.frame().secondary.end_buffer(buffer)
+    }
 
     pub fn wait_idle(&self) -> anyhow::Result<()> {
         unsafe { self.device.device_wait_idle()? };
         Ok(())
+    }
+
+    pub fn profiler_scope<'a>(
+        self: &'a Arc<Self>,
+        cmd: &CommandBuffer,
+        name: &'static str,
+    ) -> ScopeGuard<'a> {
+        self.frame().profiler.scope(cmd, name)
     }
 }
 

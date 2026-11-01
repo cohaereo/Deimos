@@ -355,6 +355,10 @@ impl PipelineCache {
         Ok(pipeline)
     }
 
+    pub fn get(&self, key: &PipelineKey) -> Option<vk::Pipeline> {
+        self.storage.get(key).copied()
+    }
+
     #[profiling::function]
     pub fn get_or_create(&mut self, key: &PipelineKey) -> anyhow::Result<vk::Pipeline> {
         if let Some(pipeline) = self.storage.get(key) {

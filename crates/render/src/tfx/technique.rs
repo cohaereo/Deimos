@@ -58,7 +58,7 @@ impl Technique {
 
         let layout = gpu
             .pipeline_cache
-            .lock()
+            .write()
             .get_or_create_layout(data.shader_vertex.shader, data.shader_pixel.shader)
             .context("while creating technique descriptor layout")?;
 
@@ -120,8 +120,11 @@ impl Technique {
         };
 
         let layout = self.layout;
-        let pipeline = {
-            let mut cache = gpu.pipeline_cache.lock();
+        let existing_pipeline = { gpu.pipeline_cache.read().get(&pipeline_key) };
+        let pipeline = if let Some(pipeline) = existing_pipeline {
+            pipeline
+        } else {
+            let mut cache = gpu.pipeline_cache.write();
             match cache.get_or_create(&pipeline_key) {
                 Ok(pipeline) => pipeline,
                 Err(e) => {
@@ -281,7 +284,7 @@ impl TechniqueStage {
     ) -> anyhow::Result<Self> {
         let shader_info = gpu
             .pipeline_cache
-            .lock()
+            .write()
             .get_or_load_bytecode(stage.shader, shader_stage)
             .context("loading shader bytecode")?;
 

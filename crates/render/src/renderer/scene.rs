@@ -7,9 +7,11 @@ use std::sync::Arc;
 use ash::vk;
 use deimos_data::{
     hash::fnv1,
-    tfx::{FixedFunctionState, RenderStage, features::dynamic::RenderStageSubscription},
+    tfx::{FixedFunctionState, RenderStage},
 };
-use glam::{Vec3, Vec4};
+use glam::Vec4;
+use rayon::prelude::*;
+use slotmap::SlotMap;
 
 use crate::{
     ecs::{node_visibility_test, populate_submit_nodes},
@@ -19,14 +21,14 @@ use crate::{
             IMAGE_STATE_COLOR_ATTACHMENT, IMAGE_STATE_DEPTH_ATTACHMENT, IMAGE_STATE_SHADER_READ,
             IMAGE_STATE_TRANSFER_DST, IMAGE_STATE_TRANSFER_SRC,
         },
-        command_list::{CommandList, DepthMode},
+        command_list::{CommandList, CommandListForkState},
     },
     renderer::{
         Renderer,
-        packet::{FramePacket, ViewPacket},
+        object::{RenderObject, RenderObjectHandle},
+        packet::{FramePacket, RenderPerFrameNode, RenderPerViewNode, SubmitNode, ViewPacket},
     },
     tfx::view::ShadedView,
-    util::range::RangeChunks,
     visibility::ViewVisibility,
 };
 
@@ -166,7 +168,7 @@ impl SceneRenderer {
             })]);
         }
 
-        cmd.begin_rendering(
+        cmd.begin_rendering_secondary(
             self.main_view.gbuffer.albedo.resolution(),
             &[
                 vk::RenderingAttachmentInfo::default()
@@ -299,7 +301,7 @@ impl SceneRenderer {
                 .transition(cmd, IMAGE_STATE_DEPTH_ATTACHMENT);
         }
 
-        cmd.begin_rendering(
+        cmd.begin_rendering_secondary(
             self.main_view.gbuffer.albedo.resolution(),
             &[
                 vk::RenderingAttachmentInfo::default()
@@ -345,9 +347,42 @@ impl SceneRenderer {
                 .parent
                 .gpu
                 .profiler_scope(cmd, "submit_decals_additive");
+            cmd.begin_rendering_secondary(
+                self.main_view.gbuffer.albedo.resolution(),
+                &[
+                    vk::RenderingAttachmentInfo::default()
+                        .image_view(self.main_view.gbuffer.albedo.view())
+                        .image_layout(vk::ImageLayout::COLOR_ATTACHMENT_OPTIMAL)
+                        .load_op(vk::AttachmentLoadOp::LOAD)
+                        .store_op(vk::AttachmentStoreOp::STORE),
+                    vk::RenderingAttachmentInfo::default()
+                        .image_view(self.main_view.gbuffer.normal.view())
+                        .image_layout(vk::ImageLayout::COLOR_ATTACHMENT_OPTIMAL)
+                        .load_op(vk::AttachmentLoadOp::LOAD)
+                        .store_op(vk::AttachmentStoreOp::STORE),
+                    vk::RenderingAttachmentInfo::default()
+                        .image_view(self.main_view.gbuffer.rt3.view())
+                        .image_layout(vk::ImageLayout::COLOR_ATTACHMENT_OPTIMAL)
+                        .load_op(vk::AttachmentLoadOp::LOAD)
+                        .store_op(vk::AttachmentStoreOp::STORE),
+                    vk::RenderingAttachmentInfo::default()
+                        .image_view(self.main_view.gbuffer.rt4.view())
+                        .image_layout(vk::ImageLayout::COLOR_ATTACHMENT_OPTIMAL)
+                        .load_op(vk::AttachmentLoadOp::LOAD)
+                        .store_op(vk::AttachmentStoreOp::STORE),
+                ],
+                Some(
+                    &vk::RenderingAttachmentInfo::default()
+                        .image_view(self.main_view.gbuffer.depth.depth_stencil_view())
+                        .image_layout(vk::ImageLayout::DEPTH_ATTACHMENT_OPTIMAL)
+                        .load_op(vk::AttachmentLoadOp::LOAD)
+                        .store_op(vk::AttachmentStoreOp::STORE),
+                ),
+            );
             cmd.set_ffstate(FixedFunctionState::new(Some(8), Some(15), Some(2), Some(1)));
             cmd.flush_states();
             self.submit_stage(cmd, view, RenderStage::DecalsAdditive);
+            cmd.end_rendering();
         }
 
         self.main_view
@@ -371,7 +406,7 @@ impl SceneRenderer {
                 ],
                 None,
             );
-            cmd.begin_rendering(
+            cmd.begin_rendering_secondary(
                 self.main_view.light.light_diffuse.resolution(),
                 &[
                     vk::RenderingAttachmentInfo::default()
@@ -414,7 +449,7 @@ impl SceneRenderer {
                 ],
                 None,
             );
-            cmd.begin_rendering(
+            cmd.begin_rendering_secondary(
                 self.main_view.light.light_diffuse.resolution(),
                 &[
                     vk::RenderingAttachmentInfo::default()
@@ -662,24 +697,45 @@ impl SceneRenderer {
     pub fn submit_stage(&self, cmd: &mut CommandList, view: &ViewPacket, stage: RenderStage) {
         let frame_packet = &self.frame_packet;
         let render_objects = self.parent.objects.read();
+        let submit_nodes = view.submit_node_blocks.block(stage);
+
+        if submit_nodes.is_empty() {
+            return;
+        }
 
         let _stage_scope = cmd.event_scope(stage.to_string(), [0.0, 1.0, 0.0]);
 
-        for submit_node in view.submit_node_blocks.block(stage) {
-            let view_node = &view.view_nodes[submit_node.view_node];
-            let frame_node = &frame_packet.per_frame_nodes[view_node.frame_node];
-            let Some(render_object) = render_objects.get(frame_node.object) else {
-                error!(
-                    "Render object with handle {:?} not found",
-                    frame_node.object
-                );
-                continue;
-            };
-            let _obj_scope = cmd.event_scope(&render_object.name, [0.2, 0.2, 1.0]);
-            render_object
-                .renderer
-                .submit(cmd, stage, frame_node, view_node, submit_node.key);
-        }
+        let fork = cmd.fork_state();
+        let gpu = &self.parent.gpu;
+        let frame_nodes = frame_packet.per_frame_nodes.as_slice();
+        let view_nodes = view.view_nodes.as_slice();
+        let render_objects: &SlotMap<RenderObjectHandle, RenderObject> = &render_objects;
+
+        const MIN_CHUNK_SIZE: usize = 8;
+
+        let thread_count = rayon::current_num_threads().max(1);
+        let chunk_size = submit_nodes
+            .len()
+            .div_ceil(thread_count)
+            .max(MIN_CHUNK_SIZE);
+
+        let command_buffers = submit_nodes
+            .par_chunks(chunk_size)
+            .map(|chunk| {
+                record_submit_chunk(
+                    gpu,
+                    &fork,
+                    frame_nodes,
+                    view_nodes,
+                    render_objects,
+                    stage,
+                    chunk,
+                )
+            })
+            .collect::<Vec<_>>();
+
+        let command_buffers = command_buffers.into_iter().flatten().collect::<Vec<_>>();
+        cmd.execute_commands(&command_buffers);
     }
 
     /// Sets the value of the given global channel by ID
@@ -710,6 +766,62 @@ impl SceneRenderer {
             .position(|i| *i == id)
             .map(|pos| self.global_channels[pos])
     }
+}
+
+#[allow(clippy::too_many_arguments)]
+fn record_submit_chunk(
+    gpu: &Arc<Gpu>,
+    fork: &CommandListForkState,
+    frame_nodes: &[RenderPerFrameNode],
+    view_nodes: &[RenderPerViewNode],
+    render_objects: &SlotMap<RenderObjectHandle, RenderObject>,
+    stage: RenderStage,
+    submit_nodes: &[SubmitNode],
+) -> Option<vk::CommandBuffer> {
+    let cmd = match gpu.acquire_secondary_command_buffer(fork.color_formats(), fork.depth_format())
+    {
+        Ok(Some(cmd)) => cmd,
+        Ok(None) => {
+            error!("Out of secondary command buffers while submitting {stage}");
+            return None;
+        }
+        Err(e) => {
+            error!("Failed to begin secondary command buffer for {stage}: {e:?}");
+            return None;
+        }
+    };
+
+    let mut cmd = CommandList::from_fork_state(gpu, cmd, fork.clone());
+
+    for submit_node in submit_nodes {
+        let Some(view_node) = view_nodes.get(submit_node.view_node) else {
+            error!("Submit node has invalid view node index");
+            continue;
+        };
+        let Some(frame_node) = frame_nodes.get(view_node.frame_node) else {
+            error!("View node has invalid frame node index");
+            continue;
+        };
+        let Some(render_object) = render_objects.get(frame_node.object) else {
+            error!(
+                "Render object with handle {:?} not found",
+                frame_node.object
+            );
+            continue;
+        };
+        let _obj_scope = cmd.event_scope(&render_object.name, [0.2, 0.2, 1.0]);
+        render_object
+            .renderer
+            .submit(&mut cmd, stage, frame_node, view_node, submit_node.key);
+    }
+
+    let command_buffer = *cmd.cmd;
+    if let Err(e) = gpu.end_secondary_command_buffer(command_buffer) {
+        error!("Failed to end secondary command buffer for {stage}: {e:?}");
+        return None;
+    }
+
+    Some(command_buffer)
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

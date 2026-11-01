@@ -1,11 +1,5 @@
 use ash::vk;
-use std::{
-    ops::Deref,
-    sync::{
-        Arc,
-        atomic::{AtomicBool, AtomicU64, Ordering},
-    },
-};
+use std::{ops::Deref, sync::Arc};
 
 use crate::gpu::{
     Gpu,
@@ -144,6 +138,13 @@ impl CommandBuffer {
         }
     }
 
+    pub fn set_stencil_reference(&self, face_mask: vk::StencilFaceFlags, reference: u32) {
+        unsafe {
+            self.gpu
+                .cmd_set_stencil_reference(self.cmd, face_mask, reference);
+        }
+    }
+
     pub fn set_primitive_topology(&self, topology: vk::PrimitiveTopology) {
         unsafe {
             self.gpu.cmd_set_primitive_topology(self.cmd, topology);
@@ -240,11 +241,41 @@ impl CommandBuffer {
         color_attachments: &[vk::RenderingAttachmentInfo<'_>],
         depth_attachment: Option<&vk::RenderingAttachmentInfo<'_>>,
     ) -> anyhow::Result<()> {
+        self.begin_rendering_with_flags(
+            resolution,
+            color_attachments,
+            depth_attachment,
+            vk::RenderingFlags::empty(),
+        )
+    }
+
+    pub fn begin_rendering_secondary(
+        &self,
+        resolution: (u32, u32),
+        color_attachments: &[vk::RenderingAttachmentInfo<'_>],
+        depth_attachment: Option<&vk::RenderingAttachmentInfo<'_>>,
+    ) -> anyhow::Result<()> {
+        self.begin_rendering_with_flags(
+            resolution,
+            color_attachments,
+            depth_attachment,
+            vk::RenderingFlags::CONTENTS_SECONDARY_COMMAND_BUFFERS,
+        )
+    }
+
+    pub fn begin_rendering_with_flags(
+        &self,
+        resolution: (u32, u32),
+        color_attachments: &[vk::RenderingAttachmentInfo<'_>],
+        depth_attachment: Option<&vk::RenderingAttachmentInfo<'_>>,
+        flags: vk::RenderingFlags,
+    ) -> anyhow::Result<()> {
         let render_area = vk::Rect2D::default().extent(vk::Extent2D {
             width: resolution.0,
             height: resolution.1,
         });
         let mut rendering_info = vk::RenderingInfo::default()
+            .flags(flags)
             .render_area(render_area)
             .layer_count(1)
             .color_attachments(color_attachments);
@@ -257,6 +288,16 @@ impl CommandBuffer {
             self.gpu.cmd_begin_rendering(self.cmd, &rendering_info);
         }
         Ok(())
+    }
+
+    pub fn execute_commands(&self, command_buffers: &[vk::CommandBuffer]) {
+        if command_buffers.is_empty() {
+            return;
+        }
+
+        unsafe {
+            self.gpu.cmd_execute_commands(self.cmd, command_buffers);
+        }
     }
 
     pub fn end_rendering(&self) {

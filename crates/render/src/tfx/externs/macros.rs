@@ -89,6 +89,7 @@ macro_rules! extern_container {
 macro_rules! local_extern_container {
     ($($name:ident: $t:ident),*) => {
         /// Containers holding localized externs that allows for overriding externs for individual command lists
+        #[derive(Clone)]
         pub struct LocalExternContainer {
             base: BaseExternSource,
             $(

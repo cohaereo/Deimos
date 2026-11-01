@@ -202,7 +202,7 @@ impl Scene {
                 })
             });
 
-            let _fps_rect = ui.painter_at(panel_rect).text(
+            let fps_rect = ui.painter_at(panel_rect).text(
                 panel_rect.right_top() + Vec2::new(0.0, 3.0) + Vec2::splat(1.0),
                 egui::Align2::RIGHT_TOP,
                 format!("{} ", (1. / delta_time_average).round()),
@@ -454,24 +454,24 @@ impl Scene {
 
             self.render(delta_time, resolution);
 
-            // ui.interact(
-            //     fps_rect,
-            //     "frame_counter_profiler_tooltip".into(),
-            //     Sense::hover(),
-            // )
-            // .on_hover_ui(|ui| {
-            //     let gpu = &self.renderer.gpu;
-            //     ui.monospace(format!(
-            //         "{} Drawcalls",
-            //         gpu.num_drawcalls.load(Ordering::Relaxed)
-            //     ));
-            //     ui.monospace(format!(
-            //         "{} Static Instances",
-            //         gpu.num_static_instances.load(Ordering::Relaxed)
-            //     ));
-            //     let profiler_results = self.renderer.gpu.frame().profiler.get_results_string();
-            //     ui.add(egui::Label::new(RichText::new(profiler_results).monospace()).extend());
-            // });
+            ui.interact(
+                fps_rect,
+                "frame_counter_profiler_tooltip".into(),
+                Sense::hover(),
+            )
+            .on_hover_ui(|ui| {
+                let gpu = &self.renderer.gpu;
+                ui.monospace(format!(
+                    "{} Drawcalls",
+                    gpu.num_drawcalls.load(Ordering::Relaxed)
+                ));
+                ui.monospace(format!(
+                    "{} Static Instances",
+                    gpu.num_static_instances.load(Ordering::Relaxed)
+                ));
+                let profiler_results = gpu.frame().profiler.get_results_string();
+                ui.add(egui::Label::new(RichText::new(profiler_results).monospace()).extend());
+            });
         });
     }
 
@@ -479,7 +479,7 @@ impl Scene {
     pub fn render(&mut self, delta_time: f32, canvas_resolution: (u32, u32)) {
         let cmd = self.renderer.gpu.current_command_buffer();
         let mut cmd = CommandList::from_native_command_list(&self.renderer.gpu, cmd);
-        // let _scope = self.renderer.gpu.profiler_scope(stream, "Scene::render");
+        let _scene_scope = self.renderer.gpu.profiler_scope(&cmd, "scene_render");
         s_update_object_channels(&self.world);
         if let Err(e) = self
             .scene_renderer
@@ -815,14 +815,14 @@ impl Scene {
         };
 
         {
-            // let _scope = self.renderer.gpu.profiler_scope(stream, "visibility_test");
+            let _scope = self.renderer.gpu.profiler_scope(&cmd, "visibility_test");
             s_visibility_test(&mut self.world, &vis);
         }
 
         self.scene_renderer.frame_packet.reset();
 
         {
-            // let _scope = self.renderer.gpu.profiler_scope(stream, "extract_frame");
+            let _scope = self.renderer.gpu.profiler_scope(&cmd, "extract_frame");
             s_extract_frame_packet(
                 &self.world,
                 &mut self.scene_renderer,

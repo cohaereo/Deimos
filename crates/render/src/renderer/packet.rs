@@ -178,6 +178,9 @@ impl RenderPerFrameNode {
 
 assert_eq_size!(RenderPerFrameNode, [u8; 16]);
 
+unsafe impl Send for RenderPerFrameNode {}
+unsafe impl Sync for RenderPerFrameNode {}
+
 #[repr(Rust)]
 #[derive(Debug)]
 pub struct RenderPerViewNode {
@@ -196,6 +199,9 @@ impl RenderPerViewNode {
 }
 
 assert_eq_size!(RenderPerViewNode, [u8; 16]);
+
+unsafe impl Send for RenderPerViewNode {}
+unsafe impl Sync for RenderPerViewNode {}
 
 #[repr(Rust)]
 #[derive(Clone, Copy)]
