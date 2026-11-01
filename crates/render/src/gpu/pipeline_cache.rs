@@ -52,6 +52,8 @@ impl ShaderInfo {
 pub struct TechniqueLayout {
     pub pipeline_layout: vk::PipelineLayout,
     pub set_layouts: [vk::DescriptorSetLayout; TOTAL_SETS],
+    pub set_sizes: [u64; TOTAL_SETS],
+    pub binding_offsets: Arc<[[u64; 32]; TOTAL_SETS]>,
 }
 
 pub struct PipelineCache {
@@ -63,6 +65,7 @@ pub struct PipelineCache {
     empty_layout: vk::DescriptorSetLayout,
 
     device: ash::Device,
+    descriptor_buffer: descriptor_buffer::Device,
     #[cfg(debug_assertions)]
     debug_loader: debug_utils::Device,
 }
@@ -106,7 +109,7 @@ impl PipelineCache {
         pixel_shader: TagHash,
     ) -> anyhow::Result<TechniqueLayout> {
         if let Some(layout) = self.layout_cache.get(&(vertex_shader, pixel_shader)) {
-            return Ok(*layout);
+            return Ok(layout.clone());
         }
 
         let vs_info = self.get_or_load_bytecode(vertex_shader, ShaderStage::Vertex)?;
@@ -128,13 +131,47 @@ impl PipelineCache {
         }
         .context("failed to create pipeline layout")?;
 
+        let mut set_sizes = [0u64; TOTAL_SETS];
+        let mut binding_offsets = [[0u64; 32]; TOTAL_SETS];
+        for (set_index, set_layout) in set_layouts.iter().enumerate() {
+            let size = unsafe {
+                self.descriptor_buffer
+                    .get_descriptor_set_layout_size(*set_layout)
+            };
+            set_sizes[set_index] = size;
+            if size == 0 {
+                continue;
+            }
+
+            let slots = if set_index < SETS_PER_STAGE as usize {
+                &vs_info.slots
+            } else {
+                &ps_info.slots
+            };
+            let mask = match (set_index % SETS_PER_STAGE as usize) as u32 {
+                dxil2spirv::SET_CBV => slots.cbv,
+                dxil2spirv::SET_SRV => slots.srv,
+                dxil2spirv::SET_SAMPLER => slots.sampler,
+                _ => slots.uav,
+            };
+
+            for slot in dxil2spirv::SlotUsage::iter_mask(mask) {
+                binding_offsets[set_index][slot as usize] = unsafe {
+                    self.descriptor_buffer
+                        .get_descriptor_set_layout_binding_offset(*set_layout, slot)
+                };
+            }
+        }
+
         let layout = TechniqueLayout {
             pipeline_layout,
             set_layouts,
+            set_sizes,
+            binding_offsets: Arc::new(binding_offsets),
         };
 
         self.layout_cache
-            .insert((vertex_shader, pixel_shader), layout);
+            .insert((vertex_shader, pixel_shader), layout.clone());
 
         Ok(layout)
     }
@@ -199,7 +236,7 @@ impl PipelineCache {
     fn get_or_create_pipeline(
         &mut self,
         key: &PipelineKey,
-        layout: TechniqueLayout,
+        layout: &TechniqueLayout,
         vs_info: &ShaderInfo,
         ps_info: &ShaderInfo,
     ) -> anyhow::Result<vk::Pipeline> {
@@ -375,7 +412,7 @@ impl PipelineCache {
         let vs_info = self.get_or_load_bytecode(key.vertex_shader, ShaderStage::Vertex)?;
         let ps_info = self.get_or_load_bytecode(key.pixel_shader, ShaderStage::Pixel)?;
 
-        let pipeline = self.get_or_create_pipeline(key, layout, &vs_info, &ps_info)?;
+        let pipeline = self.get_or_create_pipeline(key, &layout, &vs_info, &ps_info)?;
 
         self.storage.insert(key.clone(), pipeline);
         Ok(pipeline)

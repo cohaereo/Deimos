@@ -6,6 +6,8 @@ use ash::vk;
 use deimos_data::tfx::{STechnique, STechniqueStage, ShaderStage, TechniqueBindMode};
 use deimos_ecs::object::ObjectChannel;
 use dxil2spirv::{SlotType, SlotUsage};
+use parking_lot::RwLock;
+use smallvec::SmallVec;
 use tiger_parse::PackageManagerExt;
 use tiger_pkg::{TagHash, package_manager};
 
@@ -20,12 +22,15 @@ use crate::{
     tfx::{dynamic_core::DynamicCore, scope::ShaderStageExt},
 };
 
+const MAX_TECHNIQUE_LOCAL_PIPELINES: usize = 16;
+
 pub struct Technique {
     pub tag: TagHash,
     pub data: STechnique,
     pub layout: TechniqueLayout,
     stage_vertex: TechniqueStage,
     stage_pixel: TechniqueStage,
+    pipeline_cache: RwLock<SmallVec<[(PipelineKey, vk::Pipeline); 4]>>,
 }
 
 impl Technique {
@@ -68,6 +73,7 @@ impl Technique {
             layout,
             stage_vertex,
             stage_pixel,
+            pipeline_cache: RwLock::new(SmallVec::new()),
         }))
     }
 
@@ -115,31 +121,49 @@ impl Technique {
             fixed_function_state,
             topology: cmd.current_topology(),
             input_layout: cmd.get_input_layout() as u8,
-            color_formats: cmd.color_attachment_formats().to_vec(),
+            color_formats: SmallVec::from_slice(cmd.color_attachment_formats()),
             depth_format: cmd.depth_attachment_format(),
         };
 
-        let layout = self.layout;
-        let existing_pipeline = { gpu.pipeline_cache.read().get(&pipeline_key) };
-        let pipeline = if let Some(pipeline) = existing_pipeline {
+        let layout = &self.layout;
+
+        let cached_pipeline = {
+            let cache = self.pipeline_cache.read();
+            cache
+                .iter()
+                .find(|(key, _)| key == &pipeline_key)
+                .map(|(_, pipeline)| *pipeline)
+        };
+        let pipeline = if let Some(pipeline) = cached_pipeline {
             pipeline
         } else {
-            let mut cache = gpu.pipeline_cache.write();
-            match cache.get_or_create(&pipeline_key) {
-                Ok(pipeline) => pipeline,
-                Err(e) => {
-                    error!("Failed to create pipeline: {e:?}");
-                    return;
+            let existing_pipeline = { gpu.pipeline_cache.read().get(&pipeline_key) };
+            let pipeline = if let Some(pipeline) = existing_pipeline {
+                pipeline
+            } else {
+                let mut cache = gpu.pipeline_cache.write();
+                match cache.get_or_create(&pipeline_key) {
+                    Ok(pipeline) => pipeline,
+                    Err(e) => {
+                        error!("Failed to create pipeline: {e:?}");
+                        return;
+                    }
                 }
+            };
+
+            let mut cache = self.pipeline_cache.write();
+            if !cache.iter().any(|(key, _)| key == &pipeline_key) {
+                if cache.len() >= MAX_TECHNIQUE_LOCAL_PIPELINES {
+                    cache.clear();
+                }
+                cache.push((pipeline_key, pipeline));
             }
+            pipeline
         };
 
         let mut offsets = [0u64; 8];
-        for (set_index, set_layout) in layout.set_layouts.iter().enumerate() {
-            let size = unsafe {
-                gpu.descriptor_buffer
-                    .get_descriptor_set_layout_size(*set_layout)
-            };
+        for set_index in 0..layout.set_layouts.len() {
+            let size = layout.set_sizes[set_index];
             if size == 0 {
                 continue;
             }
@@ -158,11 +182,11 @@ impl Technique {
             } else {
                 &self.stage_pixel
             };
-            self.write_set(
+            Self::write_set(
                 &gpu,
                 stage,
                 (set_index % 4) as u32,
-                *set_layout,
+                &layout.binding_offsets[set_index],
                 gpu.frame().descriptors.ptr_at(offset),
                 cmd,
             );
@@ -175,15 +199,14 @@ impl Technique {
 
     #[allow(clippy::too_many_arguments)]
     fn write_set(
-        &self,
         gpu: &Arc<Gpu>,
         stage: &TechniqueStage,
         set_kind: u32,
-        set_layout: vk::DescriptorSetLayout,
+        offsets: &[u64; 32],
         ptr: *mut u8,
         cmd: &CommandList,
     ) {
-        let writer = DescriptorWriter::new(gpu.clone(), set_layout, ptr);
+        let writer = DescriptorWriter::new(gpu, offsets, ptr);
         let slots = &stage.shader_info.slots;
         let resources = cmd.resources(stage.shader_stage);
 
