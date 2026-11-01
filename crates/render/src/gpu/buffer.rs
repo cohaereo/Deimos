@@ -1,17 +1,13 @@
 use std::{ops::Range, sync::Arc};
 
-use anyhow::Context;
 use ash::vk;
 use deimos_data::tfx::ShaderStage;
 use gpu_allocator::MemoryLocation;
 
-use crate::{
-    gpu::{
-        Gpu,
-        alloc::{BufferAllocDesc, buffer::Buffer},
-        command_list::{BufferResource, CommandList, ConstantBufferView},
-    },
-    util::once,
+use crate::gpu::{
+    Gpu,
+    alloc::{BufferAllocDesc, buffer::Buffer},
+    command_list::{BufferResource, CommandList, ConstantBufferView},
 };
 
 // pub struct DynamicBuffer {
@@ -241,15 +237,15 @@ impl ImmutableBuffer {
         self.size
     }
 
-    pub fn cbv(&self) -> ConstantBufferView {
+    pub const fn cbv(&self) -> ConstantBufferView {
         self.buffer.cbv()
     }
 
-    pub fn buffer(&self) -> &Buffer {
+    pub const fn buffer(&self) -> &Buffer {
         &self.buffer
     }
 
-    pub fn srv(&self, offset: u64, size: u64) -> BufferResource {
+    pub const fn srv(&self, offset: u64, size: u64) -> BufferResource {
         BufferResource {
             addr: self.buffer.device_address() + offset,
             size,

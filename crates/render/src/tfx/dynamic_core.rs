@@ -463,7 +463,7 @@ pub struct DynamicCoreResources {
 }
 
 impl DynamicCoreResources {
-    pub fn extract(gpu: &Gpu, core: &SDynamicCore, stage: ShaderStage) -> anyhow::Result<Self> {
+    pub fn extract(gpu: &Gpu, core: &SDynamicCore, _stage: ShaderStage) -> anyhow::Result<Self> {
         let mut res = Self {
             samplers: Vec::new(),
             textures: Vec::new(),

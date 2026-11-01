@@ -8,8 +8,7 @@ pub mod scene;
 
 use std::sync::Arc;
 
-use deimos_data::tfx::{PrimitiveType, ShaderStage};
-use glam::Mat4;
+use deimos_data::tfx::PrimitiveType;
 use parking_lot::RwLock;
 use slotmap::SlotMap;
 

@@ -42,7 +42,7 @@ impl GpuFence {
             return Ok(());
         }
 
-        let timeout_ns = timeout.map(|t| t.as_nanos() as u64).unwrap_or(u64::MAX);
+        let timeout_ns = timeout.map_or(u64::MAX, |t| t.as_nanos() as u64);
 
         unsafe {
             self.device.wait_semaphores(

@@ -41,14 +41,14 @@ fn align_up(value: usize, alignment: usize) -> usize {
     value.div_ceil(alignment) * alignment
 }
 
-fn gcd(mut a: usize, mut b: usize) -> usize {
+const fn gcd(mut a: usize, mut b: usize) -> usize {
     while b != 0 {
         (a, b) = (b, a % b);
     }
     a
 }
 
-fn lcm(a: usize, b: usize) -> usize {
+const fn lcm(a: usize, b: usize) -> usize {
     a / gcd(a, b) * b
 }
 
@@ -393,7 +393,7 @@ impl<'a> TextureDesc<'a> {
     }
 }
 
-fn dxgi_to_vk(format: DxgiFormat) -> Option<vk::Format> {
+const fn dxgi_to_vk(format: DxgiFormat) -> Option<vk::Format> {
     // Adapted from https://github.com/HansKristian-Work/vkd3d-proton/blob/49a1e2c7098f4646374458b9a8fbc7c0d0b5ff3d/libs/vkd3d/utils.c#L48
     Some(match format {
         DxgiFormat::R32G32B32A32_TYPELESS => vk::Format::R32G32B32A32_SFLOAT,

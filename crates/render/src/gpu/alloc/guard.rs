@@ -16,7 +16,7 @@ pub struct Resource {
 }
 
 impl Resource {
-    pub fn gpu(&self) -> &Arc<Gpu> {
+    pub const fn gpu(&self) -> &Arc<Gpu> {
         &self.gpu
     }
 

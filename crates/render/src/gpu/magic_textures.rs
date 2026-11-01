@@ -61,7 +61,7 @@ impl MagicTextureContainer {
         } else {
             let mut data = texture_from_hash(hash);
             if let Some(filler) = filler {
-                for chunk in data.chunks_exact_mut(4) {
+                for chunk in data.as_chunks_mut::<4>().0 {
                     chunk.copy_from_slice(&filler);
                 }
             }

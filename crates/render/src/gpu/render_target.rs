@@ -6,7 +6,7 @@ use gpu_allocator::MemoryLocation;
 use crate::gpu::{
     Gpu,
     alloc::{ImageAllocDesc, image::Image},
-    command_buffer::{CommandBuffer, IMAGE_STATE_TRANSFER_DST},
+    command_buffer::IMAGE_STATE_TRANSFER_DST,
 };
 
 pub struct RenderTarget {

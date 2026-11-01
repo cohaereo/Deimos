@@ -75,7 +75,7 @@ impl SceneRenderer {
         cmd: &mut CommandList,
         visibility: &ViewVisibility,
         debug_pipeline: Option<DebugPipeline>,
-        draw_sun_shadows: bool,
+        _draw_sun_shadows: bool,
     ) {
         self.parent.externs.reset_global_channel_frequencies();
         self.parent.externs.bump_generation();
@@ -136,7 +136,7 @@ impl SceneRenderer {
         }
         self.parent.globals.scopes.view.bind(cmd);
 
-        let use_hdri = debug_pipeline == Some(DebugPipeline::LookDev);
+        let _use_hdri = debug_pipeline == Some(DebugPipeline::LookDev);
 
         self.main_view
             .gbuffer

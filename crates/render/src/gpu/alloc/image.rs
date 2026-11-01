@@ -14,15 +14,17 @@ pub struct Image {
 }
 
 impl Image {
-    pub fn vk_image(&self) -> vk::Image {
+    pub const fn vk_image(&self) -> vk::Image {
         self.image
     }
 
-    pub fn current_state(&self) -> (vk::ImageLayout, vk::PipelineStageFlags, vk::AccessFlags) {
+    pub const fn current_state(
+        &self,
+    ) -> (vk::ImageLayout, vk::PipelineStageFlags, vk::AccessFlags) {
         self.current_state
     }
 
-    pub fn current_layout(&self) -> vk::ImageLayout {
+    pub const fn current_layout(&self) -> vk::ImageLayout {
         self.current_state.0
     }
 

@@ -41,7 +41,6 @@ use crate::{
         packet::{RenderPerFrameNode, RenderPerViewNode, SubmitNode, SubmitNodeContainer},
     },
     tfx::technique::Technique,
-    util::once,
     visibility::{ViewVisibility, bvh::Bvh},
 };
 

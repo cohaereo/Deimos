@@ -77,7 +77,7 @@ impl VertexBuffer {
             );
         }
 
-        Ok(VertexBuffer {
+        Ok(Self {
             buffer,
             size: data.len() as u32,
             length: data.len() as u32 / stride,
@@ -96,7 +96,7 @@ impl VertexBuffer {
         }
     }
 
-    pub fn buffer(&self) -> &Buffer {
+    pub const fn buffer(&self) -> &Buffer {
         &self.buffer
     }
 }

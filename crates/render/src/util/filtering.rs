@@ -34,7 +34,7 @@ pub fn importance_sample_ggx(xi: (f32, f32), alpha: f32, n: Vec3) -> Vec3 {
     let a2 = alpha * alpha;
     let phi = 2.0 * PI * xi_x;
     let cos_theta = ((1.0 - xi_y) / (a2 - 1.0).mul_add(xi_y, 1.0)).sqrt();
-    let sin_theta = (1.0 - cos_theta * cos_theta).max(0.0).sqrt();
+    let sin_theta = f32::mul_add(cos_theta, -cos_theta, 1.0).max(0.0).sqrt();
 
     let h_local = Vec3::new(sin_theta * phi.cos(), sin_theta * phi.sin(), cos_theta);
 
@@ -50,8 +50,8 @@ pub fn sample_base_bilinear(base: &[f32], width: usize, height: usize, dir: Vec3
     let u = u.rem_euclid(1.0);
     let v = v.clamp(0.0, 1.0);
 
-    let px = u * width as f32 - 0.5;
-    let py = v * height as f32 - 0.5;
+    let px = f32::mul_add(u, width as f32, -0.5);
+    let py = f32::mul_add(v, height as f32, -0.5);
 
     let x0 = (px.floor() as isize).rem_euclid(width as isize) as usize;
     let y0 = (py.floor() as usize).min(height - 1);

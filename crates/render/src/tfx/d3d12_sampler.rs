@@ -19,7 +19,7 @@ pub struct D3D12SamplerDesc {
 
 impl D3D12SamplerDesc {
     pub fn to_vk(&self) -> vk::SamplerCreateInfo<'_> {
-        let (mip_filter, min_filter, mag_filter, anisotropy_enable) = self.filter.to_vk();
+        let (_mip_filter, min_filter, mag_filter, anisotropy_enable) = self.filter.to_vk();
 
         vk::SamplerCreateInfo::default()
             .flags(vk::SamplerCreateFlags::empty())
@@ -68,24 +68,24 @@ pub enum D3D12ComparisonFunc {
 }
 
 impl D3D12ComparisonFunc {
-    pub fn to_vk(self) -> vk::CompareOp {
+    pub const fn to_vk(self) -> vk::CompareOp {
         match self {
-            D3D12ComparisonFunc::None => vk::CompareOp::NEVER,
-            D3D12ComparisonFunc::Never => vk::CompareOp::NEVER,
-            D3D12ComparisonFunc::Less => vk::CompareOp::LESS,
-            D3D12ComparisonFunc::Equal => vk::CompareOp::EQUAL,
-            D3D12ComparisonFunc::LessEqual => vk::CompareOp::LESS_OR_EQUAL,
-            D3D12ComparisonFunc::Greater => vk::CompareOp::GREATER,
-            D3D12ComparisonFunc::NotEqual => vk::CompareOp::NOT_EQUAL,
-            D3D12ComparisonFunc::GreaterEqual => vk::CompareOp::GREATER_OR_EQUAL,
-            D3D12ComparisonFunc::Always => vk::CompareOp::ALWAYS,
+            Self::None => vk::CompareOp::NEVER,
+            Self::Never => vk::CompareOp::NEVER,
+            Self::Less => vk::CompareOp::LESS,
+            Self::Equal => vk::CompareOp::EQUAL,
+            Self::LessEqual => vk::CompareOp::LESS_OR_EQUAL,
+            Self::Greater => vk::CompareOp::GREATER,
+            Self::NotEqual => vk::CompareOp::NOT_EQUAL,
+            Self::GreaterEqual => vk::CompareOp::GREATER_OR_EQUAL,
+            Self::Always => vk::CompareOp::ALWAYS,
         }
     }
 }
 
 #[repr(u32)]
 #[rustfmt::skip]
-#[derive(Debug, Clone, Copy, Hash, PartialEq)]
+#[derive(Debug, Clone, Copy, Hash, PartialEq, Eq)]
 pub enum D3D12Filter {
     MinMagMipPoint = 0x0,
     MinMagPointMipLinear = 0x1,
@@ -131,7 +131,7 @@ impl D3D12Filter {
     pub const MIN_FILTER_SHIFT: u32 = 4;
     pub const ANISOTROPIC_FILTERING_BIT: u32 = 0x40;
 
-    pub fn to_vk(self) -> (vk::Filter, vk::Filter, vk::Filter, bool) {
+    pub const fn to_vk(self) -> (vk::Filter, vk::Filter, vk::Filter, bool) {
         let bits = self as u32;
         let mip = (bits >> Self::MIP_FILTER_SHIFT) & 0x3;
         let mag = (bits >> Self::MAG_FILTER_SHIFT) & 0x3;
@@ -149,7 +149,7 @@ impl D3D12Filter {
 }
 
 #[repr(i32)]
-#[derive(Debug, Clone, Copy, PartialEq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum D3D12TextureAddressMode {
     Invalid = 0,
     Wrap = 1,
@@ -160,14 +160,14 @@ pub enum D3D12TextureAddressMode {
 }
 
 impl D3D12TextureAddressMode {
-    pub fn to_vk(self) -> vk::SamplerAddressMode {
+    pub const fn to_vk(self) -> vk::SamplerAddressMode {
         match self {
-            D3D12TextureAddressMode::Invalid => vk::SamplerAddressMode::REPEAT,
-            D3D12TextureAddressMode::Wrap => vk::SamplerAddressMode::REPEAT,
-            D3D12TextureAddressMode::Mirror => vk::SamplerAddressMode::MIRRORED_REPEAT,
-            D3D12TextureAddressMode::Clamp => vk::SamplerAddressMode::CLAMP_TO_EDGE,
-            D3D12TextureAddressMode::Border => vk::SamplerAddressMode::CLAMP_TO_BORDER,
-            D3D12TextureAddressMode::MirrorOnce => vk::SamplerAddressMode::MIRROR_CLAMP_TO_EDGE,
+            Self::Invalid => vk::SamplerAddressMode::REPEAT,
+            Self::Wrap => vk::SamplerAddressMode::REPEAT,
+            Self::Mirror => vk::SamplerAddressMode::MIRRORED_REPEAT,
+            Self::Clamp => vk::SamplerAddressMode::CLAMP_TO_EDGE,
+            Self::Border => vk::SamplerAddressMode::CLAMP_TO_BORDER,
+            Self::MirrorOnce => vk::SamplerAddressMode::MIRROR_CLAMP_TO_EDGE,
         }
     }
 }

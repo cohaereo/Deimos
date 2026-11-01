@@ -1,7 +1,6 @@
 use std::sync::Arc;
 
 use anyhow::Context;
-use ash::vk;
 use deimos_data::tfx::texture::DxgiFormat;
 
 use crate::{

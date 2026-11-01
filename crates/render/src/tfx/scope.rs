@@ -170,7 +170,7 @@ impl ScopeSamplers {
                 ShaderStage::Vertex,
             )
             .context("while loading vertex stage")?,
-            stage_pixel: ScopeStageSamplers::new(gpu, data.stage_pixel.clone(), ShaderStage::Pixel)
+            stage_pixel: ScopeStageSamplers::new(gpu, data.stage_pixel, ShaderStage::Pixel)
                 .context("while loading pixel stage")?,
         })
     }

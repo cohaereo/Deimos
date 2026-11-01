@@ -14,7 +14,6 @@ use crate::{
     asset::{AssetKind, index_buffer::IndexBuffer, texture::Texture, vertex_buffer::VertexBuffer},
     gpu::Gpu,
     tfx::technique::Technique,
-    util::once,
 };
 
 use super::{

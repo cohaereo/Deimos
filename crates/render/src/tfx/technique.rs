@@ -223,10 +223,10 @@ impl Technique {
                 for slot in SlotUsage::iter_mask(slots.srv) {
                     match slots.srv_types[slot as usize] {
                         SlotType::UniformTexelBuffer => {
-                            writer.write_uniform_texel_buffer(slot, resources.get_srv_buffer(slot))
+                            writer.write_uniform_texel_buffer(slot, resources.get_srv_buffer(slot));
                         }
                         SlotType::StorageTexelBuffer => {
-                            writer.write_storage_texel_buffer(slot, resources.get_srv_buffer(slot))
+                            writer.write_storage_texel_buffer(slot, resources.get_srv_buffer(slot));
                         }
                         SlotType::StorageBuffer => {
                             let buffer = resources.get_srv_buffer(slot);
@@ -262,7 +262,7 @@ impl Technique {
                             );
                         }
                         SlotType::StorageTexelBuffer => {
-                            writer.write_storage_texel_buffer(slot, resources.get_uav_buffer(slot))
+                            writer.write_storage_texel_buffer(slot, resources.get_uav_buffer(slot));
                         }
                         _ => writer.write_storage_image(
                             slot,

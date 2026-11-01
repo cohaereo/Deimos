@@ -14,5 +14,3 @@ macro_rules! once {
         });
     }};
 }
-
-pub(crate) use once;

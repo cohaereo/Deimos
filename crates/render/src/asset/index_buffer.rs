@@ -88,7 +88,7 @@ impl IndexBuffer {
                 self.buffer.vk_buffer(),
                 0,
                 self.index_type,
-            )
+            );
         };
         // cmd.input_assembler_set_index_buffer(&self.buffer, self.format, 0);
         // self.cmd.ia_set_index_buffer(

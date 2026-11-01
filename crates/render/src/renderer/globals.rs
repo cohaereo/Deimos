@@ -12,10 +12,7 @@ use tiger_pkg::{TagHash, package_manager};
 use crate::{
     asset::{AssetManager, texture::Texture},
     gpu::Gpu,
-    tfx::{
-        scope::{Scope, ScopeSamplers},
-        technique::Technique,
-    },
+    tfx::{scope::Scope, technique::Technique},
 };
 
 lazy_static! {

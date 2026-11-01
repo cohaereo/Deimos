@@ -1,11 +1,8 @@
-use std::{ffi::c_void, mem::ManuallyDrop, ptr::NonNull};
+use std::{mem::ManuallyDrop, ptr::NonNull};
 
 use ash::vk;
 
-use crate::gpu::{
-    alloc::guard::Resource,
-    command_list::{BufferResource, ConstantBufferView},
-};
+use crate::gpu::{alloc::guard::Resource, command_list::ConstantBufferView};
 
 pub struct Buffer {
     pub(super) buffer: vk::Buffer,
@@ -30,14 +27,14 @@ impl Buffer {
             .expect("Buffer is not host-visible")
     }
 
-    pub fn cbv(&self) -> ConstantBufferView {
+    pub const fn cbv(&self) -> ConstantBufferView {
         ConstantBufferView {
             addr: self.addr,
             size: self.size,
         }
     }
 
-    pub fn vk_buffer(&self) -> vk::Buffer {
+    pub const fn vk_buffer(&self) -> vk::Buffer {
         self.buffer
     }
 
