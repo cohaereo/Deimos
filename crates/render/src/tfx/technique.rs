@@ -84,7 +84,7 @@ impl Technique {
         cmd: &mut CommandList,
         object_channels: Option<&AHashMap<u32, ObjectChannel>>,
     ) {
-        let _span = info_span!("Technique::bind", tag = %self.tag).entered();
+        let _span = trace_span!("Technique::bind", tag = %self.tag).entered();
 
         if !matches!(
             self.data.bind_mode,

@@ -55,7 +55,7 @@ impl Scope {
     }
 
     pub fn bind(&self, cmd: &mut CommandList) {
-        let _span = info_span!("Scope::bind", name = %&self.data.name.to_string()).entered();
+        let _span = trace_span!("Scope::bind", name = ?self.data.name).entered();
         for stage in self.all_stages() {
             stage.bind(cmd);
         }
