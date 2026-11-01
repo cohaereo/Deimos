@@ -1,7 +1,9 @@
-use std::collections::hash_map::Entry;
+use std::{collections::hash_map::Entry, ffi::CString};
 
 use ahash::HashMap;
 use anyhow::Context;
+#[cfg(debug_assertions)]
+use ash::ext::debug_utils;
 use ash::vk;
 use deimos_data::tfx::{FixedFunctionState, ShaderStage};
 use tiger_pkg::{TagHash, package_manager};
@@ -60,10 +62,12 @@ pub struct PipelineCache {
     empty_layout: vk::DescriptorSetLayout,
 
     device: ash::Device,
+    #[cfg(debug_assertions)]
+    debug_loader: debug_utils::Device,
 }
 
 impl PipelineCache {
-    pub fn new(device: ash::Device) -> Self {
+    pub fn new(instance: &ash::Instance, device: ash::Device) -> Self {
         let empty_layout = unsafe {
             device.create_descriptor_set_layout(
                 &vk::DescriptorSetLayoutCreateInfo::default()
@@ -79,6 +83,8 @@ impl PipelineCache {
             layout_cache: HashMap::default(),
             storage: HashMap::default(),
             empty_layout,
+            #[cfg(debug_assertions)]
+            debug_loader: debug_utils::Device::new(instance, &device),
             device,
         }
     }
@@ -212,31 +218,83 @@ impl PipelineCache {
             );
         }
 
-        let multisample = vk::PipelineMultisampleStateCreateInfo::default()
-            .rasterization_samples(vk::SampleCountFlags::TYPE_1);
+        let fixed_function_state = key.fixed_function_state;
+        let blend_index = fixed_function_state.blend_state().unwrap_or(0);
+        let rasterizer_index = fixed_function_state.rasterizer_state().unwrap_or(0);
+        let depth_bias_index = fixed_function_state.depth_bias_state().unwrap_or(0);
+        let depth_stencil_index = fixed_function_state.depth_stencil_state().unwrap_or(0);
 
-        // TODO(cohae): parse and translate rasterizer/depth/blend states
+        let blend_state = self
+            .render_states
+            .blend_states
+            .get(blend_index)
+            .with_context(|| format!("invalid blend state index {blend_index}"))?;
+        let rasterizer = self
+            .render_states
+            .rasterizer_states
+            .get(depth_bias_index)
+            .and_then(|states| states.get(rasterizer_index))
+            .with_context(|| {
+                format!(
+                    "invalid rasterizer/depth bias state index {rasterizer_index}/{depth_bias_index}"
+                )
+            })?;
+        let (depth_stencil_reverse, depth_stencil_forward) = self
+            .render_states
+            .depth_stencil_states
+            .get(depth_stencil_index)
+            .with_context(|| format!("invalid depth/stencil state index {depth_stencil_index}"))?;
+        let depth_stencil = match key.depth_mode {
+            DepthMode::Reverse => depth_stencil_reverse,
+            DepthMode::Forward => depth_stencil_forward,
+        };
+
+        let has_depth = key.depth_format.is_some();
+        let has_stencil = key.depth_format.is_some_and(format_has_stencil);
+
+        let multisample = vk::PipelineMultisampleStateCreateInfo::default()
+            .rasterization_samples(vk::SampleCountFlags::TYPE_1)
+            .alpha_to_coverage_enable(blend_state.alpha_to_coverage_enable);
+
         let rasterizer_state = vk::PipelineRasterizationStateCreateInfo::default()
-            .polygon_mode(vk::PolygonMode::FILL)
-            .cull_mode(vk::CullModeFlags::NONE)
-            .front_face(vk::FrontFace::COUNTER_CLOCKWISE)
+            .polygon_mode(rasterizer.polygon_mode)
+            .cull_mode(rasterizer.cull_mode)
+            .front_face(rasterizer.front_face)
+            .depth_clamp_enable(rasterizer.depth_clamp_enable)
+            .depth_bias_enable(rasterizer.depth_bias_enable)
+            .depth_bias_constant_factor(rasterizer.depth_bias_constant_factor)
+            .depth_bias_clamp(rasterizer.depth_bias_clamp)
+            .depth_bias_slope_factor(rasterizer.depth_bias_slope_factor)
             .line_width(1.0);
 
         let depth_stencil_state = vk::PipelineDepthStencilStateCreateInfo::default()
-            .depth_test_enable(key.depth_format.is_some())
-            .depth_write_enable(key.depth_format.is_some())
-            .depth_compare_op(match key.depth_mode {
-                DepthMode::Reverse => vk::CompareOp::GREATER_OR_EQUAL,
-                DepthMode::Forward => vk::CompareOp::LESS_OR_EQUAL,
-            });
+            .depth_test_enable(depth_stencil.depth_test_enable && has_depth)
+            .depth_write_enable(
+                depth_stencil.depth_write_enable && depth_stencil.depth_test_enable && has_depth,
+            )
+            .depth_compare_op(depth_stencil.depth_compare_op)
+            .depth_bounds_test_enable(false)
+            .stencil_test_enable(depth_stencil.stencil_test_enable && has_stencil)
+            .front(depth_stencil.front)
+            .back(depth_stencil.back)
+            .min_depth_bounds(0.0)
+            .max_depth_bounds(1.0);
 
         let vertex_input_state = vk::PipelineVertexInputStateCreateInfo::default()
             .vertex_binding_descriptions(vertex_binding_descs)
             .vertex_attribute_descriptions(vertex_attribute_descs);
 
+        let primitive_restart_enable = matches!(
+            key.topology,
+            vk::PrimitiveTopology::LINE_STRIP
+                | vk::PrimitiveTopology::TRIANGLE_STRIP
+                | vk::PrimitiveTopology::TRIANGLE_FAN
+                | vk::PrimitiveTopology::LINE_STRIP_WITH_ADJACENCY
+                | vk::PrimitiveTopology::TRIANGLE_STRIP_WITH_ADJACENCY
+        );
         let input_assembly = vk::PipelineInputAssemblyStateCreateInfo::default()
             .topology(key.topology)
-            .primitive_restart_enable(true);
+            .primitive_restart_enable(primitive_restart_enable);
 
         let viewports = [vk::Viewport::default()];
         let scissors = [vk::Rect2D::default()];
@@ -245,22 +303,17 @@ impl PipelineCache {
             .viewports(&viewports)
             .scissors(&scissors);
 
-        let attachments = key
-            .color_formats
-            .iter()
-            .map(|_| {
-                vk::PipelineColorBlendAttachmentState::default()
-                    .color_write_mask(vk::ColorComponentFlags::RGBA)
-                    .blend_enable(false)
-            })
-            .collect::<Vec<_>>();
+        let attachments = &blend_state.render_targets[..key.color_formats.len()];
 
-        let color_blend_state =
-            vk::PipelineColorBlendStateCreateInfo::default().attachments(&attachments);
+        let color_blend_state = vk::PipelineColorBlendStateCreateInfo::default()
+            .logic_op_enable(blend_state.logic_op_enable)
+            .logic_op(blend_state.logic_op)
+            .attachments(attachments);
         let dynamic_states = [
             vk::DynamicState::VIEWPORT,
             vk::DynamicState::SCISSOR,
             vk::DynamicState::PRIMITIVE_TOPOLOGY,
+            vk::DynamicState::STENCIL_REFERENCE,
         ];
         let dynamic_state =
             vk::PipelineDynamicStateCreateInfo::default().dynamic_states(&dynamic_states);
@@ -294,7 +347,19 @@ impl PipelineCache {
                 .map_err(|(_, e)| e)?[0]
         };
 
-        // pipeline.set_debug_name(format!("vs_{}_ps_{}", key.vertex_shader, key.pixel_shader));
+        #[cfg(debug_assertions)]
+        {
+            let name_cstr =
+                CString::new(format!("vs_{}_ps_{}", key.vertex_shader, key.pixel_shader)).unwrap();
+            let info = vk::DebugUtilsObjectNameInfoEXT::default()
+                .object_name(&name_cstr)
+                .object_handle(pipeline);
+
+            unsafe {
+                self.debug_loader.set_debug_utils_object_name(&info)?;
+            };
+        }
+
         Ok(pipeline)
     }
 
@@ -345,6 +410,15 @@ impl PipelineCache {
             }
         }
     }
+}
+
+const fn format_has_stencil(format: vk::Format) -> bool {
+    matches!(
+        format,
+        vk::Format::D16_UNORM_S8_UINT
+            | vk::Format::D24_UNORM_S8_UINT
+            | vk::Format::D32_SFLOAT_S8_UINT
+    )
 }
 
 const fn set_base(stage: ShaderStage) -> u32 {

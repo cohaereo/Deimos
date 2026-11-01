@@ -271,7 +271,14 @@ impl Gpu {
                         memory_budget::NAME.as_ptr(),
                     ])
                     .enabled_features(
-                        &vk::PhysicalDeviceFeatures::default().sampler_anisotropy(true),
+                        &vk::PhysicalDeviceFeatures::default()
+                            .sampler_anisotropy(true)
+                            .depth_clamp(true)
+                            .depth_bias_clamp(true)
+                            .fill_mode_non_solid(true)
+                            .independent_blend(true)
+                            .dual_src_blend(true)
+                            .logic_op(true),
                     )
                     .push_next(
                         &mut vk::PhysicalDeviceVulkan11Features::default()
@@ -447,6 +454,7 @@ impl Gpu {
         );
 
         Ok(Self {
+            pipeline_cache: Mutex::new(PipelineCache::new(&instance, device.clone())),
             #[cfg(debug_assertions)]
             debug_loader: debug_utils::Device::new(&instance, &device),
             entry,
@@ -489,7 +497,6 @@ impl Gpu {
 
             extern_source: RwLock::new(BaseExternSource::None),
             magic_textures: MagicTextureContainer::default(),
-            pipeline_cache: Mutex::new(PipelineCache::new(device.clone())),
             descriptor_sizes,
             default_sampler,
             null_storage_image: Mutex::new(None),

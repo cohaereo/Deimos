@@ -1,22 +1,86 @@
+use std::mem::size_of;
+
 use anyhow::Context;
 use ash::vk;
+use bytemuck::{Pod, Zeroable};
 use deimos_data::tfx::render_globals::SRenderGlobals;
 use tiger_parse::PackageManagerExt;
 use tiger_pkg::package_manager;
 
-use crate::util::byteutil;
-
 const DEPTH_STENCIL_COMBO_COUNT: usize = DEPTH_STENCIL_COMBOS.len();
+const RASTERIZER_STATE_COUNT: usize = 9;
+const DEPTH_BIAS_COUNT: usize = 9;
+
+#[derive(Clone, Copy, Debug)]
+pub struct BlendState {
+    pub alpha_to_coverage_enable: bool,
+    pub logic_op_enable: bool,
+    pub logic_op: vk::LogicOp,
+    pub render_targets: [vk::PipelineColorBlendAttachmentState; 8],
+}
+
+#[derive(Clone, Copy, Debug)]
+pub struct RasterizerState {
+    pub polygon_mode: vk::PolygonMode,
+    pub cull_mode: vk::CullModeFlags,
+    pub front_face: vk::FrontFace,
+    pub depth_bias_enable: bool,
+    pub depth_bias_constant_factor: f32,
+    pub depth_bias_clamp: f32,
+    pub depth_bias_slope_factor: f32,
+    pub depth_clamp_enable: bool,
+    pub multisample_enable: bool,
+    pub antialiased_line_enable: bool,
+}
+
+impl Default for RasterizerState {
+    fn default() -> Self {
+        Self {
+            polygon_mode: vk::PolygonMode::FILL,
+            cull_mode: vk::CullModeFlags::NONE,
+            front_face: vk::FrontFace::COUNTER_CLOCKWISE,
+            depth_bias_enable: false,
+            depth_bias_constant_factor: 0.0,
+            depth_bias_clamp: 0.0,
+            depth_bias_slope_factor: 0.0,
+            depth_clamp_enable: false,
+            multisample_enable: false,
+            antialiased_line_enable: false,
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug)]
+pub struct DepthStencilState {
+    pub depth_test_enable: bool,
+    pub depth_write_enable: bool,
+    pub depth_compare_op: vk::CompareOp,
+    pub stencil_test_enable: bool,
+    pub front: vk::StencilOpState,
+    pub back: vk::StencilOpState,
+}
+
+impl Default for DepthStencilState {
+    fn default() -> Self {
+        Self {
+            depth_test_enable: false,
+            depth_write_enable: false,
+            depth_compare_op: vk::CompareOp::ALWAYS,
+            stencil_test_enable: false,
+            front: vk::StencilOpState::default(),
+            back: vk::StencilOpState::default(),
+        }
+    }
+}
+
 pub struct RenderStates {
     pub input_layouts: Vec<(
         Vec<vk::VertexInputBindingDescription>,
         Vec<vk::VertexInputAttributeDescription>,
     )>,
-    // pub blend_states: Vec<d3d12::BlendDesc>,
-    // pub rasterizer_states: [[d3d12::D3D12_RASTERIZER_DESC; 9]; 9],
-    // // /// 1st state is for reverse Z, 2nd state is for regular Z (commonly used for shadow maps)
-    // pub depth_stencil_states:
-    //     [(D3D12_DEPTH_STENCIL_DESC, D3D12_DEPTH_STENCIL_DESC); DEPTH_STENCIL_COMBO_COUNT],
+    pub blend_states: Vec<BlendState>,
+    pub rasterizer_states: [[RasterizerState; RASTERIZER_STATE_COUNT]; DEPTH_BIAS_COUNT],
+    pub depth_stencil_states: [(DepthStencilState, DepthStencilState); DEPTH_STENCIL_COMBO_COUNT],
 }
 
 impl RenderStates {
@@ -102,114 +166,153 @@ impl RenderStates {
             // }
         }
 
-        // let mut blend_states = vec![];
-
-        // let blend_state_descs: &[QuadBlendState] =
-        //     unsafe { byteutil::bytes_as_slice(Self::BLEND_STATE_DESC_DATA) };
-        // // let chroma = ChromaConfig {
-        // //     inline_struct: chroma_dbg::InlineThreshold::Always,
-        // //     ..Default::default()
-        // // };
-        // for desc in blend_state_descs.iter() {
-        //     // println!("{}", chroma.format(desc));
-
-        //     let render_targets = [
-        //         desc.render_targets[0].clone(),
-        //         desc.render_targets[1].clone(),
-        //         desc.render_targets[2].clone(),
-        //         desc.render_targets[3].clone(),
-        //         desc.render_targets[4].clone(),
-        //         // Extend to 8 render targets
-        //         desc.render_targets[4].clone(),
-        //         desc.render_targets[4].clone(),
-        //         desc.render_targets[4].clone(),
-        //     ];
-
-        //     let state = d3d12::BlendDesc::builder()
-        //         .alpha_to_coverage_enable(false)
-        //         .independent_blend_enable(true)
-        //         .render_target(render_targets)
-        //         .build();
-        //     blend_states.push(state);
-        // }
-
-        // let depth_biases: &[ShortDepthBias] =
-        //     unsafe { byteutil::bytes_as_slice(Self::DEPTH_BIAS_DATA) };
-        // let rasterizer_states: &[PaddedRasterizerState] =
-        //     unsafe { byteutil::bytes_as_slice(Self::RASTERIZER_STATE_DATA) };
-        // assert_eq!(rasterizer_states.len(), 9);
-        // assert_eq!(depth_biases.len(), 9);
-
-        // let rasterizer_states = std::array::from_fn(|bi| {
-        //     std::array::from_fn(|ri| {
-        //         let desc11 = &rasterizer_states[ri].desc;
-        //         let ShortDepthBias(_, depth_bias, slope_scaled_depth_bias, depth_bias_clamp) =
-        //             depth_biases[bi];
-
-        //         D3D12_RASTERIZER_DESC {
-        //             FillMode: desc11.fill_mode,
-        //             CullMode: desc11.cull_mode,
-        //             FrontCounterClockwise: desc11.front_counter_clockwise,
-        //             DepthBias: depth_bias,
-        //             DepthBiasClamp: depth_bias_clamp,
-        //             SlopeScaledDepthBias: slope_scaled_depth_bias,
-        //             DepthClipEnable: desc11.depth_clip_enable,
-        //             MultisampleEnable: desc11.multisample_enable,
-        //             AntialiasedLineEnable: desc11.antialiased_line_enable,
-        //             ForcedSampleCount: 0,
-        //             ConservativeRaster: d3d12::D3D12_CONSERVATIVE_RASTERIZATION_MODE_OFF,
-        //         }
-        //     })
-        // });
-
-        // let depth_states: &[ShortDepthState] =
-        //     unsafe { byteutil::bytes_as_slice(Self::DEPTH_STATE_DATA) };
-        // let stencil_states: &[ShortStencilDesc] =
-        //     unsafe { byteutil::bytes_as_slice(Self::STENCIL_STATE_DATA) };
-
-        // // warn!("!!! STENCIL TESTING IS DISABLED");
-        // let depth_stencil_states = std::array::from_fn(|i| {
-        //     let (depth_index, stencil_index) = DEPTH_STENCIL_COMBOS[i];
-
-        //     let depth = depth_states[depth_index].clone();
-        //     let stencil = stencil_states[stencil_index].clone();
-        //     let reversed_depth_func = Self::REVERSED_DEPTH_FUNCS[depth_index];
-
-        //     let desc_reverse = d3d12::D3D12_DEPTH_STENCIL_DESC {
-        //         DepthEnable: BOOL(depth.0),
-        //         DepthWriteMask: depth.1,
-        //         DepthFunc: depth.2.into(),
-        //         StencilEnable: false.into(), //stencil.enabled,
-        //         StencilReadMask: stencil.read_mask,
-        //         StencilWriteMask: stencil.write_mask,
-        //         FrontFace: d3d12::D3D12_DEPTH_STENCILOP_DESC {
-        //             StencilFailOp: stencil.front_face.2,
-        //             StencilDepthFailOp: stencil.front_face.3,
-        //             StencilPassOp: stencil.front_face.1,
-        //             StencilFunc: stencil.front_face.0.into(),
-        //         },
-        //         BackFace: d3d12::D3D12_DEPTH_STENCILOP_DESC {
-        //             StencilFailOp: stencil.back_face.2,
-        //             StencilDepthFailOp: stencil.back_face.3,
-        //             StencilPassOp: stencil.back_face.1,
-        //             StencilFunc: stencil.back_face.0.into(),
-        //         },
-        //     };
-
-        //     let desc_forward = D3D12_DEPTH_STENCIL_DESC {
-        //         DepthFunc: reversed_depth_func.into(),
-        //         ..desc_reverse
-        //     };
-
-        //     (desc_reverse, desc_forward)
-        // });
-
+        let blend_states = Self::parse_blend_states(Self::BLEND_STATE_DESC_DATA)?;
+        let rasterizer_states =
+            Self::parse_rasterizer_states(Self::RASTERIZER_STATE_DATA, Self::DEPTH_BIAS_DATA)?;
+        let depth_stencil_states =
+            Self::parse_depth_stencil_states(Self::DEPTH_STATE_DATA, Self::STENCIL_STATE_DATA)?;
         Ok(Self {
             input_layouts,
-            // blend_states,
-            // rasterizer_states,
-            // depth_stencil_states,
+            blend_states,
+            rasterizer_states,
+            depth_stencil_states,
         })
+    }
+
+    fn parse_blend_states(data: &[u8]) -> anyhow::Result<Vec<BlendState>> {
+        let raw_states: Vec<QuadBlendState> = bytemuck::allocation::pod_collect_to_vec(data);
+
+        let states = raw_states
+            .iter()
+            .map(|raw| {
+                let source_targets = raw.render_targets.map(|target| {
+                    vk::PipelineColorBlendAttachmentState::default()
+                        .blend_enable(target.blend_enable != 0)
+                        .src_color_blend_factor(map_blend_factor(target.src_blend))
+                        .dst_color_blend_factor(map_blend_factor(target.dest_blend))
+                        .color_blend_op(map_blend_op(target.blend_op))
+                        .src_alpha_blend_factor(map_blend_factor(target.src_blend_alpha))
+                        .dst_alpha_blend_factor(map_blend_factor(target.dest_blend_alpha))
+                        .alpha_blend_op(map_blend_op(target.blend_op_alpha))
+                        .color_write_mask(vk::ColorComponentFlags::from_raw(u32::from(
+                            target.render_target_write_mask,
+                        )))
+                });
+
+                let mut render_targets = [source_targets[4]; 8];
+                render_targets[..4].copy_from_slice(&source_targets[..4]);
+
+                BlendState {
+                    alpha_to_coverage_enable: false,
+                    logic_op_enable: raw.render_targets[0].logic_op_enable != 0,
+                    logic_op: map_logic_op(raw.render_targets[0].logic_op),
+                    render_targets,
+                }
+            })
+            .collect::<Vec<_>>();
+
+        anyhow::ensure!(
+            states.len() == 90,
+            "unexpected blend state count {}",
+            states.len()
+        );
+        Ok(states)
+    }
+
+    fn parse_rasterizer_states(
+        rasterizer_data: &[u8],
+        depth_bias_data: &[u8],
+    ) -> anyhow::Result<[[RasterizerState; RASTERIZER_STATE_COUNT]; DEPTH_BIAS_COUNT]> {
+        let raw_rasterizer_states: Vec<PaddedRasterizerState> =
+            bytemuck::allocation::pod_collect_to_vec(rasterizer_data);
+        let raw_depth_biases: Vec<ShortDepthBias> =
+            bytemuck::allocation::pod_collect_to_vec(depth_bias_data);
+
+        anyhow::ensure!(
+            raw_rasterizer_states.len() == RASTERIZER_STATE_COUNT,
+            "unexpected rasterizer state count {}",
+            raw_rasterizer_states.len()
+        );
+        anyhow::ensure!(
+            raw_depth_biases.len() == DEPTH_BIAS_COUNT,
+            "unexpected depth bias state count {}",
+            raw_depth_biases.len()
+        );
+
+        let base_states = raw_rasterizer_states
+            .iter()
+            .map(|raw| {
+                let desc = &raw.desc;
+                RasterizerState {
+                    polygon_mode: map_fill_mode(desc.fill_mode),
+                    cull_mode: map_cull_mode(desc.cull_mode),
+                    front_face: if desc.front_counter_clockwise != 0 {
+                        vk::FrontFace::COUNTER_CLOCKWISE
+                    } else {
+                        vk::FrontFace::CLOCKWISE
+                    },
+                    depth_bias_enable: false,
+                    depth_bias_constant_factor: 0.0,
+                    depth_bias_clamp: 0.0,
+                    depth_bias_slope_factor: 0.0,
+                    depth_clamp_enable: desc.depth_clip_enable == 0,
+                    multisample_enable: desc.multisample_enable != 0,
+                    antialiased_line_enable: desc.antialiased_line_enable != 0,
+                }
+            })
+            .collect::<Vec<_>>();
+
+        let mut states = [[RasterizerState::default(); RASTERIZER_STATE_COUNT]; DEPTH_BIAS_COUNT];
+        for (bias_index, bias) in raw_depth_biases.iter().enumerate() {
+            for (rasterizer_index, base) in base_states.iter().enumerate() {
+                states[bias_index][rasterizer_index] = RasterizerState {
+                    depth_bias_enable: bias.depth_bias != 0 || bias.slope_scaled_depth_bias != 0.0,
+                    depth_bias_constant_factor: bias.depth_bias as f32,
+                    depth_bias_clamp: bias.depth_bias_clamp,
+                    depth_bias_slope_factor: bias.slope_scaled_depth_bias,
+                    ..*base
+                };
+            }
+        }
+
+        Ok(states)
+    }
+
+    fn parse_depth_stencil_states(
+        depth_data: &[u8],
+        stencil_data: &[u8],
+    ) -> anyhow::Result<[(DepthStencilState, DepthStencilState); DEPTH_STENCIL_COMBO_COUNT]> {
+        let depth_states: Vec<ShortDepthState> =
+            bytemuck::allocation::pod_collect_to_vec(depth_data);
+        let stencil_states: Vec<ShortStencilDesc> =
+            bytemuck::allocation::pod_collect_to_vec(stencil_data);
+
+        // warn!("!!! STENCIL TESTING IS DISABLED");
+        let states = std::array::from_fn(|index| {
+            let (depth_index, stencil_index) = DEPTH_STENCIL_COMBOS[index];
+            let depth = depth_states[depth_index];
+            let stencil = stencil_states[stencil_index];
+            let read_mask = stencil.read_mask;
+            let write_mask = stencil.write_mask;
+
+            let reverse = DepthStencilState {
+                depth_test_enable: depth.depth_enable != 0,
+                depth_write_enable: depth.depth_write_mask == 1,
+                depth_compare_op: map_compare_op(depth.depth_func),
+                stencil_test_enable: stencil.enabled != 0,
+                front: map_stencil_op_state(stencil.front_face, read_mask, write_mask),
+                back: map_stencil_op_state(stencil.back_face, read_mask, write_mask),
+            };
+
+            let forward = DepthStencilState {
+                depth_compare_op: Self::REVERSED_DEPTH_FUNCS[depth_index],
+                ..reverse
+            };
+
+            (reverse, forward)
+        });
+
+        Ok(states)
     }
 
     // fn create_input_layout(
@@ -262,50 +365,210 @@ impl RenderStates {
     // }
 }
 
-// /// Regular d3d11 blend state, but with only 4 render targets
-// #[repr(C)]
-// #[derive(Debug)]
-// pub struct QuadBlendState {
-//     pub index: u32,
-//     pub render_targets: [d3d12::RenderTargetBlendDesc; 5],
-// }
+#[repr(C)]
+#[derive(Clone, Copy, Pod, Zeroable)]
+struct RenderTargetBlendDesc {
+    blend_enable: u32,
+    logic_op_enable: u32,
+    src_blend: u32,
+    dest_blend: u32,
+    blend_op: u32,
+    src_blend_alpha: u32,
+    dest_blend_alpha: u32,
+    blend_op_alpha: u32,
+    logic_op: u32,
+    render_target_write_mask: u8,
+    _padding: [u8; 3],
+}
 
-// #[repr(C)]
-// #[derive(Debug)]
-// pub struct PaddedRasterizerState {
-//     pub desc: D3d11RasterizerDesc,
-//     _pad: u32,
-// }
+#[repr(C)]
+#[derive(Clone, Copy, Pod, Zeroable)]
+struct QuadBlendState {
+    _index: u32,
+    render_targets: [RenderTargetBlendDesc; 5],
+}
 
-// #[repr(C)]
-// #[derive(Debug, Clone)]
-// pub struct ShortDepthBias(u32, i32, f32, f32);
+#[repr(C)]
+#[derive(Clone, Copy, Pod, Zeroable)]
+struct RasterizerDesc {
+    fill_mode: u32,
+    cull_mode: u32,
+    front_counter_clockwise: u32,
+    _depth_bias: i32,
+    _depth_bias_clamp: f32,
+    _slope_scaled_depth_bias: f32,
+    depth_clip_enable: u32,
+    _scissor_enable: u32,
+    multisample_enable: u32,
+    antialiased_line_enable: u32,
+}
 
-// #[repr(C)]
-// #[derive(Debug, Clone)]
-// pub struct ShortDepthState(i32, D3D12_DEPTH_WRITE_MASK, d3d12::ComparisonFunc, u32);
+#[repr(C)]
+#[derive(Clone, Copy, Pod, Zeroable)]
+struct PaddedRasterizerState {
+    desc: RasterizerDesc,
+    _padding: u32,
+}
 
-// #[repr(C)]
-// #[derive(Debug, Clone)]
-// pub struct ShortStencilDesc {
-//     pub unk0: u32,
-//     pub enabled: BOOL,
-//     pub read_mask: u8,
-//     pub write_mask: u8,
-//     _pad0: u16,
-//     pub front_face: (
-//         d3d12::ComparisonFunc,
-//         D3D12_STENCIL_OP,
-//         D3D12_STENCIL_OP,
-//         D3D12_STENCIL_OP,
-//     ),
-//     pub back_face: (
-//         d3d12::ComparisonFunc,
-//         D3D12_STENCIL_OP,
-//         D3D12_STENCIL_OP,
-//         D3D12_STENCIL_OP,
-//     ),
-// }
+#[repr(C)]
+#[derive(Clone, Copy, Pod, Zeroable)]
+struct ShortDepthBias {
+    _index: u32,
+    depth_bias: i32,
+    slope_scaled_depth_bias: f32,
+    depth_bias_clamp: f32,
+}
+
+#[repr(C)]
+#[derive(Clone, Copy, Pod, Zeroable)]
+struct ShortDepthState {
+    depth_enable: i32,
+    depth_write_mask: u32,
+    depth_func: u32,
+    _unknown: u32,
+}
+
+#[repr(C)]
+#[derive(Clone, Copy, Pod, Zeroable)]
+struct StencilFace {
+    compare_func: u32,
+    pass_op: u32,
+    fail_op: u32,
+    depth_fail_op: u32,
+}
+
+#[repr(C)]
+#[derive(Clone, Copy, Pod, Zeroable)]
+struct ShortStencilDesc {
+    _unknown: u32,
+    enabled: u32,
+    read_mask: u8,
+    write_mask: u8,
+    _padding: u16,
+    front_face: StencilFace,
+    back_face: StencilFace,
+}
+
+const _: () = {
+    assert!(size_of::<RenderTargetBlendDesc>() == 40);
+    assert!(size_of::<QuadBlendState>() == 204);
+    assert!(size_of::<RasterizerDesc>() == 40);
+    assert!(size_of::<PaddedRasterizerState>() == 44);
+    assert!(size_of::<ShortDepthBias>() == 16);
+    assert!(size_of::<ShortDepthState>() == 16);
+    assert!(size_of::<ShortStencilDesc>() == 44);
+};
+
+// D3D12 enum values below match /usr/include/dxvk/d3d12.h.
+const fn map_blend_factor(value: u32) -> vk::BlendFactor {
+    match value {
+        1 => vk::BlendFactor::ZERO,
+        2 => vk::BlendFactor::ONE,
+        3 => vk::BlendFactor::SRC_COLOR,
+        4 => vk::BlendFactor::ONE_MINUS_SRC_COLOR,
+        5 => vk::BlendFactor::SRC_ALPHA,
+        6 => vk::BlendFactor::ONE_MINUS_SRC_ALPHA,
+        7 => vk::BlendFactor::DST_ALPHA,
+        8 => vk::BlendFactor::ONE_MINUS_DST_ALPHA,
+        9 => vk::BlendFactor::DST_COLOR,
+        10 => vk::BlendFactor::ONE_MINUS_DST_COLOR,
+        11 => vk::BlendFactor::SRC_ALPHA_SATURATE,
+        14 => vk::BlendFactor::CONSTANT_COLOR,
+        15 => vk::BlendFactor::ONE_MINUS_CONSTANT_COLOR,
+        16 => vk::BlendFactor::SRC1_COLOR,
+        17 => vk::BlendFactor::ONE_MINUS_SRC1_COLOR,
+        18 => vk::BlendFactor::SRC1_ALPHA,
+        19 => vk::BlendFactor::ONE_MINUS_SRC1_ALPHA,
+        _ => vk::BlendFactor::ZERO,
+    }
+}
+
+const fn map_blend_op(value: u32) -> vk::BlendOp {
+    match value {
+        1 => vk::BlendOp::ADD,
+        2 => vk::BlendOp::SUBTRACT,
+        3 => vk::BlendOp::REVERSE_SUBTRACT,
+        4 => vk::BlendOp::MIN,
+        5 => vk::BlendOp::MAX,
+        _ => vk::BlendOp::ADD,
+    }
+}
+
+const fn map_logic_op(value: u32) -> vk::LogicOp {
+    match value {
+        0 => vk::LogicOp::CLEAR,
+        1 => vk::LogicOp::SET,
+        2 => vk::LogicOp::COPY,
+        3 => vk::LogicOp::COPY_INVERTED,
+        4 => vk::LogicOp::NO_OP,
+        5 => vk::LogicOp::INVERT,
+        6 => vk::LogicOp::AND,
+        7 => vk::LogicOp::NAND,
+        8 => vk::LogicOp::OR,
+        9 => vk::LogicOp::NOR,
+        10 => vk::LogicOp::XOR,
+        11 => vk::LogicOp::EQUIVALENT,
+        12 => vk::LogicOp::AND_REVERSE,
+        13 => vk::LogicOp::AND_INVERTED,
+        14 => vk::LogicOp::OR_REVERSE,
+        15 => vk::LogicOp::OR_INVERTED,
+        _ => vk::LogicOp::COPY,
+    }
+}
+
+const fn map_fill_mode(value: u32) -> vk::PolygonMode {
+    match value {
+        2 => vk::PolygonMode::LINE,
+        _ => vk::PolygonMode::FILL,
+    }
+}
+
+const fn map_cull_mode(value: u32) -> vk::CullModeFlags {
+    match value {
+        2 => vk::CullModeFlags::FRONT,
+        3 => vk::CullModeFlags::BACK,
+        _ => vk::CullModeFlags::NONE,
+    }
+}
+
+const fn map_compare_op(value: u32) -> vk::CompareOp {
+    match value {
+        1 => vk::CompareOp::NEVER,
+        2 => vk::CompareOp::LESS,
+        3 => vk::CompareOp::EQUAL,
+        4 => vk::CompareOp::LESS_OR_EQUAL,
+        5 => vk::CompareOp::GREATER,
+        6 => vk::CompareOp::NOT_EQUAL,
+        7 => vk::CompareOp::GREATER_OR_EQUAL,
+        8 => vk::CompareOp::ALWAYS,
+        _ => vk::CompareOp::ALWAYS,
+    }
+}
+
+const fn map_stencil_op(value: u32) -> vk::StencilOp {
+    match value {
+        1 => vk::StencilOp::KEEP,
+        2 => vk::StencilOp::ZERO,
+        3 => vk::StencilOp::REPLACE,
+        4 => vk::StencilOp::INCREMENT_AND_CLAMP,
+        5 => vk::StencilOp::DECREMENT_AND_CLAMP,
+        6 => vk::StencilOp::INVERT,
+        7 => vk::StencilOp::INCREMENT_AND_WRAP,
+        8 => vk::StencilOp::DECREMENT_AND_WRAP,
+        _ => vk::StencilOp::KEEP,
+    }
+}
+
+fn map_stencil_op_state(face: StencilFace, compare_mask: u8, write_mask: u8) -> vk::StencilOpState {
+    vk::StencilOpState::default()
+        .fail_op(map_stencil_op(face.fail_op))
+        .pass_op(map_stencil_op(face.pass_op))
+        .depth_fail_op(map_stencil_op(face.depth_fail_op))
+        .compare_op(map_compare_op(face.compare_func))
+        .compare_mask(compare_mask as u32)
+        .write_mask(write_mask as u32)
+        .reference(0)
+}
 
 const DEPTH_STENCIL_COMBOS: [(usize, usize); 83] = [
     (0, 0),
@@ -722,18 +985,3 @@ const BASE_INPUT_LAYOUTS: [TigerInputLayout; 7] = [
     },
 ];
 //endregion
-
-// #[repr(C)]
-// #[derive(Debug, Clone)]
-// pub struct D3d11RasterizerDesc {
-//     pub fill_mode: D3D12_FILL_MODE,
-//     pub cull_mode: D3D12_CULL_MODE,
-//     pub front_counter_clockwise: BOOL,
-//     pub depth_bias: i32,
-//     pub depth_bias_clamp: f32,
-//     pub slope_scaled_depth_bias: f32,
-//     pub depth_clip_enable: BOOL,
-//     pub scissor_enable: BOOL,
-//     pub multisample_enable: BOOL,
-//     pub antialiased_line_enable: BOOL,
-// }

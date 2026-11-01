@@ -120,7 +120,7 @@ impl FeatureRenderer for DecalCollectionRenderer {
         };
 
         cmd.disable_smart_technique_binding();
-        cmd.set_ffstate_override(FixedFunctionState::new(None, None, Some(1), None));
+        cmd.set_ffstate_override(FixedFunctionState::new(None, None, Some(1), Some(2)));
         cmd.set_depth_mode(DepthMode::Forward);
 
         cmd.set_vertex_buffers(

@@ -193,7 +193,7 @@ impl SceneRenderer {
             ],
             Some(
                 &vk::RenderingAttachmentInfo::default()
-                    .image_view(self.main_view.gbuffer.depth.view())
+                    .image_view(self.main_view.gbuffer.depth.depth_stencil_view())
                     .image_layout(vk::ImageLayout::DEPTH_ATTACHMENT_OPTIMAL)
                     .load_op(vk::AttachmentLoadOp::LOAD)
                     .store_op(vk::AttachmentStoreOp::STORE),
@@ -244,85 +244,106 @@ impl SceneRenderer {
         }
         cmd.end_rendering();
 
+        {
+            self.main_view
+                .gbuffer
+                .uber_depth_half
+                .transition(cmd, IMAGE_STATE_COLOR_ATTACHMENT);
+            // TODO(cohae): Uber depth generation uses compute shaders
+            // cmd.set_render_targets(&[&self.main_view.gbuffer.uber_depth_half], None);
+            self.main_view
+                .gbuffer
+                .uber_depth_half
+                .clear(cmd, [0.0, 0.0, 0.0, 0.0]);
+
+            self.parent.externs.get_mut().shadow_mask.unk10 =
+                self.main_view.gbuffer.uber_depth_half.view().into();
+            self.main_view
+                .gbuffer
+                .uber_depth_half
+                .transition(cmd, IMAGE_STATE_SHADER_READ);
+        }
+
+        // Copy normals/depth buffer
+        {
+            let view = &mut self.main_view;
+
+            // Copy normals
+            view.gbuffer
+                .normal
+                .transition(cmd, IMAGE_STATE_TRANSFER_SRC);
+            view.gbuffer
+                .normal_read
+                .transition(cmd, IMAGE_STATE_TRANSFER_DST);
+
+            cmd.copy_render_target(&view.gbuffer.normal, &view.gbuffer.normal_read);
+            view.gbuffer
+                .normal_read
+                .transition(cmd, IMAGE_STATE_SHADER_READ);
+            view.gbuffer
+                .normal
+                .transition(cmd, IMAGE_STATE_COLOR_ATTACHMENT);
+
+            // Copy depth
+            view.gbuffer.depth.transition(cmd, IMAGE_STATE_TRANSFER_SRC);
+            view.gbuffer
+                .depth_read
+                .transition(cmd, IMAGE_STATE_TRANSFER_DST);
+
+            cmd.copy_depth_buffer(&view.gbuffer.depth, &view.gbuffer.depth_read);
+
+            view.gbuffer
+                .depth_read
+                .transition(cmd, IMAGE_STATE_SHADER_READ);
+            view.gbuffer
+                .depth
+                .transition(cmd, IMAGE_STATE_DEPTH_ATTACHMENT);
+        }
+
+        cmd.begin_rendering(
+            self.main_view.gbuffer.albedo.resolution(),
+            &[
+                vk::RenderingAttachmentInfo::default()
+                    .image_view(self.main_view.gbuffer.albedo.view())
+                    .image_layout(vk::ImageLayout::COLOR_ATTACHMENT_OPTIMAL)
+                    .load_op(vk::AttachmentLoadOp::LOAD)
+                    .store_op(vk::AttachmentStoreOp::STORE),
+                vk::RenderingAttachmentInfo::default()
+                    .image_view(self.main_view.gbuffer.normal.view())
+                    .image_layout(vk::ImageLayout::COLOR_ATTACHMENT_OPTIMAL)
+                    .load_op(vk::AttachmentLoadOp::LOAD)
+                    .store_op(vk::AttachmentStoreOp::STORE),
+                vk::RenderingAttachmentInfo::default()
+                    .image_view(self.main_view.gbuffer.rt3.view())
+                    .image_layout(vk::ImageLayout::COLOR_ATTACHMENT_OPTIMAL)
+                    .load_op(vk::AttachmentLoadOp::LOAD)
+                    .store_op(vk::AttachmentStoreOp::STORE),
+                vk::RenderingAttachmentInfo::default()
+                    .image_view(self.main_view.gbuffer.rt4.view())
+                    .image_layout(vk::ImageLayout::COLOR_ATTACHMENT_OPTIMAL)
+                    .load_op(vk::AttachmentLoadOp::LOAD)
+                    .store_op(vk::AttachmentStoreOp::STORE),
+            ],
+            Some(
+                &vk::RenderingAttachmentInfo::default()
+                    .image_view(self.main_view.gbuffer.depth.depth_stencil_view())
+                    .image_layout(vk::ImageLayout::DEPTH_ATTACHMENT_OPTIMAL)
+                    .load_op(vk::AttachmentLoadOp::LOAD)
+                    .store_op(vk::AttachmentStoreOp::STORE),
+            ),
+        );
+        {
+            let _scope = self.parent.gpu.profiler_scope(cmd, "submit_decals");
+            self.parent.globals.scopes.decal.bind(cmd);
+            cmd.set_ffstate(FixedFunctionState::new(Some(8), Some(15), Some(2), Some(1)));
+            cmd.flush_states();
+            self.submit_stage(cmd, view, RenderStage::Decals);
+        }
+        cmd.end_rendering();
+
         self.main_view
             .gbuffer
             .transition(cmd, IMAGE_STATE_SHADER_READ);
-        // {
-        //     let view = &self.frame_packet.views[ShadedView::MAIN_VIEW_ID];
-        //     {
-        //         let _scope = self
-        //             .parent
-        //             .gpu
-        //             .profiler_scope(cmd, "submit_gbuffer_generation");
-
-        //         cmd.set_ffstate(FixedFunctionState::new(Some(0), Some(2), Some(2), Some(0)));
-        //         cmd.flush_states();
-        //         self.submit_stage(cmd, stream, view, RenderStage::GenerateGbuffer);
-        //     }
-
-        //     {
-        //         self.main_view
-        //             .gbuffer
-        //             .uber_depth_half
-        //             .transition(cmd, IMAGE_STATE_COLOR_ATTACHMENT);
-        //         // TODO(cohae): Uber depth generation uses compute shaders
-        //         // cmd.set_render_targets(&[&self.main_view.gbuffer.uber_depth_half], None);
-        //         cmd.clear_render_target_view(
-        //             self.main_view.gbuffer.uber_depth_half.cpu_handle(),
-        //             &[0.0, 0.0, 0.0, 0.0],
-        //         );
-
-        //         self.parent.externs.get_mut().shadow_mask.unk10 =
-        //             self.main_view.gbuffer.uber_depth_half.view().into();
-        //         self.main_view
-        //             .gbuffer
-        //             .uber_depth_half
-        //             .transition(cmd, IMAGE_STATE_SHADER_READ);
-        //     }
-
-        //     // Copy normals/depth buffer
-        //     {
-        //         let view = &mut self.main_view;
-
-        //         // Copy normals
-        //         view.gbuffer
-        //             .normal
-        //             .transition(cmd, IMAGE_STATE_TRANSFER_SRC);
-        //         view.gbuffer
-        //             .normal_read
-        //             .transition(cmd, IMAGE_STATE_TRANSFER_DST);
-
-        //         cmd.copy_render_target(&view.gbuffer.normal, &view.gbuffer.normal_read);
-        //         view.gbuffer
-        //             .normal_read
-        //             .transition(cmd, IMAGE_STATE_SHADER_READ);
-        //         view.gbuffer
-        //             .normal
-        //             .transition(cmd, IMAGE_STATE_COLOR_ATTACHMENT);
-
-        //         // Copy depth
-        //         view.gbuffer.depth.transition(cmd, IMAGE_STATE_TRANSFER_SRC);
-        //         view.gbuffer
-        //             .depth_read
-        //             .transition(cmd, IMAGE_STATE_TRANSFER_DST);
-
-        //         cmd.copy_depth_buffer(&view.gbuffer.depth, &view.gbuffer.depth_read);
-
-        //         view.gbuffer
-        //             .depth_read
-        //             .transition(cmd, IMAGE_STATE_SHADER_READ);
-        //         view.gbuffer
-        //             .depth
-        //             .transition(cmd, IMAGE_STATE_DEPTH_ATTACHMENT);
-        //     }
-
-        //     {
-        //         let _scope = self.parent.gpu.profiler_scope(cmd, "submit_decals");
-        //         self.parent.globals.scopes.decal.bind(cmd);
-        //         cmd.set_ffstate(FixedFunctionState::new(Some(8), Some(15), Some(2), Some(1)));
-        //         cmd.flush_states();
-        //         self.submit_stage_serial(cmd, stream, view, RenderStage::Decals);
-        //     }
 
         //     {
         //         let _scope = self

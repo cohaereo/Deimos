@@ -42,7 +42,8 @@ impl RenderTarget {
             array_layers: 1,
             samples: vk::SampleCountFlags::TYPE_1,
             tiling: vk::ImageTiling::OPTIMAL,
-            usage: vk::ImageUsageFlags::TRANSFER_DST
+            usage: vk::ImageUsageFlags::TRANSFER_SRC
+                | vk::ImageUsageFlags::TRANSFER_DST
                 | vk::ImageUsageFlags::COLOR_ATTACHMENT
                 | vk::ImageUsageFlags::SAMPLED,
             sharing_mode: vk::SharingMode::EXCLUSIVE,
@@ -167,7 +168,8 @@ impl Drop for RenderTarget {
 pub struct DepthBuffer {
     gpu: Arc<Gpu>,
     pub image: Image,
-    srv: vk::ImageView,
+    depth_stencil_view: vk::ImageView,
+    depth_view: vk::ImageView,
     size: (u32, u32),
 
     output_format: vk::Format,
@@ -189,13 +191,15 @@ impl DepthBuffer {
             samples: vk::SampleCountFlags::TYPE_1,
             tiling: vk::ImageTiling::OPTIMAL,
             usage: vk::ImageUsageFlags::DEPTH_STENCIL_ATTACHMENT
+                | vk::ImageUsageFlags::SAMPLED
+                | vk::ImageUsageFlags::TRANSFER_SRC
                 | vk::ImageUsageFlags::TRANSFER_DST,
             sharing_mode: vk::SharingMode::EXCLUSIVE,
             initial_layout: vk::ImageLayout::UNDEFINED,
             location: MemoryLocation::GpuOnly,
         })?;
 
-        let srv = unsafe {
+        let depth_stencil_view = unsafe {
             gpu.create_image_view(
                 &vk::ImageViewCreateInfo::default()
                     .image(image.vk_image())
@@ -213,10 +217,27 @@ impl DepthBuffer {
             )
         }?;
 
+        let depth_view = unsafe {
+            gpu.create_image_view(
+                &vk::ImageViewCreateInfo::default()
+                    .image(image.vk_image())
+                    .view_type(vk::ImageViewType::TYPE_2D)
+                    .format(vk::Format::D32_SFLOAT_S8_UINT)
+                    .subresource_range(
+                        vk::ImageSubresourceRange::default()
+                            .aspect_mask(vk::ImageAspectFlags::DEPTH)
+                            .layer_count(1)
+                            .level_count(1),
+                    ),
+                None,
+            )
+        }?;
+
         Ok(Self {
             gpu: gpu.clone(),
             image,
-            srv,
+            depth_stencil_view,
+            depth_view,
             size: (width, height),
             output_format: vk::Format::D32_SFLOAT_S8_UINT,
         })
@@ -238,8 +259,14 @@ impl DepthBuffer {
         );
     }
 
-    pub const fn view(&self) -> vk::ImageView {
-        self.srv
+    /// Returns a view to use as a depth/stencil attachment
+    pub const fn depth_stencil_view(&self) -> vk::ImageView {
+        self.depth_stencil_view
+    }
+
+    /// Returns a depth-only view for sampling in shaders
+    pub const fn depth_view(&self) -> vk::ImageView {
+        self.depth_view
     }
 
     /// Resize the depth buffer.

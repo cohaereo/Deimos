@@ -86,7 +86,7 @@ impl Gbuffer {
         self.normal.clear(cmd, [0.0, 0.0, 0.0, 0.0]);
         self.rt3.clear(cmd, [0.0, 0.5, 0.0, 0.0]);
         self.rt4.clear(cmd, [0.0, 0.0, 0.0, 0.0]);
-        self.depth.clear(cmd, 0.0, 0);
+        self.depth.clear(cmd, 0.0, 0xFF);
     }
 
     pub fn transition(

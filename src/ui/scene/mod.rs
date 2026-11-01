@@ -623,7 +623,7 @@ impl Scene {
                 0.0,
                 0.0,
             );
-            ext.deferred.deferred_depth = view.gbuffer.depth.view().into();
+            ext.deferred.deferred_depth = view.gbuffer.depth.depth_view().into();
             ext.deferred.deferred_rt0 = view.gbuffer.albedo.view().into();
             ext.deferred.deferred_rt1 = view.gbuffer.normal.view().into();
             ext.deferred.deferred_rt2 = view.gbuffer.rt3.view().into();
@@ -633,7 +633,7 @@ impl Scene {
             ext.deferred.sky_hemisphere = self.renderer.internal.default_hemisphere.view.into();
 
             let view = &self.scene_renderer.main_view;
-            ext.decal.depth_read = view.gbuffer.depth_read.view().into();
+            ext.decal.depth_read = view.gbuffer.depth_read.depth_view().into();
             ext.decal.normals_read = view.gbuffer.normal_read.view().into();
             ext.decal.depth_constants = ext.deferred.depth_constants;
             ext.decal.unk30 = vec4(

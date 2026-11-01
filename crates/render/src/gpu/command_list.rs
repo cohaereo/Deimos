@@ -166,9 +166,16 @@ impl CommandList {
         self.current_depth_state = index;
     }
 
-    pub const fn set_stencil_ref(&mut self, ref_value: u32) {
+    pub fn set_stencil_ref(&mut self, ref_value: u32) {
         if self.current_stencil_ref != ref_value {
             self.current_stencil_ref = ref_value;
+            unsafe {
+                self.gpu.cmd_set_stencil_reference(
+                    *self.cmd,
+                    vk::StencilFaceFlags::FRONT_AND_BACK,
+                    ref_value,
+                );
+            }
             let d = self.current_depth_state;
             self.current_depth_state = usize::MAX;
             self.set_depth_stencil_state(d);
@@ -234,6 +241,11 @@ impl CommandList {
         unsafe {
             self.gpu
                 .cmd_bind_pipeline(*self.cmd, vk::PipelineBindPoint::GRAPHICS, pipeline);
+            self.gpu.cmd_set_stencil_reference(
+                *self.cmd,
+                vk::StencilFaceFlags::FRONT_AND_BACK,
+                self.current_stencil_ref,
+            );
         }
     }
 
