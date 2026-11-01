@@ -1,7 +1,10 @@
+use std::any::TypeId;
+
 use ahash::HashSet;
 use anyhow::Context;
 use bitflags::bitflags;
 use deimos_data::tfx::ExternIndex;
+use glam::{Mat4, Vec4};
 use int_enum::IntEnum;
 use static_assertions::const_assert;
 
@@ -108,6 +111,7 @@ pub enum Opcode {
     PushSamplerState = 0x61,
     PushObjectChannelVector,
     PushGlobalChannelVector,
+    // TODO(cohae): Once these are figured out, make sure to update `analyze_expression` and `data_source`
     Unknown0x5e,
     Unknown0x5f,
     // TODO(cohae): These need to be rechecked
@@ -122,10 +126,6 @@ pub enum Opcode {
 
     // Extended instruction set (only used internally by the interpreter)
     ExtReturn = 0x80,
-    // /// Bind a texture to a sampler in a single call (inserted by the Dawn's bytecode optimizer, not used by Tiger)
-    // ExtBindTexture = 0x81,
-    // /// Bind a sampler to a sampler state in a single call (inserted by Dawn's bytecode optimizer, not used by Tiger)
-    // ExtBindSampler = 0x82,
 }
 
 #[allow(clippy::match_same_arms)]
@@ -500,6 +500,127 @@ pub fn get_accessed_externs_from_bytecode(data: &[u8]) -> anyhow::Result<Vec<Ext
     }
 
     Ok(access.into_iter().collect())
+}
+
+#[derive(Clone, Copy, Debug)]
+pub struct ExternRead {
+    pub index: ExternIndex,
+    pub byte_offset: usize,
+    pub size: usize,
+    pub type_id: TypeId,
+}
+
+#[derive(Clone, Debug)]
+pub struct ExpressionAccess {
+    pub sources: ExpressionDataSource,
+    pub local_extern_reads: Vec<ExternRead>,
+    pub global_channels: Vec<u8>,
+    pub object_channels: Vec<u32>,
+    pub cacheable: bool,
+}
+
+impl Default for ExpressionAccess {
+    fn default() -> Self {
+        Self {
+            sources: ExpressionDataSource::empty(),
+            local_extern_reads: Vec::new(),
+            global_channels: Vec::new(),
+            object_channels: Vec::new(),
+            cacheable: false,
+        }
+    }
+}
+
+pub fn analyze_expression(data: &[u8]) -> anyhow::Result<ExpressionAccess> {
+    let mut access = ExpressionAccess {
+        cacheable: true,
+        ..Default::default()
+    };
+
+    for op in OpcodeIterator::new(data) {
+        let (op, args) = op?;
+        let sources = op.data_source();
+        access.sources |= sources;
+
+        if sources.contains(ExpressionDataSource::UNKNOWN) && op != Opcode::Unknown0x5e {
+            access.cacheable = false;
+        }
+
+        match op {
+            Opcode::PushExternInputFloat => {
+                let index = extern_index(args.first())?;
+                let offset = *args.get(1).context("Missing extern offset")? as usize;
+                if is_local_extern(index) {
+                    access.local_extern_reads.push(ExternRead {
+                        index,
+                        byte_offset: offset * 4,
+                        size: size_of::<f32>(),
+                        type_id: TypeId::of::<f32>(),
+                    });
+                }
+            }
+            Opcode::PushExternInputVec4 => {
+                let index = extern_index(args.first())?;
+                let offset = *args.get(1).context("Missing extern offset")? as usize;
+                if is_local_extern(index) {
+                    access.local_extern_reads.push(ExternRead {
+                        index,
+                        byte_offset: offset * 16,
+                        size: size_of::<Vec4>(),
+                        type_id: TypeId::of::<Vec4>(),
+                    });
+                }
+            }
+            Opcode::PushExternInputMat4 => {
+                let index = extern_index(args.first())?;
+                let offset = *args.get(1).context("Missing extern offset")? as usize;
+                if is_local_extern(index) {
+                    access.local_extern_reads.push(ExternRead {
+                        index,
+                        byte_offset: offset * 16,
+                        size: size_of::<Mat4>(),
+                        type_id: TypeId::of::<Mat4>(),
+                    });
+                }
+            }
+            Opcode::PushGlobalChannelVector | Opcode::Unknown0x5e => {
+                access
+                    .global_channels
+                    .push(*args.first().context("Missing global channel index")?);
+            }
+            Opcode::PushObjectChannelVector => {
+                let hash = u32::from_be_bytes([
+                    *args.first().context("Missing object channel hash")?,
+                    *args.get(1).context("Missing object channel hash")?,
+                    *args.get(2).context("Missing object channel hash")?,
+                    *args.get(3).context("Missing object channel hash")?,
+                ]);
+                access.object_channels.push(hash);
+            }
+            _ => {}
+        }
+    }
+
+    Ok(access)
+}
+
+const fn is_local_extern(index: ExternIndex) -> bool {
+    matches!(
+        index,
+        ExternIndex::RigidModel
+            | ExternIndex::SimpleGeometry
+            | ExternIndex::DeferredLight
+            | ExternIndex::Decal
+            | ExternIndex::SpeedtreePlacements
+            | ExternIndex::Cubemaps
+    )
+}
+
+fn extern_index(value: Option<&u8>) -> anyhow::Result<ExternIndex> {
+    let index = *value.context("Missing extern index")?;
+    ExternIndex::try_from(index)
+        .ok()
+        .context("Invalid extern index")
 }
 
 // FooBar -> foo_bar

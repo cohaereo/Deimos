@@ -1,4 +1,10 @@
-use std::sync::Arc;
+use std::{
+    hash::Hasher,
+    sync::{
+        Arc,
+        atomic::{AtomicBool, AtomicU64, AtomicUsize, Ordering},
+    },
+};
 
 use ahash::AHashMap;
 use anyhow::Context;
@@ -10,6 +16,7 @@ use deimos_data::{
 use deimos_ecs::object::ObjectChannel;
 use glam::Vec4;
 use itertools::Itertools;
+use parking_lot::RwLock;
 use tiger_pkg::{TagHash, package_manager};
 
 use crate::{
@@ -24,12 +31,41 @@ use crate::{
             self,
             interpreter::InterpreterState,
             opcodes::{
-                ExpressionDataSource, Opcode, OpcodeIterator, get_data_access_from_bytecode,
+                ExpressionAccess, ExpressionDataSource, Opcode, OpcodeIterator, analyze_expression,
+                get_data_access_from_bytecode,
             },
         },
         externs::{ExternAccessorExt, TextureView, Uav},
     },
 };
+
+const EXPRESSION_CACHE_SLOTS: usize = 32;
+
+struct ExpressionCacheSlot {
+    generation: u32,
+    key: u64,
+    has_value: bool,
+    values: Vec<Vec4>,
+}
+
+struct ExpressionCache {
+    generation: u32,
+    slots: [ExpressionCacheSlot; EXPRESSION_CACHE_SLOTS],
+}
+
+impl Default for ExpressionCache {
+    fn default() -> Self {
+        Self {
+            generation: 1,
+            slots: std::array::from_fn(|_| ExpressionCacheSlot {
+                generation: 0,
+                key: 0,
+                has_value: false,
+                values: Vec::new(),
+            }),
+        }
+    }
+}
 
 pub enum ResolvedTextureSource {
     Static(Handle<Texture>),
@@ -65,6 +101,12 @@ pub struct DynamicCore {
     pub cbuffer_size: usize,
 
     pub data_sources: ExpressionDataSource,
+
+    expression_access: ExpressionAccess,
+    expression_cache: RwLock<ExpressionCache>,
+    cache_enabled: AtomicBool,
+    cache_frame: AtomicUsize,
+    constants_hash: AtomicU64,
 }
 
 impl DynamicCore {
@@ -83,6 +125,11 @@ impl DynamicCore {
             initial_constants: Vec::new(),
             cbuffer_size: 0,
             data_sources: ExpressionDataSource::empty(),
+            expression_access: ExpressionAccess::default(),
+            expression_cache: RwLock::new(ExpressionCache::default()),
+            cache_enabled: AtomicBool::new(true),
+            cache_frame: AtomicUsize::new(usize::MAX),
+            constants_hash: AtomicU64::new(0),
             has_dynamic_textures: false,
         };
 
@@ -118,6 +165,10 @@ impl DynamicCore {
 
         core.data_sources = get_data_access_from_bytecode(&core.data.bytecode)
             .context("getting data access from bytecode")?;
+        core.expression_access =
+            analyze_expression(&core.data.bytecode).context("analyzing expression access")?;
+        core.cache_enabled
+            .store(core.expression_access.cacheable, Ordering::Relaxed);
 
         core.initial_constants = if core.data.constant_buffer.is_some() {
             let entry = package_manager()
@@ -136,12 +187,67 @@ impl DynamicCore {
             }
         };
         core.cbuffer_size = core.initial_constants.len() * size_of::<Vec4>();
+        core.recompute_constants_hash();
 
         Ok(core)
     }
 
     pub const fn cbuffer_slot(&self) -> i32 {
         self.data.constant_buffer_slot
+    }
+
+    pub fn recompute_constants_hash(&self) {
+        let mut hasher = ahash::AHasher::default();
+        hasher.write(bytemuck::cast_slice(&self.initial_constants));
+        self.constants_hash
+            .store(hasher.finish(), Ordering::Relaxed);
+    }
+
+    fn clear_cache_if_new_frame(&self, cmd: &CommandList) {
+        let frame = cmd.gpu().frame_index();
+        if self.cache_frame.swap(frame, Ordering::Relaxed) != frame {
+            let mut cache = self.expression_cache.write();
+            cache.generation = cache.generation.wrapping_add(1).max(1);
+        }
+    }
+
+    fn compute_cache_key(
+        &self,
+        cmd: &CommandList,
+        object_channels: Option<&AHashMap<u32, ObjectChannel>>,
+    ) -> Option<u64> {
+        let mut hasher = ahash::AHasher::default();
+        hasher.write_usize(self.cbuffer_size);
+        hasher.write_u64(self.constants_hash.load(Ordering::Relaxed));
+        hasher.write_u64(cmd.externs.base_generation());
+
+        for read in &self.expression_access.local_extern_reads {
+            if let Some((ptr, type_id)) = cmd
+                .externs
+                .get_local_value_ptr(read.index, read.byte_offset)
+            {
+                if type_id != read.type_id {
+                    return None;
+                }
+
+                let bytes = unsafe { std::slice::from_raw_parts(ptr.cast::<u8>(), read.size) };
+                hasher.write(bytes);
+            } else {
+                if cmd.externs.has_local_override(read.index) {
+                    return None;
+                }
+                hasher.write_u8(0);
+            }
+        }
+
+        for &channel in &self.expression_access.object_channels {
+            let value = object_channels
+                .and_then(|channels| channels.get(&channel))
+                .map_or(Vec4::ONE, |channel| channel.value);
+            hasher.write(bytemuck::bytes_of(&value));
+        }
+
+        Some(hasher.finish())
     }
 
     #[profiling::function]
@@ -158,34 +264,84 @@ impl DynamicCore {
                 .alloc_slice(self.cbuffer_size)
                 .context("allocating cbuffer")?;
 
-            let out = bytemuck::cast_slice_mut(buffer.as_mut_slice());
-            out.copy_from_slice(&self.initial_constants);
-            let mut interpreter =
-                InterpreterState::new(&self.data.bytecode).with_externs(&cmd.externs);
-            if let Some(object_channels) = object_channels {
-                interpreter = interpreter.with_object_channels(object_channels);
+            let out: &mut [Vec4] = bytemuck::cast_slice_mut(buffer.as_mut_slice());
+
+            self.clear_cache_if_new_frame(cmd);
+            let varying_object_channels = object_channels.is_some_and(|channels| {
+                self.expression_access
+                    .object_channels
+                    .iter()
+                    .any(|channel| channels.contains_key(channel))
+            });
+            let cache_key = (self.cache_enabled.load(Ordering::Relaxed)
+                && !varying_object_channels)
+                .then(|| self.compute_cache_key(cmd, object_channels))
+                .flatten();
+
+            let mut cache_hit = false;
+            if let Some(cache_key) = cache_key {
+                let cache = self.expression_cache.read();
+                let slot = &cache.slots[cache_key as usize & (EXPRESSION_CACHE_SLOTS - 1)];
+                if slot.generation == cache.generation && slot.has_value && slot.key == cache_key {
+                    out.copy_from_slice(&slot.values);
+                    cache_hit = true;
+                }
             }
 
-            if let Err(e) = interpreter.evaluate(&self.data.bytecode_constants, out) {
-                error!("Failed to evaluate expression bytecode: {:?}", e);
+            if !cache_hit {
+                out.copy_from_slice(&self.initial_constants);
+                let mut interpreter =
+                    InterpreterState::new(&self.data.bytecode).with_externs(&cmd.externs);
+                if let Some(object_channels) = object_channels {
+                    interpreter = interpreter.with_object_channels(object_channels);
+                }
 
-                let bytecode_listing = match expression_vm::disassemble(&self.data.bytecode) {
-                    Ok(ops) => ops.into_iter().map(|v| format!("    {v}")).join("\n"),
-                    Err(e) => {
-                        format!("Failed to disassemble bytecode: {e:?}")
+                match interpreter.evaluate(&self.data.bytecode_constants, out) {
+                    Ok(()) => {
+                        if let Some(cache_key) = cache_key {
+                            let mut cache = self.expression_cache.write();
+                            let generation = cache.generation;
+                            let slot =
+                                &mut cache.slots[cache_key as usize & (EXPRESSION_CACHE_SLOTS - 1)];
+
+                            if slot.generation == generation && slot.key == cache_key {
+                                slot.values.clear();
+                                slot.values.extend_from_slice(out);
+                                slot.has_value = true;
+                            } else {
+                                slot.generation = generation;
+                                slot.key = cache_key;
+                                slot.has_value = false;
+                            }
+                        }
                     }
-                };
-                debug!("Bytecode:\n{}", bytecode_listing);
+                    Err(e) => {
+                        error!("Failed to evaluate expression bytecode: {:?}", e);
 
-                if interpreter.ip < self.data.bytecode.len() {
-                    // Patch the bytecode to disable the expression
-                    unsafe {
-                        self.data
-                            .bytecode
-                            .as_ptr()
-                            .add(interpreter.ip)
-                            .cast_mut()
-                            .write(expression_vm::opcodes::Opcode::ExtReturn as u8);
+                        let bytecode_listing = match expression_vm::disassemble(&self.data.bytecode)
+                        {
+                            Ok(ops) => ops.into_iter().map(|v| format!("    {v}")).join("\n"),
+                            Err(e) => {
+                                format!("Failed to disassemble bytecode: {e:?}")
+                            }
+                        };
+                        debug!("Bytecode:\n{}", bytecode_listing);
+
+                        if interpreter.ip < self.data.bytecode.len() {
+                            // Patch the bytecode to disable the expression
+                            unsafe {
+                                self.data
+                                    .bytecode
+                                    .as_ptr()
+                                    .add(interpreter.ip)
+                                    .cast_mut()
+                                    .write(expression_vm::opcodes::Opcode::ExtReturn as u8);
+                            }
+                        }
+
+                        self.cache_enabled.store(false, Ordering::Relaxed);
+                        let mut cache = self.expression_cache.write();
+                        cache.generation = cache.generation.wrapping_add(1).max(1);
                     }
                 }
             }

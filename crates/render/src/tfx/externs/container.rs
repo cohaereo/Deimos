@@ -6,7 +6,7 @@ use crate::tfx::externs::{
 };
 use deimos_data::{hash::fnv1, tfx::ExternIndex};
 use glam::Vec4;
-use std::sync::atomic::AtomicUsize;
+use std::sync::atomic::{AtomicU64, AtomicUsize, Ordering};
 
 use super::definitions::*;
 

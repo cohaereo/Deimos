@@ -240,6 +240,15 @@ pub enum BaseExternSource {
     Renderer(Arc<Renderer>),
 }
 
+impl BaseExternSource {
+    pub fn generation_value(&self) -> u64 {
+        match self {
+            Self::None => 0,
+            Self::Renderer(renderer) => renderer.externs.generation_value(),
+        }
+    }
+}
+
 impl ExternAccessor for BaseExternSource {
     fn get_value_ptr(&self, index: ExternIndex, offset: usize) -> Option<(*const (), TypeId)> {
         match self {

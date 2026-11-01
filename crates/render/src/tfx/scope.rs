@@ -135,6 +135,7 @@ impl ScopeStage {
             }
             initial_constants[..new_constants.len()].copy_from_slice(new_constants);
         }
+        constants.recompute_constants_hash();
 
         // // Initial constants aren't normally copied to the cbuffer unless there's expression bytecode, so we need to copy them manually
         // if (constants.bytecode.is_empty() || !constants.writes_cbuffer)

@@ -12,6 +12,7 @@ macro_rules! extern_container {
             pub globals: [Vec4; 256],
             pub global_channel_frequency: [AtomicUsize; 256],
             pub global_ids: Vec<u32>,
+            generation: AtomicU64,
         }
 
         impl ExternContainer {
@@ -39,8 +40,16 @@ macro_rules! extern_container {
 
             pub fn reset_global_channel_frequencies(&self) {
                 for freq in self.global_channel_frequency.iter() {
-                    freq.store(0, std::sync::atomic::Ordering::Relaxed);
+                    freq.store(0, Ordering::Relaxed);
                 }
+            }
+
+            pub fn bump_generation(&self) {
+                self.generation.fetch_add(1, Ordering::Relaxed);
+            }
+
+            pub fn generation_value(&self) -> u64 {
+                self.generation.load(Ordering::Relaxed)
             }
         }
 
@@ -57,7 +66,7 @@ macro_rules! extern_container {
             }
 
             fn get_global_channel(&self, index: u8) -> Vec4 {
-                self.global_channel_frequency[index as usize].fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+                self.global_channel_frequency[index as usize].fetch_add(1, Ordering::Relaxed);
                 self.globals[index as usize]
             }
         }
@@ -76,6 +85,7 @@ macro_rules! extern_container {
                     globals,
                     global_channel_frequency: [const { AtomicUsize::new(0) }; 256],
                     global_ids: global_channels.channel_ids.clone(),
+                    generation: AtomicU64::new(1),
                 };
 
                 // r.set_global_channel_by_id(743670137, Vec4::splat(0.1));
@@ -109,6 +119,32 @@ macro_rules! local_extern_container {
 
             pub const fn base(&self) -> &BaseExternSource {
                 &self.base
+            }
+
+            pub fn get_local_value_ptr(
+                &self,
+                index: ExternIndex,
+                offset: usize,
+            ) -> Option<(*const (), TypeId)> {
+                match index {
+                    $(
+                        ExternIndex::$t => self.$name.as_ref().and_then(|e| e.get_field_ptr(offset)),
+                    )*
+                    _ => None,
+                }
+            }
+
+            pub const fn has_local_override(&self, index: ExternIndex) -> bool {
+                match index {
+                    $(
+                        ExternIndex::$t => self.$name.is_some(),
+                    )*
+                    _ => false,
+                }
+            }
+
+            pub fn base_generation(&self) -> u64 {
+                self.base.generation_value()
             }
         }
 

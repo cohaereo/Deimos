@@ -78,6 +78,7 @@ impl SceneRenderer {
         draw_sun_shadows: bool,
     ) {
         self.parent.externs.reset_global_channel_frequencies();
+        self.parent.externs.bump_generation();
         let gpu = cmd.gpu().clone();
         // let stream = &gpu.frame().stream;
 
@@ -259,6 +260,7 @@ impl SceneRenderer {
 
             self.parent.externs.get_mut().shadow_mask.unk10 =
                 self.main_view.gbuffer.uber_depth_half.view().into();
+            self.parent.externs.bump_generation();
             self.main_view
                 .gbuffer
                 .uber_depth_half
