@@ -214,7 +214,7 @@ impl Gui {
     pub fn draw_ui(&mut self, shared_state: &Arc<SharedState>) {
         let ctx = self
             .egui_sdl3
-            .begin_frame(self.window.size(), self.window.display_scale());
+            .begin_frame(self.window.size_in_pixels(), self.window.display_scale());
         ctx.style_mut(|s| s.visuals.panel_fill = Color32::from_black_alpha(96));
 
         DockArea::new(&mut self.tree)

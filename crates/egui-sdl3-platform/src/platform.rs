@@ -111,8 +111,7 @@ impl Platform {
             }
             // Handle mouse motion
             Event::MouseMotion { x, y, .. } => {
-                // Update the pointer position
-                self.pointer_pos = egui::Pos2::new(*x, *y) / self.pixels_per_point;
+                self.pointer_pos = egui::Pos2::new(*x, *y);
                 self.raw_input
                     .events
                     .push(egui::Event::PointerMoved(self.pointer_pos));
@@ -268,7 +267,9 @@ impl Platform {
                     }
                 }
                 egui::OutputCommand::CopyImage(_color_image) => {
-                    tracing::error!("egui requested to copy an image to the clipboard, but this is not supported by the sdl3 integration");
+                    tracing::error!(
+                        "egui requested to copy an image to the clipboard, but this is not supported by the sdl3 integration"
+                    );
                 }
                 egui::OutputCommand::OpenUrl(open_url) => {
                     if let Err(e) = sdl3::url::open_url(&open_url.url) {

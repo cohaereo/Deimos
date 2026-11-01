@@ -92,6 +92,9 @@ fn main() -> anyhow::Result<()> {
 
     deimos_core::initialize_package_manager(args.gamedir.as_deref())?;
 
+    // Fixes display scaling on Wayland
+    sdl3::hint::set("SDL_VIDEO_WAYLAND_SCALE_TO_DISPLAY", "0");
+
     let sdl_context = Rc::new(sdl3::init().expect("Failed to initialize SDL"));
     let video_subsystem = sdl_context
         .video()
@@ -100,7 +103,11 @@ fn main() -> anyhow::Result<()> {
     let mut window = {
         let mut builder = video_subsystem.window("Deimos", 1920, 1080);
 
-        let mut builder_ref = builder.position_centered().resizable().maximized();
+        let mut builder_ref = builder
+            .position_centered()
+            .resizable()
+            .maximized()
+            .high_pixel_density();
 
         if cfg!(not(target_os = "windows")) {
             builder_ref = builder_ref.vulkan();
@@ -108,6 +115,10 @@ fn main() -> anyhow::Result<()> {
 
         builder_ref.build().expect("Failed to create window")
     };
+
+    if !window.sync() {
+        tracing::warn!("Timed out waiting for the window to reach its final state");
+    }
 
     if let Some(display_index) = args.display {
         let displays = video_subsystem.displays()?;
