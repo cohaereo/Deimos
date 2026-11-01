@@ -1,3 +1,4 @@
+use ahash::HashSet;
 use deimos_data::tfx::{FeatureRendererSubscription, geometry::AxisAlignedBBox};
 use deimos_ecs::{
     object::{ObjectChannels, PermutationConfig},
@@ -5,7 +6,7 @@ use deimos_ecs::{
     visibility::Visible,
 };
 use glam::Vec3;
-use rayon::iter::{ParallelBridge, ParallelIterator};
+use rayon::iter::{IntoParallelIterator, ParallelIterator};
 
 use crate::{
     ecs::render_objects::{DynamicRenderObject, StaticRenderObject},
@@ -43,16 +44,20 @@ pub fn s_visibility_test(world: &mut hecs::World, visibility: &ViewVisibility) {
         _ = world.insert_one(e, Visible(false));
     }
 
-    world
-        .query::<(
-            Option<&Transform>,
-            &DynamicRenderObject,
-            Option<&AxisAlignedBBox>,
-            &mut Visible,
-        )>()
+    let mut query = world.query::<(
+        Option<&Transform>,
+        &DynamicRenderObject,
+        Option<&AxisAlignedBBox>,
+        &mut Visible,
+    )>();
+    let nodes = query
         .iter()
-        .par_bridge()
-        .for_each(|(_e, (transform, _render_object, bounds, visible))| {
+        .map(|(_e, (transform, _render_object, bounds, visible))| (transform, bounds, visible))
+        .collect::<Vec<_>>();
+
+    nodes
+        .into_par_iter()
+        .for_each(|(transform, bounds, visible)| {
             let transform = transform.copied().unwrap_or_default();
             let bounds = bounds.map_or(AxisAlignedBBox::EVERYTHING, |b| {
                 b.transformed(transform.local_to_world())
@@ -186,11 +191,15 @@ pub fn node_visibility_test(
         return;
     };
 
-    for (_view_node, per_frame_node) in view_nodes
+    let mut tested = HashSet::default();
+    for per_frame_node in view_nodes
         .iter()
-        .enumerate()
-        .map(|(view_node, v)| (view_node, &frame_packet.per_frame_nodes[v.frame_node]))
+        .map(|v| &frame_packet.per_frame_nodes[v.frame_node])
     {
+        if !tested.insert(per_frame_node.object) {
+            continue;
+        }
+
         let render_object = &mut render_objects[per_frame_node.object];
         render_object.renderer.visibility_test(visibility);
     }

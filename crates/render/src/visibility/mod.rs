@@ -31,8 +31,7 @@ impl ViewVisibility {
         true
     }
 
-    #[profiling::function]
-    pub fn is_visible_quick(&self, aabb: &AxisAlignedBBox) -> bool {
+    pub fn is_visible_frustum(&self, aabb: &AxisAlignedBBox) -> bool {
         if !self.enabled {
             return true;
         }
@@ -41,27 +40,28 @@ impl ViewVisibility {
             && visible_cluster_bounds.len() < 64
         {
             profiling::scope!("visible_cluster_bounds");
-            for cluster_aabb in visible_cluster_bounds {
-                if cluster_aabb.intersects_aabb(aabb) {
-                    return self.is_visible_umbra_occlusion(aabb);
-                }
+            if !visible_cluster_bounds
+                .iter()
+                .any(|cluster_aabb| cluster_aabb.intersects_aabb(aabb))
+            {
+                return false;
             }
-            return false;
-        }
-
-        if !self.is_visible_umbra_occlusion(aabb) {
-            return false;
         }
 
         if aabb.contains_point(self.position) {
             return true;
         }
 
-        if !self.culling_frustum.aabb_intersecting(aabb) {
+        self.culling_frustum.aabb_intersecting(aabb)
+    }
+
+    #[profiling::function]
+    pub fn is_visible_quick(&self, aabb: &AxisAlignedBBox) -> bool {
+        if !self.is_visible_frustum(aabb) {
             return false;
         }
 
-        true
+        self.is_visible_umbra_occlusion(aabb)
     }
 
     #[profiling::function]

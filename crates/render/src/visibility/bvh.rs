@@ -47,7 +47,7 @@ impl Bvh {
 
             match node.data {
                 NodeData::Internal { right_child } => {
-                    if vis.is_visible_quick(&node.aabb) {
+                    if vis.is_visible_frustum(&node.aabb) {
                         stack.push(right_child);
                         stack.push(idx + 1);
                     }
@@ -76,7 +76,7 @@ impl Bvh {
 
             match node.data {
                 NodeData::Internal { right_child } => {
-                    if vis.is_visible_quick(&node.aabb) {
+                    if vis.is_visible_frustum(&node.aabb) {
                         stack.push(right_child);
                         stack.push(idx + 1);
                     }
