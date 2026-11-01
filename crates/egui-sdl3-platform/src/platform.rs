@@ -24,6 +24,7 @@ pub struct Platform {
 
     // The egui context
     egui_ctx: egui::Context,
+    is_wayland: bool,
 }
 
 impl Platform {
@@ -54,6 +55,7 @@ impl Platform {
             modifiers: Modifiers::default(),
             egui_ctx: egui::Context::default(),
             start_time: std::time::Instant::now(),
+            is_wayland: sdl.video()?.current_video_driver() == "wayland",
         })
     }
 
@@ -111,7 +113,11 @@ impl Platform {
             }
             // Handle mouse motion
             Event::MouseMotion { x, y, .. } => {
-                self.pointer_pos = egui::Pos2::new(*x, *y);
+                if self.is_wayland {
+                    self.pointer_pos = egui::Pos2::new(*x, *y);
+                } else {
+                    self.pointer_pos = egui::Pos2::new(*x, *y) / self.pixels_per_point;
+                }
                 self.raw_input
                     .events
                     .push(egui::Event::PointerMoved(self.pointer_pos));
