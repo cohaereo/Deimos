@@ -191,11 +191,22 @@ impl CommandBuffer {
         self.copy_image(
             &src.image,
             &dst.image,
-            &[vk::ImageCopy::default().extent(vk::Extent3D {
-                width: dst.resolution().0,
-                height: dst.resolution().1,
-                depth: 1,
-            })],
+            &[vk::ImageCopy::default()
+                .extent(vk::Extent3D {
+                    width: dst.resolution().0,
+                    height: dst.resolution().1,
+                    depth: 1,
+                })
+                .src_subresource(
+                    vk::ImageSubresourceLayers::default()
+                        .aspect_mask(vk::ImageAspectFlags::COLOR)
+                        .layer_count(1),
+                )
+                .dst_subresource(
+                    vk::ImageSubresourceLayers::default()
+                        .aspect_mask(vk::ImageAspectFlags::COLOR)
+                        .layer_count(1),
+                )],
         );
     }
 
@@ -203,11 +214,22 @@ impl CommandBuffer {
         self.copy_image(
             &src.image,
             &dst.image,
-            &[vk::ImageCopy::default().extent(vk::Extent3D {
-                width: dst.resolution().0,
-                height: dst.resolution().1,
-                depth: 1,
-            })],
+            &[vk::ImageCopy::default()
+                .extent(vk::Extent3D {
+                    width: dst.resolution().0,
+                    height: dst.resolution().1,
+                    depth: 1,
+                })
+                .src_subresource(
+                    vk::ImageSubresourceLayers::default()
+                        .aspect_mask(vk::ImageAspectFlags::DEPTH)
+                        .layer_count(1),
+                )
+                .dst_subresource(
+                    vk::ImageSubresourceLayers::default()
+                        .aspect_mask(vk::ImageAspectFlags::DEPTH)
+                        .layer_count(1),
+                )],
         );
     }
 
