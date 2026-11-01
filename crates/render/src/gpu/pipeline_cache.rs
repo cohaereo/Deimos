@@ -284,17 +284,9 @@ impl PipelineCache {
             .vertex_binding_descriptions(vertex_binding_descs)
             .vertex_attribute_descriptions(vertex_attribute_descs);
 
-        let primitive_restart_enable = matches!(
-            key.topology,
-            vk::PrimitiveTopology::LINE_STRIP
-                | vk::PrimitiveTopology::TRIANGLE_STRIP
-                | vk::PrimitiveTopology::TRIANGLE_FAN
-                | vk::PrimitiveTopology::LINE_STRIP_WITH_ADJACENCY
-                | vk::PrimitiveTopology::TRIANGLE_STRIP_WITH_ADJACENCY
-        );
         let input_assembly = vk::PipelineInputAssemblyStateCreateInfo::default()
             .topology(key.topology)
-            .primitive_restart_enable(primitive_restart_enable);
+            .primitive_restart_enable(true);
 
         let viewports = [vk::Viewport::default()];
         let scissors = [vk::Rect2D::default()];
