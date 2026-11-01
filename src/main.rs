@@ -1,10 +1,9 @@
-use std::{fs::File, io::Write, rc::Rc, sync::Mutex, thread};
+use std::{fs::File, io::Write, rc::Rc, sync::Mutex};
 
 use anyhow::Context;
 use app::App;
 use clap::Parser;
 use cli::AppArgs;
-use deimos_core::job::SCHEDULER;
 use itertools::Itertools;
 use tracing_subscriber::{
     Layer,
@@ -14,10 +13,7 @@ use tracing_subscriber::{
     util::SubscriberInitExt,
 };
 
-use crate::{
-    cli::{DEIMOS_VERSION, print_banner},
-    panic_hook::write_system_info,
-};
+use crate::{cli::print_banner, panic_hook::write_system_info};
 
 mod app;
 mod cli;
@@ -43,11 +39,6 @@ extern crate tracing;
 const TRACING_DISABLED_TARGETS: &[&str] = &["ehttp", "ureq", "rustls"];
 
 fn main() -> anyhow::Result<()> {
-    rayon::ThreadPoolBuilder::new()
-        .thread_name(|i| format!("rayon-pool-{i}"))
-        .num_threads(SCHEDULER.num_workers())
-        .build_global()?;
-
     fix_windows_console();
     print_banner();
     std::panic::set_hook(Box::new(panic_hook::hook));
@@ -160,7 +151,7 @@ fn main() -> anyhow::Result<()> {
     Ok(())
 }
 
-fn fix_windows_console() {
+const fn fix_windows_console() {
     #[cfg(target_os = "windows")]
     {
         pub type Handle = *mut std::ffi::c_void;
@@ -188,4 +179,4 @@ fn fix_windows_console() {
 // Workaround for subsecond missing this symbol while linking (even though its not used)
 #[unsafe(no_mangle)]
 #[cfg(not(target_os = "windows"))]
-extern "C" fn CoCreateGuid() {}
+const extern "C" fn CoCreateGuid() {}

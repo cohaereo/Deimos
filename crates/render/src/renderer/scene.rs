@@ -5,7 +5,6 @@
 use std::sync::Arc;
 
 use ash::vk;
-use deimos_core::job::SCHEDULER;
 use deimos_data::{
     hash::fnv1,
     tfx::{FixedFunctionState, RenderStage, features::dynamic::RenderStageSubscription},

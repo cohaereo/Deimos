@@ -137,7 +137,7 @@ impl<'a> DButton<'a> {
                 .min_size(vec2(120.0, 60.0))
                 .corner_radius(8),
             text_color: Color32::BLACK,
-            stroke: Stroke::new(1.0, Color32::TRANSPARENT),
+            stroke: Stroke::new(1.0_f32, Color32::TRANSPARENT),
             fill_color: Color32::WHITE,
         }
     }
@@ -148,7 +148,7 @@ impl<'a> DButton<'a> {
                 .min_size(vec2(120.0, 60.0))
                 .corner_radius(8),
             text_color: Color32::WHITE,
-            stroke: Stroke::new(2.0, Color32::WHITE),
+            stroke: Stroke::new(2.0_f32, Color32::WHITE),
             fill_color: Color32::BLACK,
         }
     }

@@ -416,7 +416,7 @@ impl Gui {
         }
     }
 
-    pub fn render(&mut self, gpu: &Arc<Gpu>, cmd: &vk::CommandBuffer) {
+    pub fn render(&mut self, _gpu: &Arc<Gpu>, cmd: &vk::CommandBuffer) {
         let output = self
             .egui_sdl3
             .end_frame(&mut self.sdl.video().unwrap())

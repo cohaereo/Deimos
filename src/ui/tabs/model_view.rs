@@ -51,7 +51,7 @@ impl ModelViewTab {
             }),
             tag,
             scene: Box::new(
-                Scene::new(renderer, &shared, Camera::default())?
+                Scene::new(renderer, shared, Camera::default())?
                     .with_controller(CameraController::new_orbit(Vec3::ZERO, 2.5)),
             ),
             errored: false,

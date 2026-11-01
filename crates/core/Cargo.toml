@@ -7,7 +7,6 @@ edition = "2021"
 anyhow.workspace = true
 game-detector = { version = "0.2.1" }
 lazy_static = "1.5.0"
-potassium.workspace = true
 serde.workspace = true
 tiger-pkg.workspace = true
 toml = "0.8"

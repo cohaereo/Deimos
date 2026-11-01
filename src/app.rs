@@ -13,7 +13,6 @@ use std::{
 use ahash::HashMap;
 use anyhow::Context;
 use ash::vk;
-use deimos_core::job::SCHEDULER;
 use deimos_data::{
     strings::{StringContainer, StringContainerShared},
     tag::WideHash,
@@ -264,7 +263,6 @@ impl App {
 impl Drop for App {
     fn drop(&mut self) {
         self.shared_state.save_config().ok();
-        SCHEDULER.shutdown();
     }
 }
 

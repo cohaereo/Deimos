@@ -202,7 +202,7 @@ impl Scene {
                 })
             });
 
-            let fps_rect = ui.painter_at(panel_rect).text(
+            let _fps_rect = ui.painter_at(panel_rect).text(
                 panel_rect.right_top() + Vec2::new(0.0, 3.0) + Vec2::splat(1.0),
                 egui::Align2::RIGHT_TOP,
                 format!("{} ", (1. / delta_time_average).round()),
@@ -1015,7 +1015,7 @@ impl Scene {
         ui.scope(|ui| {
             ui.style_mut().visuals.widgets.inactive.bg_fill = egui::Color32::from_black_alpha(48);
             ui.style_mut().visuals.widgets.inactive.bg_stroke =
-                egui::Stroke::new(8.0, egui::Color32::WHITE);
+                egui::Stroke::new(8.0_f32, egui::Color32::WHITE);
 
             egui::Slider::new(&mut self.time_of_day, 0.0..=3600.0)
                 .show_value(false)
@@ -1041,7 +1041,7 @@ impl Scene {
         ui.scope(|ui| {
             ui.style_mut().visuals.widgets.inactive.bg_fill = egui::Color32::from_black_alpha(48);
             ui.style_mut().visuals.widgets.inactive.bg_stroke =
-                egui::Stroke::new(8.0, egui::Color32::WHITE);
+                egui::Stroke::new(8.0_f32, egui::Color32::WHITE);
 
             egui::Slider::new(&mut self.raininess, 0.0..=1.0)
                 .show_value(false)
@@ -1064,7 +1064,7 @@ impl Scene {
         ui.scope(|ui| {
             ui.style_mut().visuals.widgets.inactive.bg_fill = egui::Color32::from_black_alpha(48);
             ui.style_mut().visuals.widgets.inactive.bg_stroke =
-                egui::Stroke::new(8.0, egui::Color32::WHITE);
+                egui::Stroke::new(8.0_f32, egui::Color32::WHITE);
 
             egui::Slider::new(&mut self.heat_cascade, 0.0..=1.0)
                 .show_value(false)

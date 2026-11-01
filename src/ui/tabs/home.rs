@@ -56,7 +56,7 @@ impl HomeTab {
             {
                 result = TabResult::Open(Tab::EntityList(Box::new(EntityListTab::new(
                     &shared_state.renderer,
-                    &shared_state,
+                    shared_state,
                 ))));
             }
             if uis[0]
@@ -65,7 +65,7 @@ impl HomeTab {
             {
                 result = TabResult::Open(Tab::StaticList(Box::new(StaticListTab::new(
                     &shared_state.renderer,
-                    &shared_state,
+                    shared_state,
                 ))));
             }
 

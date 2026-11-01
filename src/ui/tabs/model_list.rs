@@ -132,7 +132,7 @@ impl<P: ModelProvider> ModelListBase<P> {
             .iter_mut()
             .filter(|e| e.thumbnail.is_none() || e.rerender_needed)
         {
-            if let Some(mut world) = entry.thumbnail_world.take() {
+            if let Some(world) = entry.thumbnail_world.take() {
                 if s_are_all_objects_loaded(&world, &self.scene.scene_renderer.parent) {
                     let mut bb: AxisAlignedBBox = world
                         .query::<&AxisAlignedBBox>()
@@ -153,7 +153,7 @@ impl<P: ModelProvider> ModelListBase<P> {
                                     config.permutation_count - 1
                                 } else {
                                     0
-                                })
+                                });
                         });
 
                     self.thumbnail_scene.set_world(world);
@@ -209,7 +209,7 @@ impl<P: ModelProvider> ModelListBase<P> {
         let Some(entry) = entries.iter_mut().find(|e| e.hash == hash) else {
             return;
         };
-        if let Some(mut world) = entry.thumbnail_world.take() {
+        if let Some(world) = entry.thumbnail_world.take() {
             let mut bb: AxisAlignedBBox = world
                 .query::<&AxisAlignedBBox>()
                 .iter()
@@ -227,7 +227,7 @@ impl<P: ModelProvider> ModelListBase<P> {
                     config.permutation_index_override = Some(
                         ((self.time.elapsed().as_secs_f32() * 4.0)
                             % config.permutation_count as f32) as usize,
-                    )
+                    );
                 });
 
             self.thumbnail_scene.set_world(world);

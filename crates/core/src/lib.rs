@@ -4,7 +4,6 @@ use anyhow::Context;
 use tiger_pkg::PackageManager;
 use tracing::info;
 pub mod config;
-pub mod job;
 
 pub const MARATHON_APP_ID: u64 = 3065800;
 
