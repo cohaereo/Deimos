@@ -26,7 +26,7 @@ use ahash::HashMap;
 use anyhow::{Context, bail};
 use ash::{
     ext::{debug_utils, descriptor_buffer, memory_budget},
-    khr::{surface, swapchain},
+    khr::{maintenance4, surface, swapchain},
     vk::{
         self, DebugUtilsMessageSeverityFlagsEXT, DebugUtilsMessageTypeFlagsEXT,
         DebugUtilsMessengerCallbackDataEXT, QueueFlags,
@@ -271,6 +271,7 @@ impl Gpu {
                         swapchain::NAME.as_ptr(),
                         descriptor_buffer::NAME.as_ptr(),
                         memory_budget::NAME.as_ptr(),
+                        maintenance4::NAME.as_ptr(),
                     ])
                     .enabled_features(
                         &vk::PhysicalDeviceFeatures::default()
