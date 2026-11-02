@@ -75,53 +75,51 @@ fn build_footprints(
     let mut dst_offset = 0usize;
     let mut src_offset = 0usize;
 
-    for subresource in 0..num_mips * array_size {
-        // Matches D3D12 subresource order: mip + array_layer * num_mips.
-        let mip = subresource % num_mips;
-        let array_layer = subresource / num_mips;
+    for mip in 0..num_mips {
+        for array_layer in 0..array_size {
+            let width = (desc.width >> mip).max(1);
+            let height = (desc.height >> mip).max(1);
+            let depth = if is_3d {
+                ((desc.depth as u32) >> mip).max(1)
+            } else {
+                1
+            };
 
-        let width = (desc.width >> mip).max(1);
-        let height = (desc.height >> mip).max(1);
-        let depth = if is_3d {
-            ((desc.depth as u32) >> mip).max(1)
-        } else {
-            1
-        };
+            let (src_row_pitch, _) = desc.format.calculate_pitch(width, height);
+            let block_height = if compressed {
+                height.div_ceil(4)
+            } else {
+                height
+            } as usize;
 
-        let (src_row_pitch, _) = desc.format.calculate_pitch(width, height);
-        let block_height = if compressed {
-            height.div_ceil(4)
-        } else {
-            height
-        } as usize;
+            let dst_row_pitch = align_up(src_row_pitch, row_alignment);
+            let buffer_row_length = if compressed {
+                ((dst_row_pitch / block_size) * 4) as u32
+            } else {
+                (dst_row_pitch / block_size) as u32
+            };
 
-        let dst_row_pitch = align_up(src_row_pitch, row_alignment);
-        let buffer_row_length = if compressed {
-            ((dst_row_pitch / block_size) * 4) as u32
-        } else {
-            (dst_row_pitch / block_size) as u32
-        };
+            dst_offset = align_up(dst_offset, offset_alignment);
+            let dst_size = dst_row_pitch * block_height * depth as usize;
+            let src_size = src_row_pitch * block_height * depth as usize;
 
-        dst_offset = align_up(dst_offset, offset_alignment);
-        let dst_size = dst_row_pitch * block_height * depth as usize;
-        let src_size = src_row_pitch * block_height * depth as usize;
+            footprints.push(SubresourceFootprint {
+                dst_offset,
+                src_offset,
+                src_row_pitch,
+                dst_row_pitch,
+                buffer_row_length,
+                mip: mip as u32,
+                array_layer: array_layer as u32,
+                width,
+                height,
+                depth,
+                block_height,
+            });
 
-        footprints.push(SubresourceFootprint {
-            dst_offset,
-            src_offset,
-            src_row_pitch,
-            dst_row_pitch,
-            buffer_row_length,
-            mip: mip as u32,
-            array_layer: array_layer as u32,
-            width,
-            height,
-            depth,
-            block_height,
-        });
-
-        dst_offset += dst_size;
-        src_offset += src_size;
+            dst_offset += dst_size;
+            src_offset += src_size;
+        }
     }
 
     (footprints, dst_offset, src_offset)

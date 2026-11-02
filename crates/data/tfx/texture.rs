@@ -32,19 +32,9 @@ pub struct STextureHeader {
 
 impl STextureHeader {
     pub fn mip_count(&self) -> u16 {
-        let smallest_dim = if self.depth > 1 {
-            self.width.min(self.height).min(self.depth)
-        } else if self.height > 1 {
-            self.width.min(self.height)
-        } else {
-            self.width
-        };
+        let largest_dim = self.width.max(self.height).max(self.depth).max(1);
+        let calculated_mip_count = largest_dim.ilog2() as u16 + 1;
 
-        let calculated_mip_count = ((smallest_dim as f32).log2().ceil() as u16).max(1);
-
-        // This line is the exception to the deprecated rule, since mip_count_broken is 1 if the texture has no mips
-        // calculated_mip_count is more or less used to correct the broken mip count
-        #[allow(deprecated)]
         calculated_mip_count.min(self.mip_count_broken as u16)
     }
 }
