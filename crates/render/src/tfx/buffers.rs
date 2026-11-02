@@ -81,14 +81,6 @@ impl Gbuffer {
         })
     }
 
-    pub fn clear(&mut self, cmd: &vk::CommandBuffer) {
-        self.albedo.clear(cmd, [0.0, 0.0, 0.0, 0.0]);
-        self.normal.clear(cmd, [0.0, 0.0, 0.0, 0.0]);
-        self.rt3.clear(cmd, [0.0, 0.5, 0.0, 0.0]);
-        self.rt4.clear(cmd, [0.0, 0.0, 0.0, 0.0]);
-        self.depth.clear(cmd, 0.0, 0xFF);
-    }
-
     pub fn transition(
         &mut self,
         cmd: &vk::CommandBuffer,
@@ -147,12 +139,6 @@ impl LightBuffer {
             .context("allocating render target")?,
             resolution,
         })
-    }
-
-    pub fn clear(&mut self, cmd: &vk::CommandBuffer) {
-        self.light_diffuse.clear(cmd, [0.0, 0.0, 0.0, 0.0]);
-        self.light_specular.clear(cmd, [0.0, 0.0, 0.0, 0.0]);
-        self.light_specular_ibl.clear(cmd, [0.0, 0.0, 0.0, 0.0]);
     }
 
     pub fn transition(

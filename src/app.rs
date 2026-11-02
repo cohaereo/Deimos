@@ -201,6 +201,7 @@ impl App {
                     (swapchain_extent.width, swapchain_extent.height),
                     &[attachment_info],
                     None,
+                    vk::RenderingFlags::empty(),
                 )?;
 
                 self.gui.render(&self.gpu, &cmd);

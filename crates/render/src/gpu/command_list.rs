@@ -7,9 +7,32 @@ use ash::vk;
 use deimos_data::tfx::{FixedFunctionState, PrimitiveType, ShaderStage};
 use tiger_pkg::TagHash;
 
-use crate::{gpu::command_buffer::CommandBuffer, tfx::externs::LocalExternContainer};
+use crate::{
+    gpu::{
+        command_buffer::CommandBuffer,
+        render_target::{DepthBuffer, RenderTarget},
+    },
+    tfx::externs::LocalExternContainer,
+};
 
 use super::Gpu;
+
+pub enum ColorLoadOp {
+    Load,
+    Clear([f32; 4]),
+    DontCare,
+}
+
+pub enum DepthLoadOp {
+    Load,
+    Clear(f32, u8),
+    DontCare,
+}
+
+pub enum StoreOp {
+    Store,
+    None,
+}
 
 pub struct CommandList {
     gpu: Arc<Gpu>,
@@ -490,6 +513,97 @@ impl CommandList {
         self.current_color_formats.clear();
         self.current_color_formats.extend_from_slice(color_formats);
         self.current_depth_format = depth_format;
+    }
+
+    pub fn begin_rendering_rt(
+        &mut self,
+        color_attachments: &[Option<(&RenderTarget, ColorLoadOp, StoreOp)>],
+        depth_attachment: Option<(&DepthBuffer, DepthLoadOp, StoreOp)>,
+        flags: vk::RenderingFlags,
+    ) {
+        let resolution = if let Some((d, _, _)) = depth_attachment {
+            d.resolution()
+        } else if let Some(rt) = color_attachments.first()
+            && let Some((rt, _, _)) = rt
+        {
+            rt.resolution()
+        } else {
+            warn!("No attachments specified, defaulting to 1024x1024");
+            (1024, 1024)
+        };
+
+        let color_formats = color_attachments
+            .iter()
+            .map(|rt| {
+                rt.as_ref()
+                    .map_or(vk::Format::UNDEFINED, |(rt, _, _)| rt.output_format())
+            })
+            .collect::<Vec<_>>();
+
+        let depth_format = depth_attachment.as_ref().map(|(d, _, _)| d.output_format());
+
+        let mut color_attachments_vk =
+            vec![vk::RenderingAttachmentInfo::default(); color_attachments.len()];
+
+        for (input, vk) in color_attachments.iter().zip(&mut color_attachments_vk) {
+            let Some((rt, load, store)) = input else {
+                continue;
+            };
+
+            vk.image_view = rt.view();
+            vk.image_layout = vk::ImageLayout::COLOR_ATTACHMENT_OPTIMAL;
+            vk.load_op = match load {
+                ColorLoadOp::Load => vk::AttachmentLoadOp::LOAD,
+                ColorLoadOp::Clear(_) => vk::AttachmentLoadOp::CLEAR,
+                ColorLoadOp::DontCare => vk::AttachmentLoadOp::DONT_CARE,
+            };
+            vk.store_op = match store {
+                StoreOp::Store => vk::AttachmentStoreOp::STORE,
+                StoreOp::None => vk::AttachmentStoreOp::DONT_CARE,
+            };
+            if let ColorLoadOp::Clear(color) = load {
+                vk.clear_value = vk::ClearValue {
+                    color: vk::ClearColorValue { float32: *color },
+                };
+            }
+        }
+
+        let depth_attachment_vk = depth_attachment.map(|(d, load, store)| {
+            vk::RenderingAttachmentInfo::default()
+                .image_view(d.depth_stencil_view())
+                .image_layout(vk::ImageLayout::DEPTH_ATTACHMENT_OPTIMAL)
+                .load_op(match load {
+                    DepthLoadOp::Load => vk::AttachmentLoadOp::LOAD,
+                    DepthLoadOp::Clear { .. } => vk::AttachmentLoadOp::CLEAR,
+                    DepthLoadOp::DontCare => vk::AttachmentLoadOp::DONT_CARE,
+                })
+                .clear_value(vk::ClearValue {
+                    depth_stencil: match load {
+                        DepthLoadOp::Clear(depth_val, stencil_val) => vk::ClearDepthStencilValue {
+                            depth: depth_val,
+                            stencil: stencil_val as u32,
+                        },
+                        _ => vk::ClearDepthStencilValue {
+                            depth: 0.0,
+                            stencil: 0,
+                        },
+                    },
+                })
+                .store_op(match store {
+                    StoreOp::Store => vk::AttachmentStoreOp::STORE,
+                    StoreOp::None => vk::AttachmentStoreOp::DONT_CARE,
+                })
+        });
+
+        self.set_render_target_formats(&color_formats, depth_format);
+
+        self.begin_rendering(
+            resolution,
+            &color_attachments_vk,
+            depth_attachment_vk.as_ref(),
+            flags,
+        )
+        .expect("Failed to begin rendering");
     }
 
     pub const fn color_attachment_formats(&self) -> &[vk::Format] {

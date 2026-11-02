@@ -21,7 +21,7 @@ use crate::{
             IMAGE_STATE_COLOR_ATTACHMENT, IMAGE_STATE_DEPTH_ATTACHMENT, IMAGE_STATE_SHADER_READ,
             IMAGE_STATE_TRANSFER_DST, IMAGE_STATE_TRANSFER_SRC,
         },
-        command_list::{CommandList, CommandListForkState},
+        command_list::{ColorLoadOp, CommandList, CommandListForkState, DepthLoadOp, StoreOp},
     },
     renderer::{
         Renderer,
@@ -145,17 +145,6 @@ impl SceneRenderer {
             .gbuffer
             .depth
             .transition(cmd, IMAGE_STATE_DEPTH_ATTACHMENT);
-        self.main_view.gbuffer.clear(cmd);
-        // self.main_view.gbuffer.bind(cmd);
-        cmd.set_render_target_formats(
-            &[
-                self.main_view.gbuffer.albedo.output_format(),
-                self.main_view.gbuffer.normal.output_format(),
-                self.main_view.gbuffer.rt3.output_format(),
-                self.main_view.gbuffer.rt4.output_format(),
-            ],
-            Some(self.main_view.gbuffer.depth.output_format()),
-        );
 
         {
             let resolution = self.main_view.gbuffer.albedo.resolution();
@@ -169,37 +158,16 @@ impl SceneRenderer {
             })]);
         }
 
-        cmd.begin_rendering_secondary(
-            self.main_view.gbuffer.albedo.resolution(),
+        #[rustfmt::skip]
+        cmd.begin_rendering_rt(
             &[
-                vk::RenderingAttachmentInfo::default()
-                    .image_view(self.main_view.gbuffer.albedo.view())
-                    .image_layout(vk::ImageLayout::COLOR_ATTACHMENT_OPTIMAL)
-                    .load_op(vk::AttachmentLoadOp::LOAD)
-                    .store_op(vk::AttachmentStoreOp::STORE),
-                vk::RenderingAttachmentInfo::default()
-                    .image_view(self.main_view.gbuffer.normal.view())
-                    .image_layout(vk::ImageLayout::COLOR_ATTACHMENT_OPTIMAL)
-                    .load_op(vk::AttachmentLoadOp::LOAD)
-                    .store_op(vk::AttachmentStoreOp::STORE),
-                vk::RenderingAttachmentInfo::default()
-                    .image_view(self.main_view.gbuffer.rt3.view())
-                    .image_layout(vk::ImageLayout::COLOR_ATTACHMENT_OPTIMAL)
-                    .load_op(vk::AttachmentLoadOp::LOAD)
-                    .store_op(vk::AttachmentStoreOp::STORE),
-                vk::RenderingAttachmentInfo::default()
-                    .image_view(self.main_view.gbuffer.rt4.view())
-                    .image_layout(vk::ImageLayout::COLOR_ATTACHMENT_OPTIMAL)
-                    .load_op(vk::AttachmentLoadOp::LOAD)
-                    .store_op(vk::AttachmentStoreOp::STORE),
+                Some((&self.main_view.gbuffer.albedo, ColorLoadOp::Clear([0.0, 0.0, 0.0, 0.0]), StoreOp::Store)),
+                Some((&self.main_view.gbuffer.normal, ColorLoadOp::Clear([0.0, 0.0, 0.0, 0.0]), StoreOp::Store)),
+                Some((&self.main_view.gbuffer.rt3, ColorLoadOp::Clear([0.0, 0.5, 0.0, 0.0]), StoreOp::Store)),
+                Some((&self.main_view.gbuffer.rt4, ColorLoadOp::Clear([0.0, 0.0, 0.0, 0.0]), StoreOp::Store)),
             ],
-            Some(
-                &vk::RenderingAttachmentInfo::default()
-                    .image_view(self.main_view.gbuffer.depth.depth_stencil_view())
-                    .image_layout(vk::ImageLayout::DEPTH_ATTACHMENT_OPTIMAL)
-                    .load_op(vk::AttachmentLoadOp::LOAD)
-                    .store_op(vk::AttachmentStoreOp::STORE),
-            ),
+            Some((&self.main_view.gbuffer.depth, DepthLoadOp::Clear(0.0, 0xFF), StoreOp::Store)),
+            vk::RenderingFlags::CONTENTS_SECONDARY_COMMAND_BUFFERS
         );
 
         // s_extract_render_objects(&self.world, &self.parent);
@@ -303,37 +271,16 @@ impl SceneRenderer {
                 .transition(cmd, IMAGE_STATE_DEPTH_ATTACHMENT);
         }
 
-        cmd.begin_rendering_secondary(
-            self.main_view.gbuffer.albedo.resolution(),
+        #[rustfmt::skip]
+        cmd.begin_rendering_rt(
             &[
-                vk::RenderingAttachmentInfo::default()
-                    .image_view(self.main_view.gbuffer.albedo.view())
-                    .image_layout(vk::ImageLayout::COLOR_ATTACHMENT_OPTIMAL)
-                    .load_op(vk::AttachmentLoadOp::LOAD)
-                    .store_op(vk::AttachmentStoreOp::STORE),
-                vk::RenderingAttachmentInfo::default()
-                    .image_view(self.main_view.gbuffer.normal.view())
-                    .image_layout(vk::ImageLayout::COLOR_ATTACHMENT_OPTIMAL)
-                    .load_op(vk::AttachmentLoadOp::LOAD)
-                    .store_op(vk::AttachmentStoreOp::STORE),
-                vk::RenderingAttachmentInfo::default()
-                    .image_view(self.main_view.gbuffer.rt3.view())
-                    .image_layout(vk::ImageLayout::COLOR_ATTACHMENT_OPTIMAL)
-                    .load_op(vk::AttachmentLoadOp::LOAD)
-                    .store_op(vk::AttachmentStoreOp::STORE),
-                vk::RenderingAttachmentInfo::default()
-                    .image_view(self.main_view.gbuffer.rt4.view())
-                    .image_layout(vk::ImageLayout::COLOR_ATTACHMENT_OPTIMAL)
-                    .load_op(vk::AttachmentLoadOp::LOAD)
-                    .store_op(vk::AttachmentStoreOp::STORE),
+                Some((&self.main_view.gbuffer.albedo, ColorLoadOp::Load, StoreOp::Store)),
+                Some((&self.main_view.gbuffer.normal, ColorLoadOp::Load, StoreOp::Store)),
+                Some((&self.main_view.gbuffer.rt3, ColorLoadOp::Load, StoreOp::Store)),
+                Some((&self.main_view.gbuffer.rt4, ColorLoadOp::Load, StoreOp::Store)),
             ],
-            Some(
-                &vk::RenderingAttachmentInfo::default()
-                    .image_view(self.main_view.gbuffer.depth.depth_stencil_view())
-                    .image_layout(vk::ImageLayout::DEPTH_ATTACHMENT_OPTIMAL)
-                    .load_op(vk::AttachmentLoadOp::LOAD)
-                    .store_op(vk::AttachmentStoreOp::STORE),
-            ),
+            Some((&self.main_view.gbuffer.depth, DepthLoadOp::Load, StoreOp::Store)),
+            vk::RenderingFlags::CONTENTS_SECONDARY_COMMAND_BUFFERS
         );
         {
             let _scope = self.parent.gpu.profiler_scope(cmd, "submit_decals");
@@ -342,50 +289,18 @@ impl SceneRenderer {
             cmd.flush_states();
             self.submit_stage(cmd, view, RenderStage::Decals);
         }
-        cmd.end_rendering();
 
         {
             let _scope = self
                 .parent
                 .gpu
                 .profiler_scope(cmd, "submit_decals_additive");
-            cmd.begin_rendering_secondary(
-                self.main_view.gbuffer.albedo.resolution(),
-                &[
-                    vk::RenderingAttachmentInfo::default()
-                        .image_view(self.main_view.gbuffer.albedo.view())
-                        .image_layout(vk::ImageLayout::COLOR_ATTACHMENT_OPTIMAL)
-                        .load_op(vk::AttachmentLoadOp::LOAD)
-                        .store_op(vk::AttachmentStoreOp::STORE),
-                    vk::RenderingAttachmentInfo::default()
-                        .image_view(self.main_view.gbuffer.normal.view())
-                        .image_layout(vk::ImageLayout::COLOR_ATTACHMENT_OPTIMAL)
-                        .load_op(vk::AttachmentLoadOp::LOAD)
-                        .store_op(vk::AttachmentStoreOp::STORE),
-                    vk::RenderingAttachmentInfo::default()
-                        .image_view(self.main_view.gbuffer.rt3.view())
-                        .image_layout(vk::ImageLayout::COLOR_ATTACHMENT_OPTIMAL)
-                        .load_op(vk::AttachmentLoadOp::LOAD)
-                        .store_op(vk::AttachmentStoreOp::STORE),
-                    vk::RenderingAttachmentInfo::default()
-                        .image_view(self.main_view.gbuffer.rt4.view())
-                        .image_layout(vk::ImageLayout::COLOR_ATTACHMENT_OPTIMAL)
-                        .load_op(vk::AttachmentLoadOp::LOAD)
-                        .store_op(vk::AttachmentStoreOp::STORE),
-                ],
-                Some(
-                    &vk::RenderingAttachmentInfo::default()
-                        .image_view(self.main_view.gbuffer.depth.depth_stencil_view())
-                        .image_layout(vk::ImageLayout::DEPTH_ATTACHMENT_OPTIMAL)
-                        .load_op(vk::AttachmentLoadOp::LOAD)
-                        .store_op(vk::AttachmentStoreOp::STORE),
-                ),
-            );
+
             cmd.set_ffstate(FixedFunctionState::new(Some(8), Some(15), Some(2), Some(1)));
             cmd.flush_states();
             self.submit_stage(cmd, view, RenderStage::DecalsAdditive);
-            cmd.end_rendering();
         }
+        cmd.end_rendering();
 
         self.main_view
             .gbuffer
@@ -397,38 +312,14 @@ impl SceneRenderer {
         {
             let _scope = self.parent.gpu.profiler_scope(cmd, "submit_cubemaps");
 
-            cmd.set_render_target_formats(
+            #[rustfmt::skip]
+            cmd.begin_rendering_rt(
                 &[
-                    self.main_view.light.light_diffuse.output_format(),
-                    self.main_view.light.light_specular_ibl.output_format(),
+                    Some((&self.main_view.light.light_diffuse, ColorLoadOp::Clear([0.0, 0.0, 0.0, 0.0]), StoreOp::Store)),
+                    Some((&self.main_view.light.light_specular_ibl, ColorLoadOp::Clear([0.0, 0.0, 0.0, 0.0]), StoreOp::Store)),
                 ],
                 None,
-            );
-            cmd.begin_rendering_secondary(
-                self.main_view.light.light_diffuse.resolution(),
-                &[
-                    vk::RenderingAttachmentInfo::default()
-                        .image_view(self.main_view.light.light_diffuse.view())
-                        .image_layout(vk::ImageLayout::COLOR_ATTACHMENT_OPTIMAL)
-                        .load_op(vk::AttachmentLoadOp::CLEAR)
-                        .clear_value(vk::ClearValue {
-                            color: vk::ClearColorValue {
-                                float32: [0.0, 0.0, 0.0, 0.0],
-                            },
-                        })
-                        .store_op(vk::AttachmentStoreOp::STORE),
-                    vk::RenderingAttachmentInfo::default()
-                        .image_view(self.main_view.light.light_specular_ibl.view())
-                        .image_layout(vk::ImageLayout::COLOR_ATTACHMENT_OPTIMAL)
-                        .load_op(vk::AttachmentLoadOp::CLEAR)
-                        .clear_value(vk::ClearValue {
-                            color: vk::ClearColorValue {
-                                float32: [0.0, 0.0, 0.0, 0.0],
-                            },
-                        })
-                        .store_op(vk::AttachmentStoreOp::STORE),
-                ],
-                None,
+                vk::RenderingFlags::CONTENTS_SECONDARY_COMMAND_BUFFERS
             );
 
             cmd.set_ffstate(FixedFunctionState::new(Some(23), Some(1), Some(3), Some(1)));
@@ -447,26 +338,15 @@ impl SceneRenderer {
                 ],
                 None,
             );
-            cmd.begin_rendering_secondary(
-                self.main_view.light.light_diffuse.resolution(),
+
+            #[rustfmt::skip]
+            cmd.begin_rendering_rt(
                 &[
-                    vk::RenderingAttachmentInfo::default()
-                        .image_view(self.main_view.light.light_diffuse.view())
-                        .image_layout(vk::ImageLayout::COLOR_ATTACHMENT_OPTIMAL)
-                        .load_op(vk::AttachmentLoadOp::LOAD)
-                        .store_op(vk::AttachmentStoreOp::STORE),
-                    vk::RenderingAttachmentInfo::default()
-                        .image_view(self.main_view.light.light_specular.view())
-                        .image_layout(vk::ImageLayout::COLOR_ATTACHMENT_OPTIMAL)
-                        .load_op(vk::AttachmentLoadOp::CLEAR)
-                        .clear_value(vk::ClearValue {
-                            color: vk::ClearColorValue {
-                                float32: [0.0, 0.0, 0.0, 0.0],
-                            },
-                        })
-                        .store_op(vk::AttachmentStoreOp::STORE),
+                    Some((&self.main_view.light.light_diffuse, ColorLoadOp::Load, StoreOp::Store)),
+                    Some((&self.main_view.light.light_specular, ColorLoadOp::Clear([0.0, 0.0, 0.0, 0.0]), StoreOp::Store)),
                 ],
                 None,
+                vk::RenderingFlags::CONTENTS_SECONDARY_COMMAND_BUFFERS
             );
 
             //         if use_hdri {
@@ -520,21 +400,14 @@ impl SceneRenderer {
 
         cmd.set_ffstate(FixedFunctionState::new(Some(0), Some(15), Some(1), Some(1)));
 
-        cmd.set_render_target_formats(&[self.main_view.output.output_format()], None);
         if let Some(debug_pipeline) = debug_pipeline {
-            cmd.begin_rendering(
-                self.main_view.light.light_diffuse.resolution(),
-                &[vk::RenderingAttachmentInfo::default()
-                    .image_view(self.main_view.output.view())
-                    .image_layout(vk::ImageLayout::COLOR_ATTACHMENT_OPTIMAL)
-                    .load_op(vk::AttachmentLoadOp::CLEAR)
-                    .clear_value(vk::ClearValue {
-                        color: vk::ClearColorValue {
-                            float32: [0.0, 0.0, 0.0, 1.0],
-                        },
-                    })
-                    .store_op(vk::AttachmentStoreOp::STORE)],
+            #[rustfmt::skip]
+            cmd.begin_rendering_rt(
+                &[
+                    Some((&self.main_view.output, ColorLoadOp::Clear([0.0, 0.0, 0.0, 1.0]), StoreOp::Store)),
+                ],
                 None,
+                vk::RenderingFlags::empty()
             );
 
             let p = &self.parent.globals.pipelines;
@@ -590,45 +463,17 @@ impl SceneRenderer {
             .distortion
             .transition(cmd, IMAGE_STATE_COLOR_ATTACHMENT);
 
-        cmd.set_render_target_formats(
+        #[rustfmt::skip]
+        cmd.begin_rendering_rt(
             &[
-                self.main_view.output.output_format(),
-                vk::Format::UNDEFINED,
-                vk::Format::UNDEFINED,
-                vk::Format::UNDEFINED,
-                self.main_view.light.distortion.output_format(),
+                Some((&self.main_view.output, ColorLoadOp::Load, StoreOp::Store)),
+                None,
+                None,
+                None,
+                Some((&self.main_view.light.distortion, ColorLoadOp::Load, StoreOp::Store,)),
             ],
-            Some(self.main_view.gbuffer.depth.output_format()),
-        );
-        cmd.begin_rendering(
-            self.main_view.light.light_diffuse.resolution(),
-            &[
-                vk::RenderingAttachmentInfo::default()
-                    .image_view(self.main_view.output.view())
-                    .image_layout(vk::ImageLayout::COLOR_ATTACHMENT_OPTIMAL)
-                    .load_op(vk::AttachmentLoadOp::LOAD)
-                    .store_op(vk::AttachmentStoreOp::STORE),
-                vk::RenderingAttachmentInfo::default(),
-                vk::RenderingAttachmentInfo::default(),
-                vk::RenderingAttachmentInfo::default(),
-                vk::RenderingAttachmentInfo::default()
-                    .image_view(self.main_view.light.distortion.view())
-                    .image_layout(vk::ImageLayout::COLOR_ATTACHMENT_OPTIMAL)
-                    .load_op(vk::AttachmentLoadOp::CLEAR)
-                    .clear_value(vk::ClearValue {
-                        color: vk::ClearColorValue {
-                            float32: [0.0, 0.0, 0.0, 0.0],
-                        },
-                    })
-                    .store_op(vk::AttachmentStoreOp::STORE),
-            ],
-            Some(
-                &vk::RenderingAttachmentInfo::default()
-                    .image_view(self.main_view.gbuffer.depth.depth_stencil_view())
-                    .image_layout(vk::ImageLayout::DEPTH_ATTACHMENT_OPTIMAL)
-                    .load_op(vk::AttachmentLoadOp::LOAD)
-                    .store_op(vk::AttachmentStoreOp::NONE),
-            ),
+            Some((&self.main_view.gbuffer.depth, DepthLoadOp::Load, StoreOp::None,)),
+            vk::RenderingFlags::CONTENTS_SECONDARY_COMMAND_BUFFERS,
         );
 
         {

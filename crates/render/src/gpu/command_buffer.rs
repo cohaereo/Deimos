@@ -237,35 +237,6 @@ impl CommandBuffer {
     pub fn begin_rendering(
         &self,
         resolution: (u32, u32),
-        // render_area: vk::Rect2D,
-        color_attachments: &[vk::RenderingAttachmentInfo<'_>],
-        depth_attachment: Option<&vk::RenderingAttachmentInfo<'_>>,
-    ) -> anyhow::Result<()> {
-        self.begin_rendering_with_flags(
-            resolution,
-            color_attachments,
-            depth_attachment,
-            vk::RenderingFlags::empty(),
-        )
-    }
-
-    pub fn begin_rendering_secondary(
-        &self,
-        resolution: (u32, u32),
-        color_attachments: &[vk::RenderingAttachmentInfo<'_>],
-        depth_attachment: Option<&vk::RenderingAttachmentInfo<'_>>,
-    ) -> anyhow::Result<()> {
-        self.begin_rendering_with_flags(
-            resolution,
-            color_attachments,
-            depth_attachment,
-            vk::RenderingFlags::CONTENTS_SECONDARY_COMMAND_BUFFERS,
-        )
-    }
-
-    pub fn begin_rendering_with_flags(
-        &self,
-        resolution: (u32, u32),
         color_attachments: &[vk::RenderingAttachmentInfo<'_>],
         depth_attachment: Option<&vk::RenderingAttachmentInfo<'_>>,
         flags: vk::RenderingFlags,
