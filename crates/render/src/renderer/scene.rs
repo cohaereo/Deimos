@@ -52,7 +52,7 @@ impl SceneRenderer {
         };
 
         r.set_global_channel_by_name("cubemap_sky_intensity", Vec4::splat(0.4));
-        r.set_global_channel_by_name("global_cubemap_intensity", Vec4::splat(50.0));
+        r.set_global_channel_by_name("global_cubemap_intensity", Vec4::splat(0.4));
 
         r.set_global_channel_by_name("global_ambient_intensity", Vec4::splat(5.0));
         r.set_global_channel_by_name("sun_direct_intensity", Vec4::splat(1.3));
@@ -389,10 +389,6 @@ impl SceneRenderer {
 
         self.main_view
             .gbuffer
-            .depth
-            .transition(cmd, IMAGE_STATE_DEPTH_ATTACHMENT);
-        self.main_view
-            .gbuffer
             .transition(cmd, IMAGE_STATE_SHADER_READ);
         self.main_view
             .light
@@ -457,12 +453,7 @@ impl SceneRenderer {
                     vk::RenderingAttachmentInfo::default()
                         .image_view(self.main_view.light.light_diffuse.view())
                         .image_layout(vk::ImageLayout::COLOR_ATTACHMENT_OPTIMAL)
-                        .load_op(vk::AttachmentLoadOp::CLEAR)
-                        .clear_value(vk::ClearValue {
-                            color: vk::ClearColorValue {
-                                float32: [0.0, 0.0, 0.0, 0.0],
-                            },
-                        })
+                        .load_op(vk::AttachmentLoadOp::LOAD)
                         .store_op(vk::AttachmentStoreOp::STORE),
                     vk::RenderingAttachmentInfo::default()
                         .image_view(self.main_view.light.light_specular.view())

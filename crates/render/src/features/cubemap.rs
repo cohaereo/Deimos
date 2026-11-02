@@ -124,16 +124,36 @@ impl FeatureRenderer for CubemapRenderer {
             translation,
         );
 
+        // const EPSILON: Vec4 = Vec4::splat(0.0001);
+        // let fade_neg_scale = Vec4::select(
+        //     self.cubemap.unk40_fade1.abs().cmpgt(EPSILON),
+        //     Vec4::ONE / self.cubemap.unk40_fade1,
+        //     Vec4::splat(1000.0),
+        // );
+        // let fade_pos_scale = Vec4::select(
+        //     self.cubemap.unk50_fade2.abs().cmpgt(EPSILON),
+        //     Vec4::ONE / self.cubemap.unk50_fade2,
+        //     Vec4::splat(1000.0),
+        // );
+        let scale = self.cubemap.volume_extents.xyz() / 0.5;
+        let bias = scale - Vec3::ONE;
+
         let [probe_res_x, probe_res_y, probe_res_z] = self.cubemap.probes_resolution;
+        let grid = Vec3::new(probe_res_x as f32, probe_res_y as f32, probe_res_z as f32);
+        let constants = CubemapPixelConstants {
+            fade_neg: scale.extend(0.0),
+            fade_pos: scale.extend(0.075),
+            fade_neg_bias: bias.extend(20.0),
+            fade_pos_bias: bias.extend(8.5),
+
+            ..CubemapPixelConstants::new(local_to_world, rotation, grid)
+        };
+
         let cb_ps = cmd
             .gpu()
             .frame()
             .upload
-            .upload_bytes(bytemuck::bytes_of(&CubemapPixelConstants::new(
-                local_to_world,
-                rotation,
-                Vec3::new(probe_res_x as f32, probe_res_y as f32, probe_res_z as f32),
-            )))
+            .upload_bytes(bytemuck::bytes_of(&constants))
             .unwrap();
 
         cmd.set_shader_constant_buffer_view(
@@ -199,12 +219,14 @@ pub struct CubemapTransform {
 }
 
 #[repr(C)]
-#[derive(Clone, Copy, Pod, Zeroable)]
+#[derive(Debug, Clone, Copy, Pod, Zeroable)]
 pub struct CubemapPixelConstants {
-    pub fade_neg: Vec4,        // cb11[0]
-    pub fade_pos: Vec4,        // cb11[1]
-    pub fade_neg_bias: Vec4,   // cb11[2], .w = intensity
-    pub fade_pos_bias: Vec4,   // cb11[3], .w = cube LOD
+    pub fade_neg: Vec4, // cb11[0]
+    pub fade_pos: Vec4, // cb11[1]
+
+    pub fade_neg_bias: Vec4, // cb11[2], .w = intensity
+    pub fade_pos_bias: Vec4, // cb11[3], .w = cube LOD
+
     pub unk4: Vec4,            // cb11[4]
     pub local_to_world: Mat4,  // cb11[5..=8], row-major 3x4
     pub world_to_local: Mat4,  // cb11[9..=11]
