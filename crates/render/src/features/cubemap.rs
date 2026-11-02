@@ -124,6 +124,7 @@ impl FeatureRenderer for CubemapRenderer {
             translation,
         );
 
+        // TODO(cohae): Fade parameters need to be calculated from the cubemap data
         // const EPSILON: Vec4 = Vec4::splat(0.0001);
         // let fade_neg_scale = Vec4::select(
         //     self.cubemap.unk40_fade1.abs().cmpgt(EPSILON),

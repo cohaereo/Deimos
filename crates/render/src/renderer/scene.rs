@@ -576,28 +576,50 @@ impl SceneRenderer {
 
         self.main_view
             .output
+            .transition(cmd, IMAGE_STATE_COLOR_ATTACHMENT);
+
+        cmd.set_render_target_formats(
+            &[self.main_view.output.output_format()],
+            Some(self.main_view.gbuffer.depth.output_format()),
+        );
+        cmd.begin_rendering(
+            self.main_view.light.light_diffuse.resolution(),
+            &[vk::RenderingAttachmentInfo::default()
+                .image_view(self.main_view.output.view())
+                .image_layout(vk::ImageLayout::COLOR_ATTACHMENT_OPTIMAL)
+                .load_op(vk::AttachmentLoadOp::LOAD)
+                .store_op(vk::AttachmentStoreOp::STORE)],
+            Some(
+                &vk::RenderingAttachmentInfo::default()
+                    .image_view(self.main_view.gbuffer.depth.depth_stencil_view())
+                    .image_layout(vk::ImageLayout::DEPTH_ATTACHMENT_OPTIMAL)
+                    .load_op(vk::AttachmentLoadOp::LOAD)
+                    .store_op(vk::AttachmentStoreOp::NONE),
+            ),
+        );
+
+        {
+            //     if use_hdri {
+            //         cmd.set_render_targets(&[&self.main_view.output], None);
+            //         self.parent.draw_hdri_background(cmd);
+            //         self.parent.draw_hdri_background(cmd);
+            //     }
+
+            {
+                self.parent.globals.scopes.transparent.bind(cmd);
+                self.parent.globals.scopes.transparent_advanced.bind(cmd);
+                let _scope = self.parent.gpu.profiler_scope(cmd, "submit_transparents");
+                cmd.set_ffstate(FixedFunctionState::new(Some(8), Some(15), Some(2), Some(1)));
+                self.submit_stage(cmd, view, RenderStage::Transparents);
+
+                // self.parent.immediate.draw_shapes(cmd);
+            }
+        }
+        cmd.end_rendering();
+
+        self.main_view
+            .output
             .transition(cmd, IMAGE_STATE_SHADER_READ);
-
-        //     if use_hdri {
-        //         cmd.set_render_targets(&[&self.main_view.output], None);
-        //         self.parent.draw_hdri_background(cmd);
-        //         self.parent.draw_hdri_background(cmd);
-        //     }
-
-        //     {
-        //         cmd.set_render_targets(
-        //             &[&self.main_view.output],
-        //             Some(&self.main_view.gbuffer.depth),
-        //         );
-        //         self.parent.globals.scopes.transparent.bind(cmd);
-        //         self.parent.globals.scopes.transparent_advanced.bind(cmd);
-        //         let _scope = self.parent.gpu.profiler_scope(cmd, "submit_transparents");
-        //         cmd.set_ffstate(FixedFunctionState::new(Some(8), Some(15), Some(2), Some(1)));
-        //         self.submit_stage_serial(cmd, stream, view, RenderStage::Transparents);
-
-        //         self.parent.immediate.draw_shapes(cmd);
-        //     }
-        // }
     }
 
     // fn render_shadow_views(
