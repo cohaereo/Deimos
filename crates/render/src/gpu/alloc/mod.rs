@@ -99,6 +99,11 @@ impl Gpu {
                     .mip_levels(desc.mip_levels)
                     .array_layers(desc.array_layers)
                     .samples(desc.samples)
+                    .flags(if desc.array_layers == 6 {
+                        vk::ImageCreateFlags::CUBE_COMPATIBLE
+                    } else {
+                        vk::ImageCreateFlags::empty()
+                    })
                     .tiling(desc.tiling)
                     .usage(desc.usage)
                     .sharing_mode(desc.sharing_mode)
