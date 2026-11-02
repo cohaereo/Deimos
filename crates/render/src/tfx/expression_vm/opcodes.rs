@@ -102,7 +102,9 @@ pub enum Opcode {
     PopTemp,
 
     PopTextureView = 0x59,
+    // TODO(cohae): Update these names, they're getting out of sync and it's annoying
     Unknown0x57,
+    Unknown0x5b,
 
     PopSamplerState = 0x5D,
     PopUav,
@@ -214,7 +216,8 @@ impl Opcode {
             | Self::LerpConstantSaturated
             | Self::Spline4Const
             | Self::Spline8ChainConst
-            | Self::Gradient4Const => 2,
+            | Self::Gradient4Const
+            | Self::Unknown0x5b => 2,
 
             Self::PushExternInputFloat
             | Self::PushExternInputVec4
@@ -357,7 +360,7 @@ impl Opcode {
             | Self::Unknown0x65
             | Self::Unknown0x66
             | Self::Unknown0x67
-            | Self::Unknown0x49 |  Self::Unknown0x57  | Self::Unknown0x5a | Self::Unknown0x5e
+            | Self::Unknown0x49 |  Self::Unknown0x57 | Self::Unknown0x5b | Self::Unknown0x5a | Self::Unknown0x5e
             => ExpressionDataSource::UNKNOWN,
 
         }

@@ -440,6 +440,8 @@ extern_struct! {
 		0x20 => unk20: Mat4,
 		0xA0 => unka0: Vec4,
 		0xB0 => unkb0: Vec4,
+		0xC0 => unkc0: Vec4,
+		0xD0 => unkd0: Vec4,
 		0x100 => unk100: Vec4,
 		0x110 => unk110: Vec4,
 		0x124 => unk124: f32,
@@ -970,7 +972,6 @@ extern_struct! {
 		0x28 => unk28: TextureView,
 		0x40 => unk40: Vec4,
 		0x50 => unk50: Vec4,
-		0x70 => unk70: f32,
 	}
 }
 
@@ -1088,6 +1089,9 @@ extern_struct! {
 		0x40 => unk40: Vec4,
 		0x50 => unk50: TextureView,
 		0x60 => unk60: Vec4,
+		0x70 => unk70: TextureView,
+		0x80 => unk80: Vec4,
+		0x90 => unk90: Vec4,
 		0xB0 => unkb0: TextureView,
 		0xB8 => unkb8: f32,
 		0xBC => unkbc: f32,
@@ -1131,7 +1135,7 @@ extern_struct! {
 }
 
 extern_struct! {
-	struct ParticleFastpath("particle_fastpath") {
+	struct CubemapDebug("cubemap_debug") {
 		0x00 => unk00: Mat4,
 		0x40 => unk40: Mat4,
 		0x80 => unk80: Vec4,
@@ -1140,7 +1144,7 @@ extern_struct! {
 }
 
 extern_struct! {
-	struct TemporalReprojection("temporal_reprojection") {
+	struct VolumetricsPass("volumetrics_pass") {
 		0x00 => unk00: TextureView,
 		0x08 => unk08: TextureView,
 		0x10 => unk10: f32,
@@ -1148,7 +1152,7 @@ extern_struct! {
 }
 
 extern_struct! {
-	struct FxaaCompute("fxaa_compute") {
+	struct TemporalReprojection("temporal_reprojection") {
 		0x00 => unk00: TextureView,
 		0x08 => unk08: TextureView,
 		0x10 => unk10: TextureView,
@@ -1158,7 +1162,7 @@ extern_struct! {
 }
 
 extern_struct! {
-	struct GearDye("gear_dye") {
+	struct UberDepth("uber_depth") {
 		0x00 => unk00: TextureView,
 		0x18 => unk18: UnorderedAccessView,
 		0x28 => unk28: UnorderedAccessView,
@@ -1179,13 +1183,13 @@ extern_struct! {
 }
 
 extern_struct! {
-	struct ShadowBlendWithPrevious("shadow_blend_with_previous") {
+	struct Cubemaps("cubemaps") {
 		0x00 => unk00: TextureView,
 	}
 }
 
 extern_struct! {
-	struct DebugShadingOutput("debug_shading_output") {
+	struct ShadowBlendWithPrevious("shadow_blend_with_previous") {
 		0x00 => unk00: TextureView,
 		0x08 => unk08: TextureView,
 		0x10 => unk10: TextureView,
@@ -1196,7 +1200,7 @@ extern_struct! {
 }
 
 extern_struct! {
-	struct Ssao3D("ssao3_d") {
+	struct DebugShadingOutput("debug_shading_output") {
 		0x00 => unk00: f32,
 		0x20 => unk20: Vec4,
 		0x30 => unk30: Vec4,
@@ -1208,17 +1212,7 @@ extern_struct! {
 
 extern_struct! {
 	struct WaterDisplacement("water_displacement") {
-		0x00 => unk00: TextureView,
 		0x08 => unk08: TextureView,
-		0x10 => unk10: f32,
-		0x14 => unk14: f32,
-		0x18 => unk18: f32,
-		0x1C => unk1c: f32,
-		0x20 => unk20: f32,
-		0x24 => unk24: f32,
-		0x28 => unk28: f32,
-		0x2C => unk2c: f32,
-		0x30 => unk30: f32,
 	}
 }
 
@@ -1269,6 +1263,8 @@ extern_struct! {
 		0x2C => unk2c: f32,
 		0x30 => unk30: f32,
 		0x34 => unk34: f32,
+		0x3C => unk3c: f32,
+		0x40 => unk40: TextureView,
 	}
 }
 
@@ -1323,7 +1319,7 @@ extern_struct! {
 }
 
 extern_struct! {
-	struct Taa("taa") {
+	struct XegtaoPrefilter("xegtao_prefilter") {
 		0x00 => unk00: TextureView,
 		0x08 => unk08: TextureView,
 		0x10 => unk10: UnorderedAccessView,
@@ -1340,7 +1336,7 @@ extern_struct! {
 }
 
 extern_struct! {
-	struct FirstPersonShadows("first_person_shadows") {
+	struct XegtaoMain("xegtao_main") {
 		0x08 => unk08: TextureView,
 		0x10 => unk10: TextureView,
 		0x18 => unk18: UnorderedAccessView,
@@ -1355,7 +1351,7 @@ extern_struct! {
 }
 
 extern_struct! {
-	struct SkinningCompute("skinning_compute") {
+	struct XegtaoDenoise("xegtao_denoise") {
 		0x00 => unk00: TextureView,
 		0x08 => unk08: TextureView,
 		0x10 => unk10: UnorderedAccessView,
@@ -1366,7 +1362,7 @@ extern_struct! {
 }
 
 extern_struct! {
-	struct Ssr("ssr") {
+	struct Taa("taa") {
 		0x00 => unk00: f32,
 		0x04 => unk04: f32,
 		0x08 => unk08: f32,
@@ -1388,7 +1384,7 @@ extern_struct! {
 }
 
 extern_struct! {
-	struct StylizedDropShadow("stylized_drop_shadow") {
+	struct FirstPersonShadows("first_person_shadows") {
 		0x00 => unk00: Mat4,
 		0x40 => unk40: TextureView,
 		0x50 => unk50: Vec4,
@@ -1397,7 +1393,7 @@ extern_struct! {
 }
 
 extern_struct! {
-	struct SsrTrace("ssr_trace") {
+	struct SkinningCompute("skinning_compute") {
 		0x00 => unk00: UnorderedAccessView,
 		0x08 => unk08: UnorderedAccessView,
 		0x10 => unk10: TextureView,
@@ -1428,7 +1424,7 @@ extern_struct! {
 }
 
 extern_struct! {
-	struct TextureCameraDownsample("texture_camera_downsample") {
+	struct Ssr("ssr") {
 		0x00 => unk00: TextureView,
 		0x08 => unk08: TextureView,
 		0x10 => unk10: TextureView,
@@ -1465,7 +1461,7 @@ extern_struct! {
 }
 
 extern_struct! {
-	struct WaterReflection("water_reflection") {
+	struct StylizedDropShadow("stylized_drop_shadow") {
 		0x00 => unk00: f32,
 		0x04 => unk04: f32,
 		0x08 => unk08: f32,
@@ -1479,7 +1475,7 @@ extern_struct! {
 }
 
 extern_struct! {
-	struct OcclusionCullingReprojectDepth("occlusion_culling_reproject_depth") {
+	struct SsrTrace("ssr_trace") {
 		0x00 => unk00: TextureView,
 		0x08 => unk08: TextureView,
 		0x10 => unk10: UnorderedAccessView,
@@ -1492,7 +1488,7 @@ extern_struct! {
 }
 
 extern_struct! {
-	struct OcclusionCullingVisibilityTesting("occlusion_culling_visibility_testing") {
+	struct TextureCameraDownsample("texture_camera_downsample") {
 		0x00 => unk00: TextureView,
 		0x10 => unk10: Vec4,
 		0x20 => unk20: f32,
@@ -1500,7 +1496,7 @@ extern_struct! {
 }
 
 extern_struct! {
-	struct Unknown114("unknown114") {
+	struct OcclusionCullingReprojectDepth("occlusion_culling_reproject_depth") {
 		0x00 => unk00: TextureView,
 		0x08 => unk08: UnorderedAccessView,
 		0x20 => unk20: Vec4,
@@ -1508,7 +1504,7 @@ extern_struct! {
 }
 
 extern_struct! {
-	struct Unknown115("unknown115") {
+	struct OcclusionCullingVisibilityTesting("occlusion_culling_visibility_testing") {
 		0x00 => unk00: TextureView,
 		0x08 => unk08: TextureView,
 		0x18 => unk18: UnorderedAccessView,
@@ -1521,7 +1517,7 @@ extern_struct! {
 }
 
 extern_struct! {
-	struct Unknown116("unknown116") {
+	struct VariableRateShading("variable_rate_shading") {
 		0x00 => unk00: TextureView,
 		0x08 => unk08: TextureView,
 		0x10 => unk10: UnorderedAccessView,
