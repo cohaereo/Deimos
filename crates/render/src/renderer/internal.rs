@@ -17,6 +17,7 @@ pub struct InternalResources {
     // pub pso_generate_shadow_mask: d3d12::PipelineState,
     pub hdri: Texture,
     pub default_hemisphere: Texture,
+    pub white: Texture,
 }
 
 impl InternalResources {
@@ -229,6 +230,13 @@ impl InternalResources {
         )
         .context("default_hemisphere")?;
 
+        let white = Texture::load(
+            gpu,
+            &TextureDesc::texture_2d("white", DxgiFormat::R8G8B8A8_UNORM, 1, 1),
+            &[255, 255, 255, 255],
+        )
+        .context("white")?;
+
         Ok(Self {
             // rs_hdri_lighting,
             // pso_hdri_lighting,
@@ -240,6 +248,7 @@ impl InternalResources {
             // pso_generate_shadow_mask,
             hdri,
             default_hemisphere,
+            white,
         })
     }
 }

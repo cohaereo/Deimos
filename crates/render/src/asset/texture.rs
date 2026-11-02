@@ -304,6 +304,9 @@ impl Texture {
         // resource.resource().set_debug_name(&desc.name);
         let (view_type, layer_count) = match desc.image_type {
             vk::ImageType::TYPE_3D => (vk::ImageViewType::TYPE_3D, 1),
+            vk::ImageType::TYPE_2D if array_size == 6 => {
+                (vk::ImageViewType::CUBE, array_size as u32)
+            }
             vk::ImageType::TYPE_2D if array_size > 1 => {
                 (vk::ImageViewType::TYPE_2D_ARRAY, array_size as u32)
             }

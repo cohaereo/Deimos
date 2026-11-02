@@ -596,6 +596,8 @@ impl Scene {
                 ..Default::default()
             };
 
+            ext.cubemaps.vertex_ao = self.renderer.internal.white.view.into();
+
             self.camera.aspect_ratio = resolution.0 as f32 / resolution.1 as f32;
             self.controller.update_rotation(&mut self.camera);
             self.camera.update();

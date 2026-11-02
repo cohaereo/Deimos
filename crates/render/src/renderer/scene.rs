@@ -52,7 +52,7 @@ impl SceneRenderer {
         };
 
         r.set_global_channel_by_name("cubemap_sky_intensity", Vec4::splat(0.4));
-        r.set_global_channel_by_name("global_cubemap_intensity", Vec4::splat(0.4));
+        r.set_global_channel_by_name("global_cubemap_intensity", Vec4::splat(50.0));
 
         r.set_global_channel_by_name("global_ambient_intensity", Vec4::splat(5.0));
         r.set_global_channel_by_name("sun_direct_intensity", Vec4::splat(1.3));
@@ -435,7 +435,7 @@ impl SceneRenderer {
                 None,
             );
 
-            cmd.set_ffstate(FixedFunctionState::new(Some(2), None, Some(2), Some(2)));
+            cmd.set_ffstate(FixedFunctionState::new(Some(23), Some(1), Some(3), Some(1)));
             cmd.flush_states();
             self.submit_stage(cmd, view, RenderStage::Cubemaps);
             cmd.end_rendering();

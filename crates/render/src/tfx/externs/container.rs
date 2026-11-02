@@ -150,8 +150,7 @@ local_extern_container! {
     speedtree_placements: SpeedtreePlacements,
     simple_geometry: SimpleGeometry,
     deferred_light: DeferredLight,
-    decal: Decal,
-    cubemaps: Cubemaps
+    decal: Decal
 }
 
 const GLOBAL_CHANNEL_NAMES: &[&str] = &[
