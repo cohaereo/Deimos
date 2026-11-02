@@ -105,6 +105,7 @@ pub struct LightBuffer {
     pub light_diffuse: RenderTarget,
     pub light_specular: RenderTarget,
     pub light_specular_ibl: RenderTarget,
+    pub distortion: RenderTarget,
 
     resolution: (u32, u32),
 }
@@ -133,6 +134,14 @@ impl LightBuffer {
                 "light_specular_ibl",
                 vk::Format::B10G11R11_UFLOAT_PACK32,
                 vk::Format::B10G11R11_UFLOAT_PACK32,
+                resolution,
+            )
+            .context("allocating render target")?,
+            distortion: RenderTarget::new(
+                gpu,
+                "distortion",
+                vk::Format::R8G8B8A8_UNORM,
+                vk::Format::R8G8B8A8_UNORM,
                 resolution,
             )
             .context("allocating render target")?,

@@ -202,7 +202,7 @@ impl<'a> DescriptorWriter<'a> {
             .get_texture(
                 self.gpu,
                 "descriptor-fallback".to_string(),
-                Some([0, 0, 0, 0]),
+                Some(([0, 0, 0, 0], 4, 4, 1)),
             )
             .unwrap_or_else(|e| {
                 error!("Failed to create fallback texture for descriptor: {e:?}");

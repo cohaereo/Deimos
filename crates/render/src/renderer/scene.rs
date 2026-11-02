@@ -576,19 +576,52 @@ impl SceneRenderer {
 
         self.main_view
             .output
+            .transition(cmd, IMAGE_STATE_TRANSFER_SRC);
+        self.main_view
+            .shaded_read
+            .transition(cmd, IMAGE_STATE_TRANSFER_DST);
+        cmd.copy_render_target(&self.main_view.output, &self.main_view.shaded_read);
+
+        self.main_view
+            .output
+            .transition(cmd, IMAGE_STATE_COLOR_ATTACHMENT);
+        self.main_view
+            .light
+            .distortion
             .transition(cmd, IMAGE_STATE_COLOR_ATTACHMENT);
 
         cmd.set_render_target_formats(
-            &[self.main_view.output.output_format()],
+            &[
+                self.main_view.output.output_format(),
+                vk::Format::UNDEFINED,
+                vk::Format::UNDEFINED,
+                vk::Format::UNDEFINED,
+                self.main_view.light.distortion.output_format(),
+            ],
             Some(self.main_view.gbuffer.depth.output_format()),
         );
         cmd.begin_rendering(
             self.main_view.light.light_diffuse.resolution(),
-            &[vk::RenderingAttachmentInfo::default()
-                .image_view(self.main_view.output.view())
-                .image_layout(vk::ImageLayout::COLOR_ATTACHMENT_OPTIMAL)
-                .load_op(vk::AttachmentLoadOp::LOAD)
-                .store_op(vk::AttachmentStoreOp::STORE)],
+            &[
+                vk::RenderingAttachmentInfo::default()
+                    .image_view(self.main_view.output.view())
+                    .image_layout(vk::ImageLayout::COLOR_ATTACHMENT_OPTIMAL)
+                    .load_op(vk::AttachmentLoadOp::LOAD)
+                    .store_op(vk::AttachmentStoreOp::STORE),
+                vk::RenderingAttachmentInfo::default(),
+                vk::RenderingAttachmentInfo::default(),
+                vk::RenderingAttachmentInfo::default(),
+                vk::RenderingAttachmentInfo::default()
+                    .image_view(self.main_view.light.distortion.view())
+                    .image_layout(vk::ImageLayout::COLOR_ATTACHMENT_OPTIMAL)
+                    .load_op(vk::AttachmentLoadOp::CLEAR)
+                    .clear_value(vk::ClearValue {
+                        color: vk::ClearColorValue {
+                            float32: [0.0, 0.0, 0.0, 0.0],
+                        },
+                    })
+                    .store_op(vk::AttachmentStoreOp::STORE),
+            ],
             Some(
                 &vk::RenderingAttachmentInfo::default()
                     .image_view(self.main_view.gbuffer.depth.depth_stencil_view())

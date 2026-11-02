@@ -566,6 +566,7 @@ impl Scene {
             };
 
             *ext.transparent = externs::Transparent {
+                unk48: self.scene_renderer.main_view.shaded_read.view().into(),
                 // unk00: view.atmosphere.sky_lookup_near.into(),
                 // unk10: view.atmosphere.sky_lookup_far.into(),
                 // unk00: todo!(), // t11, Atmosphere (near?)
@@ -623,7 +624,7 @@ impl Scene {
                 0.0,
                 0.0,
             );
-            ext.deferred.deferred_depth = view.gbuffer.depth.depth_view().into();
+            ext.deferred.deferred_depth = view.gbuffer.depth_read.depth_view().into();
             ext.deferred.deferred_rt0 = view.gbuffer.albedo.view().into();
             ext.deferred.deferred_rt1 = view.gbuffer.normal.view().into();
             ext.deferred.deferred_rt2 = view.gbuffer.rt3.view().into();

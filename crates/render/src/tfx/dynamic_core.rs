@@ -435,14 +435,30 @@ impl DynamicCore {
     }
 }
 
-const fn extern_filler(index: ExternIndex, offset: u32) -> Option<[u8; 4]> {
+#[rustfmt::skip]
+const fn extern_filler(index: ExternIndex, offset: u32) -> Option<([u8; 4], u32, u32, u32)> {
     match (index, offset) {
-        (ExternIndex::ShadowMask, _) => Some([255, 255, 255, 255]),
-        (ExternIndex::Atmosphere, 0xF0) => Some([0x00, 0x00, 0x00, 0xFF]),
-        (ExternIndex::Atmosphere, _) => Some([0x00, 0x00, 0x00, 0xFF]),
-        (ExternIndex::Transparent, 0) => Some([0x00, 0x00, 0x00, 0x00]),
-        (ExternIndex::Transparent, 0x50) => Some([0xFF, 0xFF, 0xFF, 0xFF]),
-        (ExternIndex::Transparent, _) => Some([0x00, 0x00, 0x00, 0xFF]),
+        //                                          fill color               w  h  d
+        (ExternIndex::ShadowMask, _)      => Some(([0xFF, 0xFF, 0xFF, 0xFF], 4, 4, 1)),
+        (ExternIndex::Atmosphere, 0xF0)   => Some(([0x00, 0x00, 0x00, 0xFF], 4, 4, 1)),
+        (ExternIndex::Atmosphere, _)      => Some(([0x00, 0x00, 0x00, 0xFF], 4, 4, 1)),
+
+        (ExternIndex::SoftDeform, 0x08)   => Some(([0xFF, 0xFF, 0xFF, 0xFF], 4, 4, 1)),
+
+        // 0x18-0x38 are Light probes
+        (ExternIndex::Transparent, 0x18)  => Some(([0x00, 0x00, 0x00, 0xFF], 4, 4, 4)),
+        (ExternIndex::Transparent, 0x28)  => Some(([0x00, 0x00, 0x00, 0xFF], 4, 4, 4)),
+        (ExternIndex::Transparent, 0x30)  => Some(([0x00, 0x00, 0x00, 0xFF], 4, 4, 4)),
+        (ExternIndex::Transparent, 0x38)  => Some(([0x00, 0x00, 0x00, 0xFF], 4, 4, 4)),
+
+        (ExternIndex::Transparent, 0x40)  => Some(([0xFF, 0x00, 0x00, 0xFF], 4, 4, 4)),
+        (ExternIndex::Transparent, 0x78)  => Some(([0xFF, 0xFF, 0xFF, 0xFF], 4, 4, 4)),
+        (ExternIndex::Transparent, 0x48)  => Some(([0x00, 0x00, 0x00, 0x00], 4, 4, 1)),
+        // might be depth/angle lookup?
+        (ExternIndex::Transparent, 0x20)  => Some(([0xFF, 0xFF, 0xFF, 0xFF], 4, 4, 1)),
+        (ExternIndex::Transparent, 0x00)  => Some(([0x00, 0x00, 0x00, 0x00], 4, 4, 1)),
+        (ExternIndex::Transparent, 0x50)  => Some(([0xFF, 0xFF, 0xFF, 0xFF], 4, 4, 1)),
+        (ExternIndex::Transparent, _)     => Some(([0x00, 0x00, 0x00, 0xFF], 4, 4, 1)),
         _ => None,
     }
 }
