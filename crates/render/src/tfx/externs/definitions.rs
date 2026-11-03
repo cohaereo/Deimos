@@ -47,7 +47,7 @@ extern_struct! {
         0x230 => unk230: TextureView,
         0x240 => unk240: Vec4,
         0x250 => unk250: Vec4 > default(vec4(1.0, 0.0, 1.0, 0.0)),
-        0x260 => unk260: Vec4,
+        0x260 => unk260: Vec4 > default(vec4(1.1, 0.25, 10.0, 0.0)),
         0x270 => unk270: Vec4,
         0x280 => unk280: Vec4 > default(Vec4::ONE),
     }

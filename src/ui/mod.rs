@@ -19,6 +19,7 @@ use crate::{
 pub mod colors;
 mod scene;
 // pub mod sodi;
+pub mod icons;
 mod style;
 pub mod tabs;
 pub mod util;

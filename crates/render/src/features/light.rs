@@ -34,6 +34,7 @@ pub struct LightRenderer {
     vb: VertexBuffer,
     ib: IndexBuffer,
 
+    unk50: Vec4,
     light_space_transform: glam::Mat4,
     bounds: Option<AxisAlignedBBox>,
 }
@@ -49,6 +50,7 @@ impl LightRenderer {
             light.technique_lighting_apply,
             light.technique_volumetrics,
             // light.technique_light_probe_apply,
+            light.unk50,
             light.light_space_transform,
             Some(bounds),
         )
@@ -62,6 +64,7 @@ impl LightRenderer {
             renderer,
             light.technique_lighting_apply,
             light.technique_volumetrics,
+            light.unk50,
             light.light_space_transform,
             None,
         )
@@ -72,6 +75,7 @@ impl LightRenderer {
         technique_shading: TagHash,
         _technique_volumetrics: TagHash,
         // technique_light_probe: TagHash,
+        unk50: Vec4,
         light_space_transform: Mat4,
         bounds: Option<AxisAlignedBBox>,
     ) -> anyhow::Result<Box<Self>> {
@@ -107,6 +111,7 @@ impl LightRenderer {
             // technique_light_probe_apply: Technique::load(&renderer.gpu, technique_light_probe)?,
             vb,
             ib,
+            unk50,
             light_space_transform,
             bounds,
         }))
@@ -283,9 +288,11 @@ impl FeatureRenderer for LightRenderer {
                 unk40: (view_translation_inverse_mat4 * light_local_to_world).inverse(),
                 unkc0: local_to_world_relative,
 
+                unk140: self.unk50,
                 unk150: 1.0,
-                unk154: 0.0,
-                unk158: 0.0,
+                unk154: 1.0,
+                unk158: 1.0,
+                unk160: 1.0,
 
                 ..Default::default()
             }));

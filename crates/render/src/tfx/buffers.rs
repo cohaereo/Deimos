@@ -24,6 +24,9 @@ pub struct Gbuffer {
 }
 
 impl Gbuffer {
+    const NORMAL_FORMAT: vk::Format = vk::Format::A2B10G10R10_UNORM_PACK32;
+    // const NORMAL_FORMAT: vk::Format = vk::Format::R16G16B16A16_SFLOAT;
+
     pub fn new(gpu: &Arc<Gpu>, resolution: (u32, u32)) -> anyhow::Result<Self> {
         Ok(Self {
             albedo: RenderTarget::new(
@@ -37,16 +40,16 @@ impl Gbuffer {
             normal: RenderTarget::new(
                 gpu,
                 "deferred_normal",
-                vk::Format::A2B10G10R10_UNORM_PACK32,
-                vk::Format::A2B10G10R10_UNORM_PACK32,
+                Self::NORMAL_FORMAT,
+                Self::NORMAL_FORMAT,
                 resolution,
             )
             .context("allocating render target")?,
             normal_read: RenderTarget::new(
                 gpu,
                 "deferred_normal_read",
-                vk::Format::A2B10G10R10_UNORM_PACK32,
-                vk::Format::A2B10G10R10_UNORM_PACK32,
+                Self::NORMAL_FORMAT,
+                Self::NORMAL_FORMAT,
                 resolution,
             )
             .context("allocating render target")?,

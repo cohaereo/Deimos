@@ -34,6 +34,8 @@ use itertools::multizip;
 use tiger_parse::{PackageManagerExt, TigerReadable};
 use tiger_pkg::package_manager;
 
+use crate::world::{Icon, Label};
+
 #[macro_export]
 macro_rules! once {
     () => {{
@@ -350,6 +352,8 @@ pub fn load_component(
                     DynamicRenderObject::new(renderer, renderer.add_object(render_obj)),
                     bb,
                     // shadowmap,
+                    Icon("light"),
+                    Label(format!("Deferred Light {}", data.light.taghash())),
                 ),
             )?;
         }

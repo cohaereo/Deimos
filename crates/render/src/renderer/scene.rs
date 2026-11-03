@@ -64,8 +64,20 @@ impl SceneRenderer {
         r.set_global_channel_by_id(0x2C538179, Vec4::splat(0.1)); // dims some very bright sky objects
         r.set_global_channel_by_id(0x2E538443, Vec4::splat(1.0)); // fixes marathon/planet rings not appearing
 
-        r.set_global_channel_by_id(0xCF70AC7C, Vec4::splat(0.0)); // something about reflectivity (zero fixes "reflection acne")
-        r.set_global_channel_by_id(0x471E28F2, Vec4::splat(0.0)); // something about reflectivity (zero fixes "reflection acne")
+        // Controls cubemap reflectivity
+        // TODO(cohae): We should probably turn these off when using SSR (alternatively we could also keep cubemaps and blend both together)
+        r.set_global_channel_by_id(0xCF70AC7C, Vec4::splat(0.0));
+        r.set_global_channel_by_id(0x471E28F2, Vec4::splat(0.5));
+
+        // Fixes some deferred lights not showing up
+        r.set_global_channel_by_id(0xECA86879, Vec4::splat(1.0));
+        r.set_global_channel_by_id(0xECA8687A, Vec4::splat(1.0));
+        r.set_global_channel_by_id(0xECA8687B, Vec4::splat(1.0));
+        r.set_global_channel_by_id(0xECA8687C, Vec4::splat(1.0));
+        r.set_global_channel_by_id(0xECA8687D, Vec4::splat(1.0));
+        r.set_global_channel_by_id(0xECA8687E, Vec4::splat(1.0));
+        r.set_global_channel_by_id(0xECA8687F, Vec4::splat(1.0));
+        r.set_global_channel_by_id(0xECA86870, Vec4::splat(1.0));
 
         Ok(r)
     }

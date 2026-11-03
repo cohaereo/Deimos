@@ -214,7 +214,6 @@ const GLOBAL_CHANNEL_NAMES: &[&str] = &[
     "fx_channel_05",
     "character_lighting_scale_ao",
     "character_lighting_scale_emissive",
-    "sky_chromatic_bake_end",
     "screenspace_reflection_intensity",
     "global_ambient_intensity",
     "global_cubemap_intensity",

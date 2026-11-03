@@ -8,6 +8,7 @@ use deimos_data::tfx::{
     FeatureRendererSubscription, features::dynamic::RenderStageSubscription,
     geometry::AxisAlignedBBox,
 };
+use deimos_ecs::transform::Transform;
 use deimos_render::{
     camera::{Camera, CameraProjection},
     ecs::{s_extract_frame_packet, s_update_object_channels, s_visibility_test},
@@ -37,10 +38,11 @@ use umbra::QueryErrorCode;
 use crate::{
     app::SharedState,
     ui::{
-        GuiRenderer,
+        GuiRenderer, icons,
         scene::controller::CameraController,
         util::{ExternalDataWidgetExt, UiExt, format_bytes},
     },
+    world::{Icon, Label},
 };
 
 pub mod controller;
@@ -73,6 +75,7 @@ pub struct Scene {
     keep_settings_open: bool,
     show_channel_editor: bool,
     only_show_used_channels: bool,
+    draw_gizmos: bool,
 
     umbra_enabled: bool,
     umbra_result: QueryErrorCode,
@@ -112,6 +115,8 @@ impl Scene {
             keep_settings_open: false,
             show_channel_editor: false,
             only_show_used_channels: true,
+            draw_gizmos: false,
+
             umbra_result: QueryErrorCode::Ok,
             umbra_enabled: true,
         })
@@ -184,6 +189,40 @@ impl Scene {
             if !ui.is_rect_visible(r.rect) {
                 return;
             }
+
+            let size_pixels = size * ui.ctx().pixels_per_point();
+            let resolution = (size_pixels.x as u32, size_pixels.y as u32);
+
+            self.controller.update(&mut self.camera, ui, &r, delta_time);
+            self.camera.aspect_ratio = resolution.0 as f32 / resolution.1 as f32;
+            self.controller.update_rotation(&mut self.camera);
+            self.camera.update();
+
+            if self.draw_gizmos {
+                self.draw_gizmos(ui, r.rect);
+            }
+
+            if self.animate_time_of_day {
+                self.time_of_day += delta_time;
+                self.time_of_day = self.time_of_day.rem_euclid(3600.0);
+            }
+
+            if r.dragged_by(egui::PointerButton::Middle) {
+                let delta_adjusted = r.drag_delta() / 4.0;
+                self.sun_light_angle += delta_adjusted.x;
+                self.sun_light_angle = self.sun_light_angle.rem_euclid(360.0);
+            }
+
+            let sun_light_direction = if self.render_mode == RenderMode::Lookdev {
+                vec3(0.510, 0.317, 0.799).normalize()
+            } else {
+                vec3(
+                    self.sun_light_angle.to_radians().cos(),
+                    self.sun_light_angle.to_radians().sin(),
+                    0.7,
+                )
+                .normalize()
+            };
 
             let mut bar_rect = r.rect;
             bar_rect.set_height(32.0);
@@ -397,33 +436,6 @@ impl Scene {
                 }
             });
 
-            let size_pixels = size * ui.ctx().pixels_per_point();
-            let resolution = (size_pixels.x as u32, size_pixels.y as u32);
-
-            self.controller.update(&mut self.camera, ui, &r, delta_time);
-
-            if self.animate_time_of_day {
-                self.time_of_day += delta_time;
-                self.time_of_day = self.time_of_day.rem_euclid(3600.0);
-            }
-
-            if r.dragged_by(egui::PointerButton::Middle) {
-                let delta_adjusted = r.drag_delta() / 4.0;
-                self.sun_light_angle += delta_adjusted.x;
-                self.sun_light_angle = self.sun_light_angle.rem_euclid(360.0);
-            }
-
-            let sun_light_direction = if self.render_mode == RenderMode::Lookdev {
-                vec3(0.510, 0.317, 0.799).normalize()
-            } else {
-                vec3(
-                    self.sun_light_angle.to_radians().cos(),
-                    self.sun_light_angle.to_radians().sin(),
-                    0.7,
-                )
-                .normalize()
-            };
-
             self.scene_renderer
                 .set_global_channel_by_name("sun_light_direction", sun_light_direction.extend(0.0));
 
@@ -431,10 +443,6 @@ impl Scene {
                 .set_global_channel_by_id(0x156C2B22, Vec4::splat(self.raininess));
             self.scene_renderer
                 .set_global_channel_by_id(0xD8281393, Vec4::splat(self.raininess));
-            self.scene_renderer
-                .set_global_channel_by_id(0xCF70AC7C, Vec4::splat(self.raininess));
-            self.scene_renderer
-                .set_global_channel_by_id(0x471E28F2, Vec4::splat(self.raininess));
 
             self.scene_renderer
                 .set_global_channel_by_id(0x2C53817A, Vec4::splat(1.0 - self.raininess));
@@ -599,9 +607,6 @@ impl Scene {
 
             ext.cubemaps.vertex_ao = self.renderer.internal.white.view.into();
 
-            self.camera.aspect_ratio = resolution.0 as f32 / resolution.1 as f32;
-            self.controller.update_rotation(&mut self.camera);
-            self.camera.update();
             ext.view.world_to_camera = self.camera.world_to_camera;
             ext.view.camera_to_projective = self.camera.camera_to_projective;
             self.scene_renderer.main_view.world_to_camera = self.camera.world_to_camera;
@@ -714,7 +719,7 @@ impl Scene {
                         ),
                         unk3: vec4(0.5, 0.5, 0.0, 0.0),
                         unk4: vec4(1.0, 1.0, 0.0, 1.0),
-                        unk5: vec4(0.00, -f32::NAN, 512.00, 0.00),
+                        unk5: vec4(0.00, -f32::NAN, 512.00, 0.00), // z component is used as upper bound for (specular) light intensity
                         unk6: Vec4::ONE,
                     }
                     .to_array()
@@ -843,6 +848,45 @@ impl Scene {
         );
     }
 
+    fn draw_gizmos(&self, ui: &Ui, viewport_rect: Rect) {
+        for (_entity, (transform, icon, label)) in
+            &mut self.world.query::<(&Transform, Option<&Icon>, &Label)>()
+        {
+            let icon = match icon {
+                Some(Icon("light")) => icons::LIGHT,
+                _ => icons::UNKNOWN,
+            };
+
+            let clip_pos = self
+                .camera
+                .world_to_projective
+                .project_point3(transform.translation);
+            if clip_pos.z <= 0.0 {
+                continue;
+            }
+
+            let screen_pos = egui::Pos2::new(
+                ((clip_pos.x + 1.0) * 0.5).mul_add(viewport_rect.width(), viewport_rect.min.x),
+                (clip_pos.y + 1.0)
+                    .mul_add(-0.5, 1.0)
+                    .mul_add(viewport_rect.height(), viewport_rect.min.y),
+            );
+
+            if viewport_rect.contains(screen_pos) {
+                egui::Image::new(icon)
+                    .paint_at(ui, Rect::from_center_size(screen_pos, vec2(32.0, 32.0)));
+
+                ui.painter().text(
+                    screen_pos + vec2(20.0, 0.0),
+                    egui::Align2::LEFT_CENTER,
+                    &label.0,
+                    egui::FontId::proportional(16.0),
+                    egui::Color32::WHITE,
+                );
+            }
+        }
+    }
+
     fn show_toolbar(&mut self, ui: &mut Ui) {
         ui.style_mut().spacing.item_spacing = vec2(8.0, 0.0);
         egui::containers::menu::MenuButton::new(GoogleMaterialSymbols::Tune.to_string())
@@ -877,6 +921,12 @@ impl Scene {
             .clicked()
         {
             self.show_channel_editor = !self.show_channel_editor;
+        }
+        if ui
+            .selectable_label(self.draw_gizmos, GoogleMaterialSymbols::Label.to_string())
+            .clicked()
+        {
+            self.draw_gizmos = !self.draw_gizmos;
         }
 
         self.render_mode.ui(ui);
@@ -1188,6 +1238,40 @@ impl Scene {
 
         // let automated_ids = s_get_all_global_channel_ids(&self.world);
         egui::ScrollArea::vertical().show(ui, |ui| {
+            ui.heading("Frame");
+            {
+                let frame = &mut self.scene_renderer.parent.externs.get_mut().frame;
+                for (label, set) in [
+                    ("unk240", &mut frame.unk240),
+                    ("unk250", &mut frame.unk250),
+                    ("unk260", &mut frame.unk260),
+                    ("unk270", &mut frame.unk270),
+                    ("unk280", &mut frame.unk280),
+                ] {
+                    ui.label(label);
+                    ui.horizontal(|ui| {
+                        ui.spacing_mut().button_padding = vec2(4.0, 1.0);
+                        ui.spacing_mut().interact_size = egui::vec2(100.0, 32.0);
+                        egui::DragValue::new(&mut set.x)
+                            .fixed_decimals(4)
+                            .speed(0.01)
+                            .ui(ui);
+                        egui::DragValue::new(&mut set.y)
+                            .fixed_decimals(4)
+                            .speed(0.01)
+                            .ui(ui);
+                        egui::DragValue::new(&mut set.z)
+                            .fixed_decimals(4)
+                            .speed(0.01)
+                            .ui(ui);
+                        egui::DragValue::new(&mut set.w)
+                            .fixed_decimals(4)
+                            .speed(0.01)
+                            .ui(ui);
+                    });
+                }
+            }
+
             ui.heading("Global Channels");
             for (i, channel) in self.scene_renderer.global_channels.iter_mut().enumerate() {
                 let frequency =
