@@ -7,7 +7,7 @@ use std::sync::Arc;
 use ash::vk;
 use deimos_data::{
     hash::fnv1,
-    tfx::{FixedFunctionState, RenderStage},
+    tfx::{FixedFunctionState, PrimitiveType, RenderStage},
 };
 use glam::Vec4;
 use rayon::prelude::*;
@@ -27,6 +27,7 @@ use crate::{
         Renderer,
         object::{RenderObject, RenderObjectHandle},
         packet::{FramePacket, RenderPerFrameNode, RenderPerViewNode, SubmitNode, ViewPacket},
+        ssr::{SsrConstants, SsrRenderer},
     },
     tfx::view::ShadedView,
     visibility::ViewVisibility,
@@ -38,15 +39,20 @@ pub struct SceneRenderer {
     pub frame_packet: FramePacket,
 
     pub main_view: ShadedView,
+    pub ssr: SsrRenderer,
 
     pub global_channels: [Vec4; 256],
 }
 
 impl SceneRenderer {
     pub fn new(parent: Arc<Renderer>) -> anyhow::Result<Self> {
+        let main_view = ShadedView::new(&parent.gpu, (1920, 1080))?;
+        let ssr = SsrRenderer::new(&parent.gpu, main_view.shaded_read.output_format())?;
+
         let mut r = Self {
             frame_packet: FramePacket::default(),
-            main_view: ShadedView::new(&parent.gpu, (1920, 1080))?,
+            main_view,
+            ssr,
             global_channels: parent.globals.channels.default_values(),
             parent,
         };
@@ -65,7 +71,6 @@ impl SceneRenderer {
         r.set_global_channel_by_id(0x2E538443, Vec4::splat(1.0)); // fixes marathon/planet rings not appearing
 
         // Controls cubemap reflectivity
-        // TODO(cohae): We should probably turn these off when using SSR (alternatively we could also keep cubemaps and blend both together)
         r.set_global_channel_by_id(0xCF70AC7C, Vec4::splat(0.0));
         r.set_global_channel_by_id(0x471E28F2, Vec4::splat(0.5));
 
@@ -457,6 +462,64 @@ impl SceneRenderer {
                 .transition(cmd, IMAGE_STATE_TRANSFER_DST);
 
             cmd.copy_render_target(&self.main_view.gbuffer.albedo, &self.main_view.output);
+        }
+
+        if self.ssr.settings.enabled
+            && debug_pipeline
+                .is_some_and(|pipeline| pipeline.is_shaded() || pipeline == DebugPipeline::LookDev)
+        {
+            let _scope = self.parent.gpu.profiler_scope(cmd, "submit_ssr");
+
+            let constants = SsrConstants::new(
+                self.main_view.world_to_camera,
+                self.main_view.camera_to_projective,
+                self.parent.externs.view.target_pixel_to_camera,
+                self.main_view.gbuffer.albedo.resolution(),
+                &self.ssr.settings,
+            );
+
+            self.main_view
+                .output
+                .transition(cmd, IMAGE_STATE_SHADER_READ);
+            self.main_view
+                .shaded_read
+                .transition(cmd, IMAGE_STATE_COLOR_ATTACHMENT);
+
+            cmd.set_ffstate(FixedFunctionState::new(Some(0), Some(15), Some(1), Some(1)));
+            cmd.flush_states();
+            cmd.set_input_topology(PrimitiveType::TriangleStrip);
+            cmd.set_input_layout(0);
+
+            cmd.begin_rendering_rt(
+                &[Some((
+                    &self.main_view.shaded_read,
+                    ColorLoadOp::DontCare,
+                    StoreOp::Store,
+                ))],
+                None,
+                vk::RenderingFlags::empty(),
+            );
+
+            if let Err(e) = self.ssr.submit(
+                cmd,
+                &constants,
+                self.main_view.output.view(),
+                self.main_view.gbuffer.normal.view(),
+                self.main_view.gbuffer.depth_read.depth_view(),
+                self.main_view.gbuffer.rt3.view(),
+            ) {
+                error!("Failed to submit SSR pass: {e:?}");
+            }
+
+            cmd.end_rendering();
+
+            self.main_view
+                .output
+                .transition(cmd, IMAGE_STATE_TRANSFER_DST);
+            self.main_view
+                .shaded_read
+                .transition(cmd, IMAGE_STATE_TRANSFER_SRC);
+            cmd.copy_render_target(&self.main_view.shaded_read, &self.main_view.output);
         }
 
         self.main_view

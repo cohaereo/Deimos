@@ -444,6 +444,17 @@ impl Scene {
             self.scene_renderer
                 .set_global_channel_by_id(0xD8281393, Vec4::splat(self.raininess));
 
+            let ssr_enabled = self.scene_renderer.ssr.settings.enabled;
+
+            self.scene_renderer.set_global_channel_by_id(
+                0x471E28F2,
+                if ssr_enabled {
+                    Vec4::splat(0.0)
+                } else {
+                    Vec4::splat(0.5)
+                },
+            );
+
             self.scene_renderer
                 .set_global_channel_by_id(0x2C53817A, Vec4::splat(1.0 - self.raininess));
             self.scene_renderer
@@ -1195,6 +1206,22 @@ impl Scene {
                 "Enables shadows for the sun light.",
                 PerformanceImpact::High,
             );
+
+        ui.checkbox(
+            &mut self.scene_renderer.ssr.settings.enabled,
+            "Screen Space Reflections (SSR)",
+        )
+        .setting_description_tooltip(
+            "Enables screen-space reflections for smooth surfaces",
+            PerformanceImpact::Medium,
+        );
+
+        if self.scene_renderer.ssr.settings.enabled {
+            ui.add(
+                egui::Slider::new(&mut self.scene_renderer.ssr.settings.intensity, 0.0..=2.0)
+                    .text("SSR Intensity"),
+            );
+        }
 
         ui.checkbox(&mut self.umbra_enabled, "Umbra Culling")
             .setting_description_tooltip(

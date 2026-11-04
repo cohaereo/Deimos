@@ -1,4 +1,4 @@
-use std::{collections::hash_map::Entry, ffi::CString, sync::Arc};
+use std::{borrow::Cow, collections::hash_map::Entry, ffi::CString, sync::Arc};
 
 use ahash::HashMap;
 use anyhow::Context;
@@ -59,6 +59,7 @@ pub struct TechniqueLayout {
 pub struct PipelineCache {
     render_states: RenderStates,
     bytecode_cache: HashMap<(TagHash, u32), ShaderInfo>,
+    builtin_shaders: HashMap<TagHash, &'static [u8]>,
     layout_cache: HashMap<(TagHash, TagHash), TechniqueLayout>,
     storage: HashMap<PipelineKey, vk::Pipeline>,
 
@@ -88,6 +89,7 @@ impl PipelineCache {
         Self {
             render_states: RenderStates::new(&device).expect("Failed to load render states"),
             bytecode_cache: HashMap::default(),
+            builtin_shaders: HashMap::default(),
             layout_cache: HashMap::default(),
             storage: HashMap::default(),
             empty_layout,
@@ -100,6 +102,10 @@ impl PipelineCache {
 
     pub fn shader_info(&mut self, hash: TagHash, stage: ShaderStage) -> anyhow::Result<ShaderInfo> {
         self.get_or_load_bytecode(hash, stage)
+    }
+
+    pub fn register_builtin_shader_module(&mut self, hash: TagHash, data: &'static [u8]) {
+        self.builtin_shaders.insert(hash, data);
     }
 
     #[profiling::function]
@@ -432,15 +438,21 @@ impl PipelineCache {
         match self.bytecode_cache.entry((hash, set_base)) {
             Entry::Occupied(entry) => Ok(entry.into_mut().clone()),
             Entry::Vacant(entry) => {
-                let tag_entry = package_manager()
-                    .get_entry(hash)
-                    .context("entry not found")?;
-                let data = package_manager()
-                    .read_tag(tag_entry.reference)
-                    .context("failed to read shader bytecode")?;
+                let data = if let Some(data) = self.builtin_shaders.get(&hash) {
+                    Cow::Borrowed(*data)
+                } else {
+                    let tag_entry = package_manager()
+                        .get_entry(hash)
+                        .context("entry not found")?;
+                    Cow::Owned(
+                        package_manager()
+                            .read_tag(tag_entry.reference)
+                            .context("failed to read shader bytecode")?,
+                    )
+                };
 
-                let (spirv, slots) =
-                    dxil2spirv::translate(&data, set_base).map_err(|e| anyhow::anyhow!(e))?;
+                let (spirv, slots) = dxil2spirv::translate(data.as_ref(), set_base)
+                    .map_err(|e| anyhow::anyhow!(e))?;
 
                 let create_info = vk::ShaderModuleCreateInfo::default().code(&spirv);
                 let module = unsafe { self.device.create_shader_module(&create_info, None)? };

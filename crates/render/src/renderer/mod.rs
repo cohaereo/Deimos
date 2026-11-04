@@ -5,6 +5,7 @@ pub mod internal;
 pub mod object;
 pub mod packet;
 pub mod scene;
+pub mod ssr;
 
 use std::sync::Arc;
 

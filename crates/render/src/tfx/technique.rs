@@ -184,7 +184,8 @@ impl Technique {
             };
             Self::write_set(
                 &gpu,
-                stage,
+                stage.shader_stage,
+                &stage.shader_info.slots,
                 (set_index % 4) as u32,
                 &layout.binding_offsets[set_index],
                 gpu.frame().descriptors.ptr_at(offset),
@@ -198,17 +199,17 @@ impl Technique {
     }
 
     #[allow(clippy::too_many_arguments)]
-    fn write_set(
+    pub(crate) fn write_set(
         gpu: &Arc<Gpu>,
-        stage: &TechniqueStage,
+        shader_stage: ShaderStage,
+        slots: &SlotUsage,
         set_kind: u32,
         offsets: &[u64; 32],
         ptr: *mut u8,
         cmd: &CommandList,
     ) {
         let writer = DescriptorWriter::new(gpu, offsets, ptr);
-        let slots = &stage.shader_info.slots;
-        let resources = cmd.resources(stage.shader_stage);
+        let resources = cmd.resources(shader_stage);
 
         match set_kind {
             dxil2spirv::SET_CBV => {

@@ -6,3 +6,5 @@ dxc -Fo generate_shadow_mask.ps.dxil generate_shadow_mask.hlsl -T ps_6_0 -E main
 dxc -Fo generate_shadow_mask.vs.dxil generate_shadow_mask.hlsl -T vs_6_0 -E mainVS
 dxc -Fo immediate.ps.dxil immediate.hlsl -T ps_6_0 -E mainPS
 dxc -Fo immediate.vs.dxil immediate.hlsl -T vs_6_0 -E mainVS
+dxc -Fo ssr.ps.dxil ssr.hlsl -T ps_6_0 -E mainPS
+dxc -Fo ssr.vs.dxil ssr.hlsl -T vs_6_0 -E mainVS
