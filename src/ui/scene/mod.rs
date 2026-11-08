@@ -448,6 +448,7 @@ impl Scene {
 
             self.scene_renderer.set_global_channel_by_id(
                 0x471E28F2,
+                // TODO(cohae): This blocks sky reflections as well
                 if ssr_enabled {
                     Vec4::splat(0.0)
                 } else {

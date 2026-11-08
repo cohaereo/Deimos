@@ -7,9 +7,11 @@ use std::sync::Arc;
 use ash::vk;
 use deimos_data::{
     hash::fnv1,
-    tfx::{FixedFunctionState, PrimitiveType, RenderStage},
+    tfx::{
+        FixedFunctionState, PrimitiveType, RenderStage, features::dynamic::RenderStageSubscription,
+    },
 };
-use glam::Vec4;
+use glam::{Vec3, Vec4};
 use rayon::prelude::*;
 use slotmap::SlotMap;
 
@@ -21,7 +23,9 @@ use crate::{
             IMAGE_STATE_COLOR_ATTACHMENT, IMAGE_STATE_DEPTH_ATTACHMENT, IMAGE_STATE_SHADER_READ,
             IMAGE_STATE_TRANSFER_DST, IMAGE_STATE_TRANSFER_SRC,
         },
-        command_list::{ColorLoadOp, CommandList, CommandListForkState, DepthLoadOp, StoreOp},
+        command_list::{
+            ColorLoadOp, CommandList, CommandListForkState, DepthLoadOp, DepthMode, StoreOp,
+        },
     },
     renderer::{
         Renderer,
@@ -92,10 +96,9 @@ impl SceneRenderer {
         cmd: &mut CommandList,
         visibility: &ViewVisibility,
         debug_pipeline: Option<DebugPipeline>,
-        _draw_sun_shadows: bool,
+        draw_sun_shadows: bool,
     ) {
         self.parent.externs.reset_global_channel_frequencies();
-        self.parent.externs.bump_generation();
         let gpu = cmd.gpu().clone();
         // let stream = &gpu.frame().stream;
 
@@ -114,23 +117,13 @@ impl SceneRenderer {
             }
         }
 
-        // if draw_sun_shadows
-        //     && matches!(
-        //         debug_pipeline,
-        //         None | Some(DebugPipeline::LookDev | DebugPipeline::GlobalLightingShading)
-        //     )
-        // {
-        //     self.render_shadow_views(&gpu, cmd, stream);
-        // } else {
-        //     for view in &self.main_view.shadow_views {
-        //         cmd.clear_depth_stencil_view(
-        //             view.depth.cpu_handle(),
-        //             d3d12::ClearFlags::DEPTH,
-        //             1.0,
-        //             0,
-        //         );
-        //     }
-        // }
+        if draw_sun_shadows && debug_pipeline.is_none_or(|d| d.needs_sun_shadows()) {
+            self.render_shadow_views(&gpu, cmd);
+        } else {
+            for view in &mut self.main_view.shadow_views {
+                view.depth.clear(cmd, 1.0, 0);
+            }
+        }
 
         self.render_main_view(&gpu, cmd, visibility, debug_pipeline);
     }
@@ -144,6 +137,7 @@ impl SceneRenderer {
         debug_pipeline: Option<DebugPipeline>,
     ) {
         let _scope = gpu.profiler_scope(cmd, "render_main_view");
+        self.parent.externs.bump_generation();
 
         {
             let ext = self.parent.externs.get_mut();
@@ -153,7 +147,7 @@ impl SceneRenderer {
         }
         self.parent.globals.scopes.view.bind(cmd);
 
-        let _use_hdri = debug_pipeline == Some(DebugPipeline::LookDev);
+        let use_hdri = debug_pipeline == Some(DebugPipeline::LookDev);
 
         self.main_view
             .gbuffer
@@ -174,14 +168,6 @@ impl SceneRenderer {
             Some((&self.main_view.gbuffer.depth, DepthLoadOp::Clear(0.0, 0xFF), StoreOp::Store)),
             vk::RenderingFlags::CONTENTS_SECONDARY_COMMAND_BUFFERS
         );
-
-        // s_extract_render_objects(&self.world, &self.parent);
-
-        // for (_entity, render_object) in self.world.query::<&DynamicRenderObject>().iter() {
-        //     self.parent.objects.read()[render_object.handle]
-        //         .renderer
-        //         .submit(cmd, RenderStage::GenerateGbuffer);
-        // }
 
         {
             let _scope = gpu.profiler_scope(cmd, "node_visibility_test");
@@ -314,6 +300,13 @@ impl SceneRenderer {
             .light
             .transition(cmd, IMAGE_STATE_COLOR_ATTACHMENT);
 
+        let shadow_cascades = self
+            .main_view
+            .shadow_views
+            .iter()
+            .map(|cascade| (cascade.world_to_projective(), cascade.depth.depth_view()))
+            .collect::<Vec<_>>();
+
         {
             let _scope = self.parent.gpu.profiler_scope(cmd, "submit_cubemaps");
 
@@ -330,6 +323,15 @@ impl SceneRenderer {
             cmd.set_ffstate(FixedFunctionState::new(Some(23), Some(1), Some(3), Some(1)));
             cmd.flush_states();
             self.submit_stage(cmd, view, RenderStage::Cubemaps);
+
+            if use_hdri {
+                for cascade in &mut self.main_view.shadow_views {
+                    cascade.depth.transition(cmd, IMAGE_STATE_SHADER_READ);
+                }
+
+                self.parent.apply_hdri_light(cmd, &shadow_cascades);
+            }
+
             cmd.end_rendering();
         }
 
@@ -354,47 +356,33 @@ impl SceneRenderer {
                 vk::RenderingFlags::CONTENTS_SECONDARY_COMMAND_BUFFERS
             );
 
-            //         if use_hdri {
-            //             self.main_view.light.bind_for_cubemaps(cmd);
-            //             let sv = &self.main_view.shadow_views;
-            //             self.parent.apply_hdri_light(
-            //                 cmd,
-            //                 &[
-            //                     (sv[0].world_to_projective(), sv[0].depth.view()),
-            //                     (sv[1].world_to_projective(), sv[1].depth.view()),
-            //                     (sv[2].world_to_projective(), sv[2].depth.view()),
-            //                     (sv[3].world_to_projective(), sv[3].depth.view()),
-            //                 ],
-            //             );
-            //         }
-
             cmd.set_ffstate(FixedFunctionState::new(Some(2), None, Some(2), Some(2)));
             cmd.flush_states();
             self.submit_stage(cmd, view, RenderStage::LightingApply);
             cmd.end_rendering();
         }
 
-        //     {
-        //         self.main_view
-        //             .shadow_mask
-        //             .transition(cmd, IMAGE_STATE_COLOR_ATTACHMENT);
-        //         cmd.set_render_targets(&[&self.main_view.shadow_mask], None);
-        //         let sv = &self.main_view.shadow_views;
-        //         self.parent.generate_shadow_mask(
-        //             cmd,
-        //             &[
-        //                 (sv[0].world_to_projective(), sv[0].depth.view()),
-        //                 (sv[1].world_to_projective(), sv[1].depth.view()),
-        //                 (sv[2].world_to_projective(), sv[2].depth.view()),
-        //                 (sv[3].world_to_projective(), sv[3].depth.view()),
-        //             ],
-        //         );
-        //         self.parent.externs.get_mut().shadow_mask.unk00 =
-        //             self.main_view.shadow_mask.view().into();
-        //         self.main_view
-        //             .shadow_mask
-        //             .transition(cmd, IMAGE_STATE_SHADER_READ);
-        //     }
+        // if debug_pipeline.is_none_or(|d| d.needs_sun_shadows()) {
+        //     self.main_view
+        //         .shadow_mask
+        //         .transition(cmd, IMAGE_STATE_COLOR_ATTACHMENT);
+        //     cmd.begin_rendering_rt(
+        //         &[Some((
+        //             &self.main_view.shadow_mask,
+        //             ColorLoadOp::Load,
+        //             StoreOp::Store,
+        //         ))],
+        //         None,
+        //         vk::RenderingFlags::empty(),
+        //     );
+        //     self.parent.generate_shadow_mask(cmd, &shadow_cascades);
+        //     self.parent.externs.get_mut().shadow_mask.unk00 =
+        //         self.main_view.shadow_mask.view().into();
+        //     cmd.end_rendering();
+        //     self.main_view
+        //         .shadow_mask
+        //         .transition(cmd, IMAGE_STATE_SHADER_READ);
+        // }
 
         self.main_view
             .light
@@ -450,6 +438,20 @@ impl SceneRenderer {
                 .transition(cmd, IMAGE_STATE_TRANSFER_DST);
 
             cmd.copy_render_target(&self.main_view.gbuffer.albedo, &self.main_view.output);
+        }
+
+        if use_hdri {
+            cmd.begin_rendering_rt(
+                &[Some((
+                    &self.main_view.output,
+                    ColorLoadOp::Load,
+                    StoreOp::Store,
+                ))],
+                None,
+                vk::RenderingFlags::empty(),
+            );
+            self.parent.draw_hdri_background(cmd);
+            cmd.end_rendering();
         }
 
         if self.ssr.settings.enabled
@@ -540,21 +542,13 @@ impl SceneRenderer {
         );
 
         {
-            //     if use_hdri {
-            //         cmd.set_render_targets(&[&self.main_view.output], None);
-            //         self.parent.draw_hdri_background(cmd);
-            //         self.parent.draw_hdri_background(cmd);
-            //     }
+            self.parent.globals.scopes.transparent.bind(cmd);
+            self.parent.globals.scopes.transparent_advanced.bind(cmd);
+            let _scope = self.parent.gpu.profiler_scope(cmd, "submit_transparents");
+            cmd.set_ffstate(FixedFunctionState::new(Some(8), Some(15), Some(2), Some(1)));
+            self.submit_stage(cmd, view, RenderStage::Transparents);
 
-            {
-                self.parent.globals.scopes.transparent.bind(cmd);
-                self.parent.globals.scopes.transparent_advanced.bind(cmd);
-                let _scope = self.parent.gpu.profiler_scope(cmd, "submit_transparents");
-                cmd.set_ffstate(FixedFunctionState::new(Some(8), Some(15), Some(2), Some(1)));
-                self.submit_stage(cmd, view, RenderStage::Transparents);
-
-                // self.parent.immediate.draw_shapes(cmd);
-            }
+            // self.parent.immediate.draw_shapes(cmd);
         }
         cmd.end_rendering();
 
@@ -563,92 +557,95 @@ impl SceneRenderer {
             .transition(cmd, IMAGE_STATE_SHADER_READ);
     }
 
-    // fn render_shadow_views(
-    //     &mut self,
-    //     gpu: &Arc<Gpu>,
-    //     cmd: &mut CommandList,
-    //     stream: &FrameCommandStream,
-    // ) {
-    //     cmd.set_depth_mode(DepthMode::Forward);
+    fn render_shadow_views(&mut self, gpu: &Arc<Gpu>, cmd: &mut CommandList) {
+        cmd.set_depth_mode(DepthMode::Forward);
+        let _scope = gpu.profiler_scope(cmd, "render_shadow_views");
 
-    //     let num_shadow_views = self.main_view.shadow_views.len();
-    //     for shadow_view_index in 0..num_shadow_views {
-    //         let _scope = gpu.profiler_scope(cmd, "render_shadow_view");
+        let num_shadow_views = self.main_view.shadow_views.len();
+        for shadow_view_index in 0..num_shadow_views {
+            let _scope = gpu.profiler_scope(cmd, "render_shadow_view");
+            self.parent.externs.bump_generation();
 
-    //         let (visibility, view_id) = {
-    //             let shadow_view = &self.main_view.shadow_views[shadow_view_index];
+            let (visibility, view_id) = {
+                let shadow_view = &self.main_view.shadow_views[shadow_view_index];
 
-    //             let ext = self.parent.externs.get_mut();
-    //             ext.view.world_to_camera = shadow_view.world_to_camera;
-    //             ext.view.camera_to_projective = shadow_view.camera_to_projective;
-    //             ext.view.derive_matrices(shadow_view.depth.resolution());
+                let ext = self.parent.externs.get_mut();
+                ext.view.world_to_camera = shadow_view.world_to_camera;
+                ext.view.camera_to_projective = shadow_view.camera_to_projective;
+                ext.view.derive_matrices(shadow_view.depth.resolution());
 
-    //             (
-    //                 ViewVisibility {
-    //                     enabled: true,
-    //                     position: Vec3::ZERO,
-    //                     far_plane: 500.0,
-    //                     culling_frustum: shadow_view.frustum.clone(),
-    //                     world_to_projective: ext.view.world_to_projective,
-    //                     render_stages: RenderStageSubscription::SHADOW_VIEW,
-    //                     occlusion_buffer: None,
-    //                     visible_cluster_bounds: None,
-    //                 },
-    //                 shadow_view.id,
-    //             )
-    //         };
+                (
+                    ViewVisibility {
+                        enabled: true,
+                        position: Vec3::ZERO,
+                        far_plane: 500.0,
+                        culling_frustum: shadow_view.frustum.clone(),
+                        world_to_projective: ext.view.world_to_projective,
+                        render_stages: RenderStageSubscription::SHADOW_VIEW,
+                        occlusion_buffer: None,
+                        visible_cluster_bounds: None,
+                    },
+                    shadow_view.id,
+                )
+            };
 
-    //         self.parent.globals.scopes.view.bind(cmd);
+            self.parent.globals.scopes.view.bind(cmd);
 
-    //         {
-    //             let _scope = gpu.profiler_scope(cmd, "node_visibility_test");
-    //             node_visibility_test(self, &visibility, view_id);
-    //         }
+            {
+                let _scope = gpu.profiler_scope(cmd, "node_visibility_test");
+                node_visibility_test(self, &visibility, view_id);
+            }
 
-    //         {
-    //             let _scope = gpu.profiler_scope(cmd, "populate_submit_nodes");
-    //             populate_submit_nodes(self, &visibility, view_id);
-    //         }
+            {
+                let _scope = gpu.profiler_scope(cmd, "populate_submit_nodes");
+                populate_submit_nodes(self, &visibility, view_id);
+            }
 
-    //         let shadow_view = &mut self.main_view.shadow_views[shadow_view_index];
-    //         let view = &self.frame_packet.views[shadow_view.id];
-    //         {
-    //             let _scope = gpu.profiler_scope(cmd, "prepare_per_view");
+            let shadow_view = &mut self.main_view.shadow_views[shadow_view_index];
+            let view = &self.frame_packet.views[shadow_view.id];
+            {
+                let _scope = gpu.profiler_scope(cmd, "prepare_per_view");
 
-    //             let render_objects = self.parent.objects.read();
-    //             for view_node in &view.view_nodes {
-    //                 let frame_node = &self.frame_packet.per_frame_nodes[view_node.frame_node];
-    //                 let obj = &render_objects[frame_node.object];
-    //                 obj.renderer.prepare_per_view(cmd, frame_node, view_node);
-    //             }
-    //         }
+                let render_objects = self.parent.objects.read();
+                for view_node in &view.view_nodes {
+                    let frame_node = &self.frame_packet.per_frame_nodes[view_node.frame_node];
+                    let obj = &render_objects[frame_node.object];
+                    obj.renderer.prepare_per_view(cmd, frame_node, view_node);
+                }
+            }
 
-    //         {
-    //             let _scope = self
-    //                 .parent
-    //                 .gpu
-    //                 .profiler_scope(cmd, "submit_shadow_generate");
+            shadow_view
+                .depth
+                .transition(cmd, IMAGE_STATE_DEPTH_ATTACHMENT);
+            {
+                let _scope = self
+                    .parent
+                    .gpu
+                    .profiler_scope(cmd, "submit_shadow_generate");
 
-    //             shadow_view
-    //                 .depth
-    //                 .transition(cmd, d3d12::ResourceStates::DEPTH_WRITE);
-    //             cmd.clear_depth_stencil_view(
-    //                 shadow_view.depth.cpu_handle(),
-    //                 d3d12::ClearFlags::DEPTH,
-    //                 1.0,
-    //                 0,
-    //             );
+                cmd.begin_rendering_rt(
+                    &[],
+                    Some((
+                        &shadow_view.depth,
+                        DepthLoadOp::Clear(1.0, 0),
+                        StoreOp::Store,
+                    )),
+                    vk::RenderingFlags::CONTENTS_SECONDARY_COMMAND_BUFFERS,
+                );
 
-    //             cmd.set_render_targets(&[], Some(&shadow_view.depth));
+                cmd.set_ffstate(FixedFunctionState::new(Some(0), Some(2), Some(2), Some(0)));
+                cmd.flush_states();
+                self.submit_stage(cmd, view, RenderStage::ShadowGenerate);
+                cmd.end_rendering();
+            }
 
-    //             cmd.set_ffstate(FixedFunctionState::new(Some(0), Some(2), Some(2), Some(0)));
-    //             cmd.flush_states();
-    //             self.submit_stage(cmd, stream, view, RenderStage::ShadowGenerate);
-    //         }
-    //     }
+            self.main_view.shadow_views[shadow_view_index]
+                .depth
+                .transition(cmd, IMAGE_STATE_SHADER_READ);
+        }
 
-    //     cmd.set_depth_mode(DepthMode::Reverse);
-    // }
+        cmd.set_depth_mode(DepthMode::Reverse);
+    }
 
     pub fn submit_stage(&self, cmd: &mut CommandList, view: &ViewPacket, stage: RenderStage) {
         let frame_packet = &self.frame_packet;
@@ -809,6 +806,17 @@ impl DebugPipeline {
         matches!(
             self,
             Self::GlobalLightingShading | Self::DeferredShading | Self::DeferredShadingNoAtm
+        )
+    }
+
+    pub const fn needs_sun_shadows(&self) -> bool {
+        matches!(
+            self,
+            Self::LookDev
+                | Self::GlobalLightingShading
+                | Self::DeferredShadingNoAtm
+                | Self::LightDiffuse
+                | Self::LightSpecular
         )
     }
 
