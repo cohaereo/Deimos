@@ -1,5 +1,6 @@
 #include "include/screen_space_vs.hlsl"
 #include "include/view.hlsl"
+#include "include/frame.hlsl"
 
 static const uint SAMPLE_NUM = 9;
 static const float2 POISSON_SAMPLES[SAMPLE_NUM] = {
@@ -223,9 +224,9 @@ void mainPS(VSOutput input, out float4 light_diffuse: SV_TARGET0,
     shadow *= SampleShadow(worldPos, input.pos.xy, i);
   }
 
-  float shadowFactor = 0.93f;
+  float shadowFactor = 0.97f;
   shadow = lerp(1.0f, shadow, shadowFactor);
 
-  light_diffuse = float4(diffuse * shadow, 1.0f);
-  light_specular = float4(specular * shadow, 1.0f);
+  light_diffuse = float4(diffuse * shadow * exposure_scale, 1.0f);
+  light_specular = float4(specular * shadow * exposure_scale, 1.0f);
 }

@@ -1,5 +1,6 @@
 #include "include/screen_space_vs.hlsl"
 #include "include/view.hlsl"
+#include "include/frame.hlsl"
 
 // Pixel Shader
 Texture2D<float> deferred_depth : register(t0);
@@ -33,5 +34,5 @@ float4 mainPS(VSOutput input) : SV_TARGET {
   float3 skyColor = SampleHDRI(viewDir, 0.0f);
 
   // Output directly to the light buffers
-  return float4(skyColor, 1.0f);
+  return float4(skyColor * exposure_scale, 1.0f);
 }
