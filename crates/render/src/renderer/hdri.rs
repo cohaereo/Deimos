@@ -2,14 +2,10 @@ use std::sync::Arc;
 
 use ash::vk;
 use deimos_data::tfx::{FixedFunctionState, PrimitiveType, ShaderStage};
-use glam::Mat4;
 use tiger_pkg::TagHash;
 
 use crate::{
-    gpu::{
-        Gpu,
-        command_list::{CommandList, ConstantBufferView},
-    },
+    gpu::{Gpu, command_list::CommandList},
     renderer::{Renderer, fullscreen_pass::FullscreenPass},
 };
 
@@ -91,9 +87,7 @@ impl Renderer {
         Ok(())
     }
 
-    pub fn apply_hdri_light(&self, cmd: &mut CommandList, cascades: &[(Mat4, vk::ImageView)]) {
-        assert_eq!(cascades.len(), 4);
-
+    pub fn apply_hdri_light(&self, cmd: &mut CommandList) {
         let Some(gbuffer_normal) = self.externs.deferred.deferred_rt1.get_srv() else {
             return;
         };
@@ -103,13 +97,16 @@ impl Renderer {
         let Some(deferred_depth) = self.externs.deferred.deferred_depth.get_srv() else {
             return;
         };
+        let Some(shadow_mask) = self.externs.shadow_mask.unk00.get_srv() else {
+            return;
+        };
 
         if let Err(e) = self.apply_hdri_light_inner(
             cmd,
             gbuffer_normal,
             gbuffer_third,
             deferred_depth,
-            cascades,
+            shadow_mask,
         ) {
             error!("Failed to apply HDRI light: {e:?}");
         }
@@ -121,7 +118,7 @@ impl Renderer {
         gbuffer_normal: vk::ImageView,
         gbuffer_third: vk::ImageView,
         deferred_depth: vk::ImageView,
-        cascades: &[(Mat4, vk::ImageView)],
+        shadow_mask: vk::ImageView,
     ) -> anyhow::Result<()> {
         let gpu = cmd.gpu().clone();
 
@@ -138,24 +135,8 @@ impl Renderer {
         cmd.set_shader_resource_view(ShaderStage::Pixel, 1, Some(gbuffer_third));
         cmd.set_shader_resource_view(ShaderStage::Pixel, 2, Some(deferred_depth));
         cmd.set_shader_resource_view(ShaderStage::Pixel, 3, Some(self.internal.hdri.view));
-        for (i, (_, view)) in cascades.iter().enumerate() {
-            cmd.set_shader_resource_view(ShaderStage::Pixel, 10 + i as u32, Some(*view));
-        }
+        cmd.set_shader_resource_view(ShaderStage::Pixel, 4, Some(shadow_mask));
         cmd.set_shader_sampler(ShaderStage::Pixel, 0, Some(gpu.default_sampler));
-
-        let cascade_matrices = cascades.iter().map(|(m, _)| *m).collect::<Vec<_>>();
-        let cascade_matrices = gpu
-            .frame()
-            .upload
-            .upload_bytes(bytemuck::cast_slice(&cascade_matrices))?;
-        cmd.set_shader_constant_buffer_view(
-            ShaderStage::Pixel,
-            0,
-            Some(ConstantBufferView {
-                addr: cascade_matrices.virtual_address(),
-                size: cascade_matrices.len() as u64,
-            }),
-        );
 
         let pass = &self.internal.hdri_renderer.lighting;
         let pipeline = pass.get_pipeline(&gpu, cmd, fixed_function_state)?;
