@@ -597,6 +597,15 @@ impl CommandList {
 
         self.set_render_target_formats(&color_formats, depth_format);
 
+        self.set_viewports(&[vk::Viewport::default()
+            .width(resolution.0 as f32)
+            .height(resolution.1 as f32)
+            .max_depth(1.0)]);
+        self.set_scissor_rects(&[vk::Rect2D::default().extent(vk::Extent2D {
+            width: resolution.0,
+            height: resolution.1,
+        })]);
+
         self.begin_rendering(
             resolution,
             &color_attachments_vk,

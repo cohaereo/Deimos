@@ -163,18 +163,6 @@ impl SceneRenderer {
             .depth
             .transition(cmd, IMAGE_STATE_DEPTH_ATTACHMENT);
 
-        {
-            let resolution = self.main_view.gbuffer.albedo.resolution();
-            cmd.set_viewports(&[vk::Viewport::default()
-                .width(resolution.0 as f32)
-                .height(resolution.1 as f32)
-                .max_depth(1.0)]);
-            cmd.set_scissor_rects(&[vk::Rect2D::default().extent(vk::Extent2D {
-                width: resolution.0,
-                height: resolution.1,
-            })]);
-        }
-
         #[rustfmt::skip]
         cmd.begin_rendering_rt(
             &[
