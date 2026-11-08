@@ -819,6 +819,7 @@ impl Scene {
 
             view.world_to_camera = world_to_camera;
             view.camera_to_projective = camera_to_projective;
+            view.depth_range = near..far;
             view.frustum =
                 Frustum::from_view_and_projection(view.world_to_camera, view.camera_to_projective);
         }

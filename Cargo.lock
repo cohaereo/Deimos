@@ -860,6 +860,7 @@ dependencies = [
  "gpu-allocator",
  "hecs",
  "image",
+ "inline_tweak",
  "int-enum",
  "itertools 0.14.0",
  "lazy_static",
@@ -1330,9 +1331,9 @@ dependencies = [
 
 [[package]]
 name = "futures-core"
-version = "0.3.32"
+version = "0.3.34"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "7e3450815272ef58cec6d564423f6e755e25379b217b0bc688e295ba24df6b1d"
+checksum = "92d699e522242e69e3003b94ecc1f960f3a5e015aa7c5d7486e65ad01dd94f5e"
 
 [[package]]
 name = "futures-task"
@@ -1598,6 +1599,12 @@ dependencies = [
  "serde",
  "serde_core",
 ]
+
+[[package]]
+name = "inline_tweak"
+version = "1.2.5"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "8e3e0b85cb19da112847faf313c60e230df3b9f9f1bc587935891a687e2edc12"
 
 [[package]]
 name = "inout"

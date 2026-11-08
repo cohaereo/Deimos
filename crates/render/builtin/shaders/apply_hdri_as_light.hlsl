@@ -1,5 +1,6 @@
 #include "include/screen_space_vs.hlsl"
 #include "include/view.hlsl"
+#include "include/frame.hlsl"
 
 // Textures
 Texture2D<float4> gbuffer_normal : register(t0);

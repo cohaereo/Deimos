@@ -29,6 +29,7 @@ use crate::{
     },
     renderer::{
         Renderer,
+        cascades::CascadeCalculator,
         object::{RenderObject, RenderObjectHandle},
         packet::{FramePacket, RenderPerFrameNode, RenderPerViewNode, SubmitNode, ViewPacket},
         ssr::{SsrConstants, SsrRenderer},
@@ -312,6 +313,20 @@ impl SceneRenderer {
                 .iter()
                 .map(|cascade| (cascade.world_to_projective(), cascade.depth.depth_view()))
                 .collect::<Vec<_>>();
+            let shadow_view = &self.main_view.shadow_views;
+            let cascade_splits = [
+                shadow_view[0].depth_range.end,
+                shadow_view[1].depth_range.end,
+                shadow_view[2].depth_range.end,
+                shadow_view[3].depth_range.end,
+            ];
+            let cascade_texel_bias = std::array::from_fn(|i| {
+                let projection = shadow_view[i].camera_to_projective;
+                let texel_world =
+                    2.0 / (projection.x_axis.x * CascadeCalculator::SHADOW_MAP_RESOLUTION as f32);
+                let depth_range = -1.0 / projection.z_axis.z;
+                texel_world / depth_range
+            });
 
             self.main_view
                 .shadow_mask
@@ -325,7 +340,12 @@ impl SceneRenderer {
                 None,
                 vk::RenderingFlags::empty(),
             );
-            self.parent.generate_shadow_mask(cmd, &shadow_cascades);
+            self.parent.generate_shadow_mask(
+                cmd,
+                &shadow_cascades,
+                cascade_splits,
+                cascade_texel_bias,
+            );
             self.parent.externs.get_mut().shadow_mask.unk00 =
                 self.main_view.shadow_mask.view().into();
             cmd.end_rendering();

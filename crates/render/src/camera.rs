@@ -1,7 +1,7 @@
 use deimos_data::tfx::geometry::AxisAlignedBBox;
 use glam::{Mat4, Quat, Vec2, Vec3, Vec4};
 
-use crate::visibility::frustum::Frustum;
+use crate::{renderer::cascades::CascadeCalculator, visibility::frustum::Frustum};
 
 // A simple camera controller (X forward, Z up)
 pub struct Camera {
@@ -136,26 +136,31 @@ impl Camera {
     }
 
     /// Returns (`world_to_camera`, `camera_to_projective`) matrices for cascaded shadow mapping.
-    pub fn build_shadow_cascade(
-        &self,
-        light_dir: Vec3,
-        mut z_start: f32,
-        z_end: f32,
-    ) -> (Mat4, Mat4) {
-        z_start = self.near.max(z_start);
+    pub fn build_shadow_cascade(&self, light_dir: Vec3, z_start: f32, z_end: f32) -> (Mat4, Mat4) {
+        let z_start = self.near.max(z_start);
+        let z_end = z_end.max(z_start + 0.01);
 
-        let proj_slice = self.projection_matrix_slice(z_start, z_end);
+        let projection = self.projection_matrix_slice(z_start, z_end);
+        let frustum = Frustum::from_view_and_projection(self.world_to_camera, projection);
+        let corners = frustum.points;
+        let center = frustum.center();
 
-        let frustum = Frustum::from_view_and_projection(self.view_matrix(), proj_slice);
-        let frustum_corners = frustum.points;
-        let frustum_center = frustum.center();
+        let light_dir = if light_dir.length_squared() > 1e-8 {
+            light_dir.normalize()
+        } else {
+            -Vec3::Z
+        };
 
-        // let frustum_pos = frustum_center - light_dir * 250.0;
+        let radius = corners
+            .iter()
+            .map(|corner| Vec3::from(*corner).distance(center))
+            .fold(0.0f32, f32::max)
+            .max(0.01);
 
-        let cascade_world_to_camera =
-            Mat4::look_at_rh(frustum_center, frustum_center + light_dir, Vec3::Z);
+        let eye = center - light_dir * radius;
 
-        // Initialize min and max values
+        let world_to_camera = Mat4::look_at_rh(eye, center, Vec3::Z);
+
         let mut min_x = f32::MAX;
         let mut max_x = f32::MIN;
         let mut min_y = f32::MAX;
@@ -163,25 +168,37 @@ impl Camera {
         let mut min_z = f32::MAX;
         let mut max_z = f32::MIN;
 
-        // Calculate min and max values for the transformed corners
-        for v in &frustum_corners {
-            let trf = cascade_world_to_camera.transform_point3(Vec3::from(*v));
-            min_x = min_x.min(trf.x);
-            max_x = max_x.max(trf.x);
-            min_y = min_y.min(trf.y);
-            max_y = max_y.max(trf.y);
-            min_z = min_z.min(trf.z);
-            max_z = max_z.max(trf.z);
+        for corner in &corners {
+            let transformed = world_to_camera.transform_point3(Vec3::from(*corner));
+            min_x = min_x.min(transformed.x);
+            max_x = max_x.max(transformed.x);
+            min_y = min_y.min(transformed.y);
+            max_y = max_y.max(transformed.y);
+            min_z = min_z.min(transformed.z);
+            max_z = max_z.max(transformed.z);
         }
 
-        const SHADOW_Z_OFFSET: f32 = 1000.0;
-        min_z -= SHADOW_Z_OFFSET;
-        max_z += SHADOW_Z_OFFSET;
+        let half_extent = ((max_x - min_x).max(max_y - min_y) * 0.5).max(0.01);
+        let texel_size = half_extent * 2.0 / CascadeCalculator::SHADOW_MAP_RESOLUTION as f32;
+        let center_x = ((min_x + max_x) * 0.5 / texel_size).round() * texel_size;
+        let center_y = ((min_y + max_y) * 0.5 / texel_size).round() * texel_size;
+        let padded_half_extent = half_extent + texel_size;
 
-        let cascade_camera_to_projective =
-            Mat4::orthographic_rh(min_x, max_x, min_y, max_y, min_z, max_z);
+        const SHADOW_CASTER_PADDING: f32 = 500.0;
 
-        (cascade_world_to_camera, cascade_camera_to_projective)
+        let near = -max_z - SHADOW_CASTER_PADDING;
+        let far = (-min_z + SHADOW_CASTER_PADDING).max(near + 0.01);
+
+        let camera_to_projective = Mat4::orthographic_rh(
+            center_x - padded_half_extent,
+            center_x + padded_half_extent,
+            center_y - padded_half_extent,
+            center_y + padded_half_extent,
+            near,
+            far,
+        );
+
+        (world_to_camera, camera_to_projective)
     }
 }
 

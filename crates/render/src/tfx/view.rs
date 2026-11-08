@@ -3,6 +3,7 @@
 //     Shadow(ShadowView),
 // }
 
+use std::ops::Range;
 use std::sync::Arc;
 
 use ash::vk;
@@ -112,6 +113,8 @@ pub struct ShadowCascade {
     pub world_to_camera: glam::Mat4,
     pub camera_to_projective: glam::Mat4,
 
+    pub depth_range: Range<f32>,
+
     pub frustum: Frustum,
 }
 
@@ -119,9 +122,16 @@ impl ShadowCascade {
     pub fn new(gpu: &Arc<Gpu>) -> anyhow::Result<Self> {
         Ok(Self {
             id: 0,
-            depth: DepthBuffer::new(gpu, (4096, 4096))?,
+            depth: DepthBuffer::new(
+                gpu,
+                (
+                    CascadeCalculator::SHADOW_MAP_RESOLUTION,
+                    CascadeCalculator::SHADOW_MAP_RESOLUTION,
+                ),
+            )?,
             camera_to_projective: glam::Mat4::IDENTITY,
             world_to_camera: glam::Mat4::IDENTITY,
+            depth_range: 0f32..0f32,
             frustum: Frustum::default(),
         })
     }

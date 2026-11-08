@@ -159,7 +159,7 @@ impl FrameContext {
             .context("Failed to create frame profiler")?;
 
         Ok(Self {
-            upload: UploadHeap::new(device.clone(), upload_memory_type_index, 48 * mb)
+            upload: UploadHeap::new(device.clone(), upload_memory_type_index, 64 * mb)
                 .context("Failed to allocate UploadHeap")?,
             descriptor_pool: unsafe {
                 device.create_descriptor_pool(
@@ -175,7 +175,7 @@ impl FrameContext {
             descriptors: DescriptorHeap::new(
                 device,
                 upload_memory_type_index,
-                32 * mb,
+                64 * mb,
                 descriptor_offset_alignment,
             )
             .context("Failed to allocate DescriptorRing")?,
