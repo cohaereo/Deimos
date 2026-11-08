@@ -194,7 +194,7 @@ impl SsrRenderer {
             &offsets,
         );
         cmd.bind_pipeline(self.pipeline);
-        cmd.draw_instanced(0..4, 0..1);
+        cmd.draw(0..4, 0..1);
 
         Ok(())
     }

@@ -411,7 +411,7 @@ impl FeatureRenderer for DynamicModel {
             u16::MAX,
             Some(data.permutation),
             |_model, cmd, _mesh, part| {
-                cmd.draw_indexed_instanced(part.index_range(), 0..1, 0);
+                cmd.draw_indexed(part.index_range(), 0..1, 0);
             },
         );
     }

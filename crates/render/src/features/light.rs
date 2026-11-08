@@ -311,7 +311,7 @@ impl FeatureRenderer for LightRenderer {
 
         self.technique_lighting_apply.bind(cmd);
 
-        cmd.draw_indexed_instanced(0..geometry::CUBE_INDICES.len() as u32, 0..1, 0);
+        cmd.draw_indexed(0..geometry::CUBE_INDICES.len() as u32, 0..1, 0);
         cmd.flush_states();
     }
 

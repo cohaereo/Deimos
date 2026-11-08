@@ -185,7 +185,7 @@ impl TerrainPatchesRenderer {
             return;
         }
 
-        cmd.draw_indexed_instanced(part.index_range(), 0..1, 0);
+        cmd.draw_indexed(part.index_range(), 0..1, 0);
     }
 }
 

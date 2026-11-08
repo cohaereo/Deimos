@@ -151,7 +151,7 @@ impl FeatureRenderer for DecalCollectionRenderer {
         {
             return;
         }
-        cmd.draw_instanced(0..36, set.start as u32..(set.start + set.count) as u32);
+        cmd.draw(0..36, set.start as u32..(set.start + set.count) as u32);
 
         cmd.set_depth_mode(DepthMode::Reverse);
         cmd.reset_ffstate_override();

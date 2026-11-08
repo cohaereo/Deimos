@@ -76,7 +76,7 @@ impl Renderer {
 
         pipeline.bind(cmd);
 
-        cmd.draw_instanced(0..4, 0..1);
+        cmd.draw(0..4, 0..1);
     }
 }
 

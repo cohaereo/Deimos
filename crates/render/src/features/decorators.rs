@@ -245,7 +245,7 @@ impl FeatureRenderer for DecoratorRenderer {
                 };
                 cb.bind_single(cmd, 1);
 
-                cmd.draw_indexed_instanced(part.index_range(), instance_start..instance_end, 0);
+                cmd.draw_indexed(part.index_range(), instance_start..instance_end, 0);
             });
         }
     }

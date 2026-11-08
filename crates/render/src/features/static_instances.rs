@@ -270,7 +270,7 @@ impl StaticModelRenderer {
                 return;
             }
 
-            cmd.draw_indexed_instanced(
+            cmd.draw_indexed(
                 mesh.index_range(),
                 0..self.visible_instance_ids.len() as u32,
                 0,
@@ -297,7 +297,7 @@ impl StaticModelRenderer {
                 return;
             }
 
-            cmd.draw_indexed_instanced(
+            cmd.draw_indexed(
                 part.index_range(),
                 0..self.visible_instance_ids.len() as u32,
                 0,

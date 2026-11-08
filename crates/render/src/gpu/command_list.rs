@@ -355,7 +355,7 @@ impl CommandList {
         self.cmd.set_primitive_topology(topology);
     }
 
-    pub fn draw_instanced(&self, vertices: Range<u32>, instances: Range<u32>) {
+    pub fn draw(&self, vertices: Range<u32>, instances: Range<u32>) {
         self.gpu().num_drawcalls.fetch_add(1, Ordering::Relaxed);
         self.cmd.draw(
             vertices.len() as u32,
@@ -365,7 +365,7 @@ impl CommandList {
         );
     }
 
-    pub fn draw_indexed_instanced(
+    pub fn draw_indexed(
         &self,
         indices: Range<u32>,
         instances: Range<u32>,

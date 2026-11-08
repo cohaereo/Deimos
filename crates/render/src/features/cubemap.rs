@@ -198,7 +198,7 @@ impl FeatureRenderer for CubemapRenderer {
             .get_specialized_cubemap_pipeline(CubemapShape::Cube, alpha, true, true, true)
             .bind(cmd);
 
-        cmd.draw_indexed_instanced(0..geometry::CUBE_INDICES.len() as u32, 0..1, 0);
+        cmd.draw_indexed(0..geometry::CUBE_INDICES.len() as u32, 0..1, 0);
         cmd.flush_states();
     }
 

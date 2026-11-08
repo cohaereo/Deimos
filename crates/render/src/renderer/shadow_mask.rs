@@ -89,7 +89,7 @@ impl Renderer {
         let pipeline = pass.get_pipeline(&gpu, cmd, fixed_function_state)?;
         pass.bind(&gpu, cmd, pipeline)?;
 
-        cmd.draw_instanced(0..4, 0..1);
+        cmd.draw(0..4, 0..1);
 
         Ok(())
     }
