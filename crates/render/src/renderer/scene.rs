@@ -300,6 +300,10 @@ impl SceneRenderer {
             .light
             .transition(cmd, IMAGE_STATE_COLOR_ATTACHMENT);
 
+        for cascade in &mut self.main_view.shadow_views {
+            cascade.depth.transition(cmd, IMAGE_STATE_SHADER_READ);
+        }
+
         let shadow_cascades = self
             .main_view
             .shadow_views
@@ -325,10 +329,6 @@ impl SceneRenderer {
             self.submit_stage(cmd, view, RenderStage::Cubemaps);
 
             if use_hdri {
-                for cascade in &mut self.main_view.shadow_views {
-                    cascade.depth.transition(cmd, IMAGE_STATE_SHADER_READ);
-                }
-
                 self.parent.apply_hdri_light(cmd, &shadow_cascades);
             }
 
@@ -362,27 +362,27 @@ impl SceneRenderer {
             cmd.end_rendering();
         }
 
-        // if debug_pipeline.is_none_or(|d| d.needs_sun_shadows()) {
-        //     self.main_view
-        //         .shadow_mask
-        //         .transition(cmd, IMAGE_STATE_COLOR_ATTACHMENT);
-        //     cmd.begin_rendering_rt(
-        //         &[Some((
-        //             &self.main_view.shadow_mask,
-        //             ColorLoadOp::Load,
-        //             StoreOp::Store,
-        //         ))],
-        //         None,
-        //         vk::RenderingFlags::empty(),
-        //     );
-        //     self.parent.generate_shadow_mask(cmd, &shadow_cascades);
-        //     self.parent.externs.get_mut().shadow_mask.unk00 =
-        //         self.main_view.shadow_mask.view().into();
-        //     cmd.end_rendering();
-        //     self.main_view
-        //         .shadow_mask
-        //         .transition(cmd, IMAGE_STATE_SHADER_READ);
-        // }
+        if debug_pipeline.is_none_or(|d| d.needs_sun_shadows()) {
+            self.main_view
+                .shadow_mask
+                .transition(cmd, IMAGE_STATE_COLOR_ATTACHMENT);
+            cmd.begin_rendering_rt(
+                &[Some((
+                    &self.main_view.shadow_mask,
+                    ColorLoadOp::Load,
+                    StoreOp::Store,
+                ))],
+                None,
+                vk::RenderingFlags::empty(),
+            );
+            self.parent.generate_shadow_mask(cmd, &shadow_cascades);
+            self.parent.externs.get_mut().shadow_mask.unk00 =
+                self.main_view.shadow_mask.view().into();
+            cmd.end_rendering();
+            self.main_view
+                .shadow_mask
+                .transition(cmd, IMAGE_STATE_SHADER_READ);
+        }
 
         self.main_view
             .light

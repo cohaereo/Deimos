@@ -6,12 +6,13 @@ use deimos_data::tfx::texture::DxgiFormat;
 use crate::{
     asset::texture::{Texture, TextureDesc},
     gpu::Gpu,
-    renderer::hdri::HdriRenderer,
+    renderer::{hdri::HdriRenderer, shadow_mask::ShadowMaskRenderer},
 };
 
 pub struct InternalResources {
     pub hdri: Texture,
     pub hdri_renderer: HdriRenderer,
+    pub shadow_mask_renderer: ShadowMaskRenderer,
     pub default_hemisphere: Texture,
     pub white: Texture,
 }
@@ -21,6 +22,7 @@ impl InternalResources {
         info!("Loading Internal Resources");
 
         let hdri_renderer = HdriRenderer::new(gpu).context("hdri_renderer")?;
+        let shadow_mask_renderer = ShadowMaskRenderer::new(gpu).context("shadow_mask_renderer")?;
 
         const HDRI_DATA_ZSTD: &[u8] = include_bytes!("../../builtin/textures/hdri_mips.data.zst");
         let hdri_mips = zstd::decode_all(HDRI_DATA_ZSTD)?;
@@ -62,6 +64,7 @@ impl InternalResources {
         Ok(Self {
             hdri,
             hdri_renderer,
+            shadow_mask_renderer,
             default_hemisphere,
             white,
         })

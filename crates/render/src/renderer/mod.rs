@@ -1,4 +1,5 @@
 pub mod cascades;
+mod fullscreen_pass;
 pub mod globals;
 pub mod hdri;
 // pub mod immediate;
@@ -6,6 +7,7 @@ pub mod internal;
 pub mod object;
 pub mod packet;
 pub mod scene;
+pub mod shadow_mask;
 pub mod ssr;
 
 use std::sync::Arc;
@@ -76,55 +78,6 @@ impl Renderer {
 
         cmd.draw_instanced(0..4, 0..1);
     }
-
-    // pub fn generate_shadow_mask(&self, cmd: &mut CommandList, cascades: &[(Mat4, ResourceView)]) {
-    //     assert_eq!(cascades.len(), 4);
-    //     cmd.set_input_topology(PrimitiveType::TriangleStrip);
-    //     cmd.set_input_layout(0);
-    //     cmd.flush_states();
-
-    //     cmd.set_root_signature(&self.internal.rs_generate_shadow_mask);
-    //     cmd.set_pipeline_state(&self.internal.pso_generate_shadow_mask);
-
-    //     let descriptor_range = cmd.gpu().frame().descriptors.allocate(5);
-    //     let Some(deferred_depth_srv) = self.externs.deferred.deferred_depth.get_srv() else {
-    //         return;
-    //     };
-    //     cmd.gpu().copy_descriptors_simple(
-    //         1,
-    //         deferred_depth_srv.cpu_handle(),
-    //         descriptor_range.cpu_handle(0),
-    //         d3d12::DescriptorHeapType::CbvSrvUav,
-    //     );
-    //     for (i, (_, srv)) in cascades.iter().enumerate() {
-    //         cmd.gpu().copy_descriptors_simple(
-    //             1,
-    //             srv.cpu_handle(),
-    //             descriptor_range.cpu_handle(1 + i),
-    //             d3d12::DescriptorHeapType::CbvSrvUav,
-    //         );
-    //     }
-
-    //     let Some(view_scope_cbv) = cmd.get_shader_constant_buffer_view(ShaderStage::Pixel, 12)
-    //     else {
-    //         return;
-    //     };
-
-    //     let cascade_matrices: Vec<Mat4> = cascades.iter().map(|(m, _)| *m).collect();
-    //     let Ok(cascade_scope_cbv) = cmd
-    //         .upload_ring()
-    //         .upload_bytes(bytemuck::cast_slice(&cascade_matrices))
-    //     else {
-    //         error!("Failed to upload shadow cascade matrices");
-    //         return;
-    //     };
-
-    //     cmd.set_graphics_root_descriptor_table(0, descriptor_range.gpu_handle(0));
-    //     cmd.set_graphics_root_constant_buffer_view(1, cascade_scope_cbv);
-    //     cmd.set_graphics_root_constant_buffer_view(2, view_scope_cbv);
-
-    //     cmd.draw_instanced(0..4, 0..1);
-    // }
 }
 
 impl Renderer {
