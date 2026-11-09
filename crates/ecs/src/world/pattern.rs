@@ -16,7 +16,7 @@ use glam::{Vec4, vec4};
 use itertools::Itertools;
 use tiger_parse::{FnvHash, PackageManagerExt, TigerReadable};
 use tiger_pkg::{TagHash, package_manager};
-use tracing::{debug, error, info, warn};
+use tracing::{debug, error, info};
 
 use crate::{
     PatternSource, TempAudioMarker, UnimplementedTigerComponent, UnimplementedTigerComponents,

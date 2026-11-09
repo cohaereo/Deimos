@@ -184,118 +184,118 @@ impl DxgiFormat {
     #[allow(clippy::match_same_arms)]
     pub fn bpp(&self) -> u32 {
         match self {
-            DxgiFormat::R32G32B32A32_TYPELESS
-            | DxgiFormat::R32G32B32A32_FLOAT
-            | DxgiFormat::R32G32B32A32_UINT
-            | DxgiFormat::R32G32B32A32_SINT => 128,
-            DxgiFormat::R32G32B32_TYPELESS
-            | DxgiFormat::R32G32B32_FLOAT
-            | DxgiFormat::R32G32B32_UINT
-            | DxgiFormat::R32G32B32_SINT => 96,
-            DxgiFormat::R16G16B16A16_TYPELESS
-            | DxgiFormat::R16G16B16A16_FLOAT
-            | DxgiFormat::R16G16B16A16_UNORM
-            | DxgiFormat::R16G16B16A16_UINT
-            | DxgiFormat::R16G16B16A16_SNORM
-            | DxgiFormat::R16G16B16A16_SINT
-            | DxgiFormat::R32G32_TYPELESS
-            | DxgiFormat::R32G32_FLOAT
-            | DxgiFormat::R32G32_UINT
-            | DxgiFormat::R32G32_SINT
-            | DxgiFormat::R32G8X24_TYPELESS
-            | DxgiFormat::D32_FLOAT_S8X24_UINT
-            | DxgiFormat::R32_FLOAT_X8X24_TYPELESS
-            | DxgiFormat::X32_TYPELESS_G8X24_UINT
-            | DxgiFormat::Y416
-            | DxgiFormat::Y210
-            | DxgiFormat::Y216 => 64,
-            DxgiFormat::R10G10B10A2_TYPELESS
-            | DxgiFormat::R10G10B10A2_UNORM
-            | DxgiFormat::R10G10B10A2_UINT
-            | DxgiFormat::R11G11B10_FLOAT
-            | DxgiFormat::R8G8B8A8_TYPELESS
-            | DxgiFormat::R8G8B8A8_UNORM
-            | DxgiFormat::R8G8B8A8_UNORM_SRGB
-            | DxgiFormat::R8G8B8A8_UINT
-            | DxgiFormat::R8G8B8A8_SNORM
-            | DxgiFormat::R8G8B8A8_SINT
-            | DxgiFormat::R16G16_TYPELESS
-            | DxgiFormat::R16G16_FLOAT
-            | DxgiFormat::R16G16_UNORM
-            | DxgiFormat::R16G16_UINT
-            | DxgiFormat::R16G16_SNORM
-            | DxgiFormat::R16G16_SINT
-            | DxgiFormat::R32_TYPELESS
-            | DxgiFormat::D32_FLOAT
-            | DxgiFormat::R32_FLOAT
-            | DxgiFormat::R32_UINT
-            | DxgiFormat::R32_SINT
-            | DxgiFormat::R24G8_TYPELESS
-            | DxgiFormat::D24_UNORM_S8_UINT
-            | DxgiFormat::R24_UNORM_X8_TYPELESS
-            | DxgiFormat::X24_TYPELESS_G8_UINT
-            | DxgiFormat::R9G9B9E5_SHAREDEXP
-            | DxgiFormat::R8G8_B8G8_UNORM
-            | DxgiFormat::G8R8_G8B8_UNORM
-            | DxgiFormat::B8G8R8A8_UNORM
-            | DxgiFormat::B8G8R8X8_UNORM
-            | DxgiFormat::R10G10B10_XR_BIAS_A2_UNORM
-            | DxgiFormat::B8G8R8A8_TYPELESS
-            | DxgiFormat::B8G8R8A8_UNORM_SRGB
-            | DxgiFormat::B8G8R8X8_TYPELESS
-            | DxgiFormat::B8G8R8X8_UNORM_SRGB
-            | DxgiFormat::AYUV
-            | DxgiFormat::Y410
-            | DxgiFormat::YUY2 => 32,
-            DxgiFormat::P010 | DxgiFormat::P016 => 24,
-            DxgiFormat::R8G8_TYPELESS
-            | DxgiFormat::R8G8_UNORM
-            | DxgiFormat::R8G8_UINT
-            | DxgiFormat::R8G8_SNORM
-            | DxgiFormat::R8G8_SINT
-            | DxgiFormat::R16_TYPELESS
-            | DxgiFormat::R16_FLOAT
-            | DxgiFormat::D16_UNORM
-            | DxgiFormat::R16_UNORM
-            | DxgiFormat::R16_UINT
-            | DxgiFormat::R16_SNORM
-            | DxgiFormat::R16_SINT
-            | DxgiFormat::B5G6R5_UNORM
-            | DxgiFormat::B5G5R5A1_UNORM
-            | DxgiFormat::A8P8
-            | DxgiFormat::B4G4R4A4_UNORM => 16,
-            DxgiFormat::NV12 | DxgiFormat::OPAQUE420 | DxgiFormat::NV11 => 12,
-            DxgiFormat::R8_TYPELESS
-            | DxgiFormat::R8_UNORM
-            | DxgiFormat::R8_UINT
-            | DxgiFormat::R8_SNORM
-            | DxgiFormat::R8_SINT
-            | DxgiFormat::A8_UNORM
-            | DxgiFormat::AI44
-            | DxgiFormat::IA44
-            | DxgiFormat::P8 => 8,
-            DxgiFormat::R1_UNORM => 1,
-            DxgiFormat::BC1_TYPELESS
-            | DxgiFormat::BC1_UNORM
-            | DxgiFormat::BC1_UNORM_SRGB
-            | DxgiFormat::BC4_TYPELESS
-            | DxgiFormat::BC4_UNORM
-            | DxgiFormat::BC4_SNORM => 4,
-            DxgiFormat::BC2_TYPELESS
-            | DxgiFormat::BC2_UNORM
-            | DxgiFormat::BC2_UNORM_SRGB
-            | DxgiFormat::BC3_TYPELESS
-            | DxgiFormat::BC3_UNORM
-            | DxgiFormat::BC3_UNORM_SRGB
-            | DxgiFormat::BC5_TYPELESS
-            | DxgiFormat::BC5_UNORM
-            | DxgiFormat::BC5_SNORM
-            | DxgiFormat::BC6H_TYPELESS
-            | DxgiFormat::BC6H_UF16
-            | DxgiFormat::BC6H_SF16
-            | DxgiFormat::BC7_TYPELESS
-            | DxgiFormat::BC7_UNORM
-            | DxgiFormat::BC7_UNORM_SRGB => 8,
+            Self::R32G32B32A32_TYPELESS
+            | Self::R32G32B32A32_FLOAT
+            | Self::R32G32B32A32_UINT
+            | Self::R32G32B32A32_SINT => 128,
+            Self::R32G32B32_TYPELESS
+            | Self::R32G32B32_FLOAT
+            | Self::R32G32B32_UINT
+            | Self::R32G32B32_SINT => 96,
+            Self::R16G16B16A16_TYPELESS
+            | Self::R16G16B16A16_FLOAT
+            | Self::R16G16B16A16_UNORM
+            | Self::R16G16B16A16_UINT
+            | Self::R16G16B16A16_SNORM
+            | Self::R16G16B16A16_SINT
+            | Self::R32G32_TYPELESS
+            | Self::R32G32_FLOAT
+            | Self::R32G32_UINT
+            | Self::R32G32_SINT
+            | Self::R32G8X24_TYPELESS
+            | Self::D32_FLOAT_S8X24_UINT
+            | Self::R32_FLOAT_X8X24_TYPELESS
+            | Self::X32_TYPELESS_G8X24_UINT
+            | Self::Y416
+            | Self::Y210
+            | Self::Y216 => 64,
+            Self::R10G10B10A2_TYPELESS
+            | Self::R10G10B10A2_UNORM
+            | Self::R10G10B10A2_UINT
+            | Self::R11G11B10_FLOAT
+            | Self::R8G8B8A8_TYPELESS
+            | Self::R8G8B8A8_UNORM
+            | Self::R8G8B8A8_UNORM_SRGB
+            | Self::R8G8B8A8_UINT
+            | Self::R8G8B8A8_SNORM
+            | Self::R8G8B8A8_SINT
+            | Self::R16G16_TYPELESS
+            | Self::R16G16_FLOAT
+            | Self::R16G16_UNORM
+            | Self::R16G16_UINT
+            | Self::R16G16_SNORM
+            | Self::R16G16_SINT
+            | Self::R32_TYPELESS
+            | Self::D32_FLOAT
+            | Self::R32_FLOAT
+            | Self::R32_UINT
+            | Self::R32_SINT
+            | Self::R24G8_TYPELESS
+            | Self::D24_UNORM_S8_UINT
+            | Self::R24_UNORM_X8_TYPELESS
+            | Self::X24_TYPELESS_G8_UINT
+            | Self::R9G9B9E5_SHAREDEXP
+            | Self::R8G8_B8G8_UNORM
+            | Self::G8R8_G8B8_UNORM
+            | Self::B8G8R8A8_UNORM
+            | Self::B8G8R8X8_UNORM
+            | Self::R10G10B10_XR_BIAS_A2_UNORM
+            | Self::B8G8R8A8_TYPELESS
+            | Self::B8G8R8A8_UNORM_SRGB
+            | Self::B8G8R8X8_TYPELESS
+            | Self::B8G8R8X8_UNORM_SRGB
+            | Self::AYUV
+            | Self::Y410
+            | Self::YUY2 => 32,
+            Self::P010 | Self::P016 => 24,
+            Self::R8G8_TYPELESS
+            | Self::R8G8_UNORM
+            | Self::R8G8_UINT
+            | Self::R8G8_SNORM
+            | Self::R8G8_SINT
+            | Self::R16_TYPELESS
+            | Self::R16_FLOAT
+            | Self::D16_UNORM
+            | Self::R16_UNORM
+            | Self::R16_UINT
+            | Self::R16_SNORM
+            | Self::R16_SINT
+            | Self::B5G6R5_UNORM
+            | Self::B5G5R5A1_UNORM
+            | Self::A8P8
+            | Self::B4G4R4A4_UNORM => 16,
+            Self::NV12 | Self::OPAQUE420 | Self::NV11 => 12,
+            Self::R8_TYPELESS
+            | Self::R8_UNORM
+            | Self::R8_UINT
+            | Self::R8_SNORM
+            | Self::R8_SINT
+            | Self::A8_UNORM
+            | Self::AI44
+            | Self::IA44
+            | Self::P8 => 8,
+            Self::R1_UNORM => 1,
+            Self::BC1_TYPELESS
+            | Self::BC1_UNORM
+            | Self::BC1_UNORM_SRGB
+            | Self::BC4_TYPELESS
+            | Self::BC4_UNORM
+            | Self::BC4_SNORM => 4,
+            Self::BC2_TYPELESS
+            | Self::BC2_UNORM
+            | Self::BC2_UNORM_SRGB
+            | Self::BC3_TYPELESS
+            | Self::BC3_UNORM
+            | Self::BC3_UNORM_SRGB
+            | Self::BC5_TYPELESS
+            | Self::BC5_UNORM
+            | Self::BC5_SNORM
+            | Self::BC6H_TYPELESS
+            | Self::BC6H_UF16
+            | Self::BC6H_SF16
+            | Self::BC7_TYPELESS
+            | Self::BC7_UNORM
+            | Self::BC7_UNORM_SRGB => 8,
             u => panic!("{u:?}"),
         }
     }
@@ -303,72 +303,72 @@ impl DxgiFormat {
     pub const fn is_srgb(&self) -> bool {
         matches!(
             self,
-            DxgiFormat::R8G8B8A8_UNORM_SRGB
-                | DxgiFormat::BC1_UNORM_SRGB
-                | DxgiFormat::BC2_UNORM_SRGB
-                | DxgiFormat::BC3_UNORM_SRGB
-                | DxgiFormat::B8G8R8A8_UNORM_SRGB
-                | DxgiFormat::B8G8R8X8_UNORM_SRGB
-                | DxgiFormat::BC7_UNORM_SRGB
+            Self::R8G8B8A8_UNORM_SRGB
+                | Self::BC1_UNORM_SRGB
+                | Self::BC2_UNORM_SRGB
+                | Self::BC3_UNORM_SRGB
+                | Self::B8G8R8A8_UNORM_SRGB
+                | Self::B8G8R8X8_UNORM_SRGB
+                | Self::BC7_UNORM_SRGB
         )
     }
 
     pub const fn is_compressed(&self) -> bool {
         matches!(
             self,
-            DxgiFormat::BC1_TYPELESS
-                | DxgiFormat::BC1_UNORM
-                | DxgiFormat::BC1_UNORM_SRGB
-                | DxgiFormat::BC4_TYPELESS
-                | DxgiFormat::BC4_UNORM
-                | DxgiFormat::BC4_SNORM
-                | DxgiFormat::BC2_TYPELESS
-                | DxgiFormat::BC2_UNORM
-                | DxgiFormat::BC2_UNORM_SRGB
-                | DxgiFormat::BC3_TYPELESS
-                | DxgiFormat::BC3_UNORM
-                | DxgiFormat::BC3_UNORM_SRGB
-                | DxgiFormat::BC5_TYPELESS
-                | DxgiFormat::BC5_UNORM
-                | DxgiFormat::BC5_SNORM
-                | DxgiFormat::BC6H_TYPELESS
-                | DxgiFormat::BC6H_UF16
-                | DxgiFormat::BC6H_SF16
-                | DxgiFormat::BC7_TYPELESS
-                | DxgiFormat::BC7_UNORM
-                | DxgiFormat::BC7_UNORM_SRGB
+            Self::BC1_TYPELESS
+                | Self::BC1_UNORM
+                | Self::BC1_UNORM_SRGB
+                | Self::BC4_TYPELESS
+                | Self::BC4_UNORM
+                | Self::BC4_SNORM
+                | Self::BC2_TYPELESS
+                | Self::BC2_UNORM
+                | Self::BC2_UNORM_SRGB
+                | Self::BC3_TYPELESS
+                | Self::BC3_UNORM
+                | Self::BC3_UNORM_SRGB
+                | Self::BC5_TYPELESS
+                | Self::BC5_UNORM
+                | Self::BC5_SNORM
+                | Self::BC6H_TYPELESS
+                | Self::BC6H_UF16
+                | Self::BC6H_SF16
+                | Self::BC7_TYPELESS
+                | Self::BC7_UNORM
+                | Self::BC7_UNORM_SRGB
         )
     }
 
     pub fn calculate_pitch(&self, width: u32, height: u32) -> (usize, usize) {
         match self {
-            DxgiFormat::BC1_TYPELESS
-            | DxgiFormat::BC1_UNORM
-            | DxgiFormat::BC1_UNORM_SRGB
-            | DxgiFormat::BC4_TYPELESS
-            | DxgiFormat::BC4_UNORM
-            | DxgiFormat::BC4_SNORM => {
+            Self::BC1_TYPELESS
+            | Self::BC1_UNORM
+            | Self::BC1_UNORM_SRGB
+            | Self::BC4_TYPELESS
+            | Self::BC4_UNORM
+            | Self::BC4_SNORM => {
                 let nbw = ((width as i64 + 3) / 4).clamp(1, i64::MAX) as usize;
                 let nbh = ((height as i64 + 3) / 4).clamp(1, i64::MAX) as usize;
 
                 let pitch = nbw * 8;
                 (pitch, pitch * nbh)
             }
-            DxgiFormat::BC2_TYPELESS
-            | DxgiFormat::BC2_UNORM
-            | DxgiFormat::BC2_UNORM_SRGB
-            | DxgiFormat::BC3_TYPELESS
-            | DxgiFormat::BC3_UNORM
-            | DxgiFormat::BC3_UNORM_SRGB
-            | DxgiFormat::BC5_TYPELESS
-            | DxgiFormat::BC5_UNORM
-            | DxgiFormat::BC5_SNORM
-            | DxgiFormat::BC6H_TYPELESS
-            | DxgiFormat::BC6H_UF16
-            | DxgiFormat::BC6H_SF16
-            | DxgiFormat::BC7_TYPELESS
-            | DxgiFormat::BC7_UNORM
-            | DxgiFormat::BC7_UNORM_SRGB => {
+            Self::BC2_TYPELESS
+            | Self::BC2_UNORM
+            | Self::BC2_UNORM_SRGB
+            | Self::BC3_TYPELESS
+            | Self::BC3_UNORM
+            | Self::BC3_UNORM_SRGB
+            | Self::BC5_TYPELESS
+            | Self::BC5_UNORM
+            | Self::BC5_SNORM
+            | Self::BC6H_TYPELESS
+            | Self::BC6H_UF16
+            | Self::BC6H_SF16
+            | Self::BC7_TYPELESS
+            | Self::BC7_UNORM
+            | Self::BC7_UNORM_SRGB => {
                 let nbw = ((width as i64 + 3) / 4).clamp(1, i64::MAX) as usize;
                 let nbh = ((height as i64 + 3) / 4).clamp(1, i64::MAX) as usize;
 

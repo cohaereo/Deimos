@@ -9,7 +9,7 @@ use deimos_data::{
 };
 use glam::Vec4;
 use tiger_parse::FnvHash;
-use tracing::{error, warn};
+use tracing::error;
 
 pub struct PermutationConfig {
     pub permutation_index_override: Option<usize>,

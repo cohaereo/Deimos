@@ -1,7 +1,4 @@
-use std::{
-    fmt::Debug,
-    io::{Read, Seek},
-};
+use std::{fmt::Debug, io::Seek};
 
 use glam::Vec4;
 use int_enum::IntEnum;

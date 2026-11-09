@@ -19,10 +19,7 @@ use deimos_render::{
         cascades::CascadeCalculator,
         scene::{DebugPipeline, SceneRenderer},
     },
-    tfx::{
-        externs::{self, get_global_channel_name},
-        scope::FrameScope,
-    },
+    tfx::externs::{self, get_global_channel_name},
     visibility::{ViewVisibility, frustum::Frustum},
 };
 use egui::{
