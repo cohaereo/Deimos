@@ -179,7 +179,7 @@ impl App {
         );
 
         {
-            self.gui.draw_ui(&self.shared_state);
+            let output = self.gui.draw_ui(&self.shared_state);
 
             {
                 // let _event_scope = cmd.event_scope("App::render::ui", (255, 0, 255));
@@ -204,7 +204,7 @@ impl App {
                     vk::RenderingFlags::empty(),
                 )?;
 
-                self.gui.render(&self.gpu, &cmd);
+                self.gui.render(&self.gpu, &cmd, output);
 
                 cmd.end_rendering();
             }

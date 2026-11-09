@@ -1,6 +1,6 @@
 use std::sync::Arc;
 
-use egui::{Ui, vec2};
+use egui::{TextStyle, Ui, vec2};
 use google_material_symbols::GoogleMaterialSymbols;
 
 use crate::{
@@ -33,6 +33,15 @@ impl HomeTab {
 
         ui.add_space(32.0);
         ui.columns(2, |uis| {
+            uis[0].style_mut().text_styles.insert(
+                TextStyle::Body,
+                egui::FontId::new(32.0, egui::FontFamily::Name("khinterference".into())),
+            );
+            uis[1].style_mut().text_styles.insert(
+                TextStyle::Body,
+                egui::FontId::new(32.0, egui::FontFamily::Name("khinterference".into())),
+            );
+
             uis[0].heading("3D");
             uis[0].add_space(4.0);
             if uis[0]
@@ -76,11 +85,11 @@ impl HomeTab {
             let _b = uis[1].d_button(format!("{} UI", GoogleMaterialSymbols::DesktopWindows));
         });
 
-        egui::TopBottomPanel::bottom("home_links")
+        egui::Panel::bottom("home_links")
             .frame(egui::Frame::NONE)
             .show_separator_line(false)
             .resizable(false)
-            .show_inside(ui, |ui| {
+            .show(ui, |ui| {
                 ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                     ui.image_link(
                         egui::include_image!("../../../assets/ui/github.svg"),

@@ -15,7 +15,7 @@ pub mod static_list;
 use std::{fmt::Display, sync::Arc};
 
 use egui::Margin;
-use egui_dock::{DockState, NodeIndex, SurfaceIndex, TabIndex};
+use egui_dock::{DockState, TabPath};
 use google_material_symbols::GoogleMaterialSymbols;
 use home::HomeTab;
 
@@ -98,6 +98,10 @@ pub struct TabViewer<'a> {
 impl<'a> egui_dock::TabViewer for TabViewer<'a> {
     type Tab = Tab;
 
+    fn id(&mut self, tab: &mut Self::Tab) -> egui::Id {
+        egui::Id::new(format!("{}_{}", tab.key(), self.title(tab).text()))
+    }
+
     fn title(&mut self, tab: &mut Self::Tab) -> egui::WidgetText {
         tab.to_string().into()
     }
@@ -169,22 +173,20 @@ impl<'a> TabViewer<'a> {
 }
 
 pub trait DockStateExt<Tab> {
-    fn find_tab(
-        &self,
-        predicate: impl Fn(&Tab) -> bool,
-    ) -> Option<(SurfaceIndex, NodeIndex, TabIndex)>;
+    fn find_tab(&self, predicate: impl Fn(&Tab) -> bool) -> Option<TabPath>;
 }
 
 impl<Tab> DockStateExt<Tab> for DockState<Tab> {
-    fn find_tab(
-        &self,
-        predicate: impl Fn(&Tab) -> bool,
-    ) -> Option<(SurfaceIndex, NodeIndex, TabIndex)> {
+    fn find_tab(&self, predicate: impl Fn(&Tab) -> bool) -> Option<TabPath> {
         for (si, surface) in self.iter_surfaces().enumerate() {
             for (ni, node) in surface.iter_nodes().enumerate() {
                 for (ti, tab) in node.iter_tabs().enumerate() {
                     if predicate(tab) {
-                        return Some((si.into(), ni.into(), ti.into()));
+                        return Some(TabPath {
+                            surface: si.into(),
+                            node: ni.into(),
+                            tab: ti.into(),
+                        });
                     }
                 }
             }

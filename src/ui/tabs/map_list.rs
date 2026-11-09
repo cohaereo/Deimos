@@ -1,7 +1,8 @@
 use std::sync::Arc;
 
+use ahash::HashMap;
 use deimos_data::map::{SBubbleParent, SBubbleParentShallow};
-use egui::{Margin, Ui, ahash::HashMap, vec2};
+use egui::{FontId, Margin, TextStyle, Ui, vec2};
 use tiger_parse::{PackageManagerExt, TigerReadable};
 use tiger_pkg::{TagHash, package_manager};
 
@@ -69,6 +70,10 @@ impl MapListTab {
 
     pub fn ui(&mut self, ui: &mut Ui) -> TabResult {
         let mut result = TabResult::Continue;
+        ui.style_mut().text_styles.insert(
+            TextStyle::Body,
+            FontId::new(24.0, egui::FontFamily::Name("khinterference".into())),
+        );
         egui::Frame::new()
             .outer_margin(Margin {
                 top: 16,

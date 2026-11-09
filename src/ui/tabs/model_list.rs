@@ -270,100 +270,93 @@ impl<P: ModelProvider> ModelListBase<P> {
             Ok(o) => (Some(o), true),
             Err(_) => (None, false),
         };
-        egui::SidePanel::left(format!("{}_packages_list", self.provider.name())).show_inside(
-            ui,
-            |ui| {
-                egui::TextEdit::singleline(&mut self.filter)
-                    .text_color_opt((!filter_valid).then_some(Color32::RED))
-                    .hint_text("Search by Hash")
-                    .ui(ui);
+        egui::Panel::left(format!("{}_packages_list", self.provider.name())).show(ui, |ui| {
+            egui::TextEdit::singleline(&mut self.filter)
+                .text_color_opt((!filter_valid).then_some(Color32::RED))
+                .hint_text("Search by Hash")
+                .ui(ui);
 
-                ui.horizontal(|ui| {
-                    ui.label("Sort by:");
-                    egui::ComboBox::new("sorting_mode", "")
-                        .selected_text(format!("{:?}", self.package_sorting))
-                        .show_ui(ui, |ui| {
-                            ui.style_mut()
-                                .text_styles
-                                .insert(TextStyle::Button, FontId::proportional(16.0));
-                            ui.style_mut().spacing.button_padding = Vec2::new(8.0, 2.0);
-                            ui.style_mut().spacing.item_spacing = Vec2::ZERO;
+            ui.horizontal(|ui| {
+                ui.label("Sort by:");
+                egui::ComboBox::new("sorting_mode", "")
+                    .selected_text(format!("{:?}", self.package_sorting))
+                    .show_ui(ui, |ui| {
+                        ui.style_mut()
+                            .text_styles
+                            .insert(TextStyle::Button, FontId::proportional(16.0));
+                        ui.style_mut().spacing.button_padding = Vec2::new(8.0, 2.0);
+                        ui.style_mut().spacing.item_spacing = Vec2::ZERO;
 
-                            let mut clicked = ui
-                                .selectable_value(
-                                    &mut self.package_sorting,
-                                    PackageSorting::Id,
-                                    "Id",
-                                )
-                                .clicked();
-                            clicked |= ui
-                                .selectable_value(
-                                    &mut self.package_sorting,
-                                    PackageSorting::Name,
-                                    "Name",
-                                )
-                                .clicked();
-                            clicked |= ui
-                                .selectable_value(
-                                    &mut self.package_sorting,
-                                    PackageSorting::Count,
-                                    "Count",
-                                )
-                                .clicked();
+                        let mut clicked = ui
+                            .selectable_value(&mut self.package_sorting, PackageSorting::Id, "Id")
+                            .clicked();
+                        clicked |= ui
+                            .selectable_value(
+                                &mut self.package_sorting,
+                                PackageSorting::Name,
+                                "Name",
+                            )
+                            .clicked();
+                        clicked |= ui
+                            .selectable_value(
+                                &mut self.package_sorting,
+                                PackageSorting::Count,
+                                "Count",
+                            )
+                            .clicked();
 
-                            if clicked {
-                                (self.package_sorting)
-                                    .sort_package_ids(&self.provider, &mut self.package_ids);
-                            }
-                        });
-                });
-
-                egui::ScrollArea::vertical()
-                    .auto_shrink([false; 2])
-                    .show(ui, |ui| {
-                        ui.style_mut().wrap_mode = Some(egui::TextWrapMode::Extend);
-                        let mut pkg_to_clear: Option<u16> = None;
-
-                        for pkg_id in self.package_ids.iter() {
-                            if let Some(hash) = filter_hash
-                                && *pkg_id != hash.pkg_id()
-                            {
-                                continue;
-                            }
-
-                            let path = &package_manager().package_paths[pkg_id];
-                            if ui
-                                .selectable_label(
-                                    *pkg_id == self.current_package,
-                                    (
-                                        RichText::new(format!("{pkg_id:04x} -")).weak().italics(),
-                                        path.name.clone(),
-                                        RichText::new(format!(
-                                            "({})",
-                                            self.provider.num_models(*pkg_id)
-                                        ))
-                                        .weak()
-                                        .italics()
-                                        .small(),
-                                    ),
-                                )
-                                .clicked()
-                            {
-                                pkg_to_clear = Some(self.current_package);
-                                self.current_package = *pkg_id;
-                            }
-                        }
-
-                        if let Some(pkg_id) = pkg_to_clear {
-                            self.provider.unload_package(pkg_id);
+                        if clicked {
+                            (self.package_sorting)
+                                .sort_package_ids(&self.provider, &mut self.package_ids);
                         }
                     });
-            },
-        );
+            });
 
-        egui::SidePanel::right(format!("{}_scene", self.current_package))
-            .default_width(ui.ctx().content_rect().width() * 0.3)
-            .show_inside(ui, |ui| {
+            egui::ScrollArea::vertical()
+                .auto_shrink([false; 2])
+                .show(ui, |ui| {
+                    ui.style_mut().wrap_mode = Some(egui::TextWrapMode::Extend);
+                    let mut pkg_to_clear: Option<u16> = None;
+
+                    for pkg_id in self.package_ids.iter() {
+                        if let Some(hash) = filter_hash
+                            && *pkg_id != hash.pkg_id()
+                        {
+                            continue;
+                        }
+
+                        let path = &package_manager().package_paths[pkg_id];
+                        if ui
+                            .selectable_label(
+                                *pkg_id == self.current_package,
+                                (
+                                    RichText::new(format!("{pkg_id:04x} -")).weak().italics(),
+                                    path.name.clone(),
+                                    RichText::new(format!(
+                                        "({})",
+                                        self.provider.num_models(*pkg_id)
+                                    ))
+                                    .weak()
+                                    .italics()
+                                    .small(),
+                                ),
+                            )
+                            .clicked()
+                        {
+                            pkg_to_clear = Some(self.current_package);
+                            self.current_package = *pkg_id;
+                        }
+                    }
+
+                    if let Some(pkg_id) = pkg_to_clear {
+                        self.provider.unload_package(pkg_id);
+                    }
+                });
+        });
+
+        egui::Panel::right(format!("{}_scene", self.current_package))
+            .default_size(ui.ctx().content_rect().width() * 0.3)
+            .show(ui, |ui| {
                 ui.take_available_space();
 
                 let permutations_available = self
@@ -387,7 +380,7 @@ impl<P: ModelProvider> ModelListBase<P> {
                     ui.style_mut()
                         .text_styles
                         .insert(TextStyle::Body, FontId::proportional(12.0));
-                    egui::TopBottomPanel::bottom("entities_scene_configuration").resizable(true).show_inside(
+                    egui::Panel::bottom("entities_scene_configuration").resizable(true).show(
                         ui,
                         |ui| {
                         ui.add_space(12.0);
@@ -593,7 +586,7 @@ impl<P: ModelProvider> ModelListBase<P> {
                 // });
             });
 
-        egui::CentralPanel::default().show_inside(ui, |ui| {
+        egui::CentralPanel::default().show(ui, |ui| {
             ui.horizontal(|ui| {
                 ui.checkbox(&mut self.hide_empty, "Hide empty");
                 ui.separator();

@@ -2,7 +2,7 @@ use std::{cell::RefCell, sync::Arc};
 
 use ahash::HashMap;
 use deimos_data::activity::SActivity;
-use egui::{Atoms, Color32, IntoAtoms, vec2};
+use egui::{Atoms, Color32, FontId, IntoAtoms, TextStyle, vec2};
 use google_material_symbols::GoogleMaterialSymbols;
 use itertools::Itertools;
 use tiger_parse::TigerReadable;
@@ -123,7 +123,12 @@ impl ActivityListTab {
         };
 
         let current_selected = self.current_node.borrow().get(depth).copied();
-        egui::SidePanel::left(format!("activity_node_depth{depth}")).show_inside(ui, |ui| {
+        egui::Panel::left(format!("activity_node_depth{depth}")).show(ui, |ui| {
+            ui.style_mut().text_styles.insert(
+                TextStyle::Body,
+                FontId::new(24.0, egui::FontFamily::Name("khinterference".into())),
+            );
+
             if depth == 0 {
                 ui.add(
                     egui::TextEdit::singleline(&mut *self.search_query.borrow_mut())

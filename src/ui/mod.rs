@@ -129,10 +129,11 @@ impl Gui {
             &gpu.instance,
             gpu.physical_device,
             gpu.device.clone(),
-            egui_ash_renderer::DynamicRendering {
+            egui_ash_renderer::RenderMode::DynamicRendering(egui_ash_renderer::DynamicRendering {
                 color_attachment_format: gpu.surface_format.format,
                 depth_attachment_format: None,
-            },
+                stencil_attachment_format: None,
+            }),
             egui_ash_renderer::Options {
                 in_flight_frames: Gpu::MAX_FRAMES_IN_FLIGHT,
                 enable_depth_test: false,
@@ -145,7 +146,7 @@ impl Gui {
         let egui_sdl3 =
             egui_sdl3_platform::Platform::new(&sdl, &window, gpu.swapchain_resolution())?;
         egui_sdl3.context().set_fonts(fonts);
-        egui_sdl3.context().style_mut(|s| {
+        egui_sdl3.context().global_style_mut(|s| {
             *s = style::gui_style();
         });
 
@@ -212,76 +213,79 @@ impl Gui {
         self.added_nodes.push(tab);
     }
 
-    pub fn draw_ui(&mut self, shared_state: &Arc<SharedState>) {
-        let ctx = self
+    pub fn draw_ui(&mut self, shared_state: &Arc<SharedState>) -> egui::FullOutput {
+        let (ctx, raw_input) = self
             .egui_sdl3
             .begin_frame(self.window.size_in_pixels(), self.window.display_scale());
-        ctx.style_mut(|s| s.visuals.panel_fill = Color32::from_black_alpha(96));
+        ctx.global_style_mut(|s| s.visuals.panel_fill = Color32::from_black_alpha(96));
 
-        DockArea::new(&mut self.tree)
-            .show_add_buttons(false)
-            .style({
-                let mut style = egui_dock::Style::from_egui(ctx.style().as_ref());
-                // style.tab_bar.fill_tab_bar = true;
-                style.tab_bar.height = 32.0;
-                style.tab_bar.bg_fill = Color32::from_gray(4);
+        let output = ctx.run_ui(raw_input, |ui| {
+            DockArea::new(&mut self.tree)
+                .show_add_buttons(false)
+                .style({
+                    let mut style = egui_dock::Style::from_egui(ctx.global_style().as_ref());
+                    // style.tab_bar.fill_tab_bar = true;
+                    style.tab_bar.height = 32.0;
+                    style.tab_bar.bg_fill = Color32::from_gray(4);
 
-                let inactive = TabInteractionStyle {
-                    outline_color: Color32::TRANSPARENT,
-                    corner_radius: egui::CornerRadius::ZERO,
-                    bg_fill: Color32::BLACK,
-                    text_color: Color32::WHITE,
-                };
+                    let inactive = TabInteractionStyle {
+                        outline_color: Color32::TRANSPARENT,
+                        corner_radius: egui::CornerRadius::ZERO,
+                        bg_fill: Color32::BLACK,
+                        text_color: Color32::WHITE,
+                    };
 
-                let hovered = TabInteractionStyle {
-                    outline_color: Color32::from_gray(127),
-                    bg_fill: ctx.style().visuals.window_fill().gamma_multiply(0.5),
-                    ..inactive
-                };
+                    let hovered = TabInteractionStyle {
+                        outline_color: Color32::from_gray(127),
+                        bg_fill: ctx.global_style().visuals.window_fill().gamma_multiply(0.5),
+                        ..inactive
+                    };
 
-                let active = TabInteractionStyle {
-                    bg_fill: ctx.style().visuals.window_fill(),
-                    ..hovered
-                };
+                    let active = TabInteractionStyle {
+                        bg_fill: ctx.global_style().visuals.window_fill(),
+                        ..hovered
+                    };
 
-                let focused = TabInteractionStyle {
-                    outline_color: Color32::WHITE,
-                    bg_fill: ctx.style().visuals.window_fill(),
-                    ..inactive
-                };
+                    let focused = TabInteractionStyle {
+                        outline_color: Color32::WHITE,
+                        bg_fill: ctx.global_style().visuals.window_fill(),
+                        ..inactive
+                    };
 
-                style.tab = egui_dock::TabStyle {
-                    active: active.clone(),
-                    inactive: inactive.clone(),
-                    focused: focused.clone(),
-                    hovered,
-                    inactive_with_kb_focus: inactive,
-                    active_with_kb_focus: active,
-                    focused_with_kb_focus: focused,
-                    tab_body: egui_dock::TabBodyStyle {
-                        inner_margin: ctx.style().spacing.window_margin,
-                        stroke: ctx.style().visuals.widgets.noninteractive.bg_stroke,
-                        corner_radius: ctx.style().visuals.widgets.active.corner_radius,
-                        bg_fill: ctx.style().visuals.window_fill(),
-                        // bg_fill: Color32::from_black_alpha(128),
+                    style.tab = egui_dock::TabStyle {
+                        active: active.clone(),
+                        inactive: inactive.clone(),
+                        focused: focused.clone(),
+                        hovered,
+                        inactive_with_kb_focus: inactive,
+                        active_with_kb_focus: active,
+                        focused_with_kb_focus: focused,
+                        tab_body: egui_dock::TabBodyStyle {
+                            inner_margin: ctx.global_style().spacing.window_margin,
+                            stroke: ctx.global_style().visuals.widgets.noninteractive.bg_stroke,
+                            corner_radius: ctx.global_style().visuals.widgets.active.corner_radius,
+                            bg_fill: ctx.global_style().visuals.window_fill(),
+                            // bg_fill: Color32::from_black_alpha(128),
+                            hidden_tab_bar_drag_height: None,
+                        },
+                        hline_below_active_tab_name: false,
+                        ..Default::default()
+                    };
+                    style
+                })
+                .show_leaf_collapse_buttons(false)
+                .show_leaf_close_all_buttons(false)
+                .draggable_tabs(false)
+                .allowed_splits(egui_dock::AllowedSplits::None)
+                .show_inside(
+                    ui,
+                    &mut TabViewer {
+                        added_nodes: &mut self.added_nodes,
+                        renderer: &mut self.renderer,
+                        shared_state,
                     },
-                    hline_below_active_tab_name: false,
-                    ..Default::default()
-                };
-                style
-            })
-            .show_leaf_collapse_buttons(false)
-            .show_leaf_close_all_buttons(false)
-            .draggable_tabs(false)
-            .allowed_splits(egui_dock::AllowedSplits::None)
-            .show(
-                &ctx,
-                &mut TabViewer {
-                    added_nodes: &mut self.added_nodes,
-                    renderer: &mut self.renderer,
-                    shared_state,
-                },
-            );
+                );
+        });
 
         for tab in self.added_nodes.drain(..) {
             // Is the tab unique and does it already exist? Then switch to it instead of adding it again.
@@ -329,7 +333,9 @@ impl Gui {
         let mut close_update_window = false;
         if let Some(update) = self.available_update.as_ref() {
             egui::Modal::new("update_available".into())
-                .frame(egui::Frame::popup(&ctx.style()).inner_margin(Margin::symmetric(64, 48)))
+                .frame(
+                    egui::Frame::popup(&ctx.global_style()).inner_margin(Margin::symmetric(64, 48)),
+                )
                 .show(&ctx, |ui| {
                     ui.heading("Update available!");
                     ui.label(format!(
@@ -415,14 +421,13 @@ impl Gui {
                     );
                 });
         }
+
+        self.egui_sdl3
+            .end_frame(&mut self.sdl.video().unwrap(), output)
+            .unwrap()
     }
 
-    pub fn render(&mut self, _gpu: &Arc<Gpu>, cmd: &vk::CommandBuffer) {
-        let output = self
-            .egui_sdl3
-            .end_frame(&mut self.sdl.video().unwrap())
-            .unwrap();
-
+    pub fn render(&mut self, _gpu: &Arc<Gpu>, cmd: &vk::CommandBuffer, output: egui::FullOutput) {
         self.renderer
             .draw(self.egui_sdl3.context(), output, cmd)
             .unwrap();
@@ -431,14 +436,17 @@ impl Gui {
 
 pub struct GuiRenderer {
     gpu: Arc<Gpu>,
-    pub renderer: egui_ash_renderer::Renderer,
+    pub renderer: egui_ash_renderer::Renderer<egui_ash_renderer::allocator::DefaultAllocator>,
     temporary_textures: Vec<egui::TextureId>,
 
     descriptor_layout: vk::DescriptorSetLayout,
 }
 
 impl GuiRenderer {
-    pub fn new(gpu: Arc<Gpu>, renderer: egui_ash_renderer::Renderer) -> anyhow::Result<Self> {
+    pub fn new(
+        gpu: Arc<Gpu>,
+        renderer: egui_ash_renderer::Renderer<egui_ash_renderer::allocator::DefaultAllocator>,
+    ) -> anyhow::Result<Self> {
         let descriptor_layout =
             egui_ash_renderer::vulkan::create_vulkan_descriptor_set_layout(&gpu.device)?;
 
@@ -454,19 +462,19 @@ impl GuiRenderer {
     pub fn draw(
         &mut self,
         ctx: &egui::Context,
-        output: egui::FullOutput,
+        mut output: egui::FullOutput,
         cmd: &vk::CommandBuffer,
     ) -> anyhow::Result<()> {
         let pixels_per_point = ctx.pixels_per_point();
         let primitives = ctx.tessellate(output.shapes, pixels_per_point);
 
-        self.renderer
-            .set_textures(
-                self.gpu.queue,
-                self.gpu.command_pool,
-                output.textures_delta.set.as_slice(),
-            )
-            .unwrap();
+        for (id, deltas) in output.textures_delta.set.drain() {
+            for delta in deltas {
+                self.renderer
+                    .set_texture(self.gpu.queue, self.gpu.command_pool, id, &delta)
+                    .unwrap();
+            }
+        }
 
         if let Err(e) = self.renderer.cmd_draw(
             *cmd,
@@ -477,9 +485,9 @@ impl GuiRenderer {
             error!("Failed to draw egui primitives: {:?}", e);
         }
 
-        self.renderer
-            .free_textures(output.textures_delta.free.as_slice())
-            .unwrap();
+        for id in output.textures_delta.free.drain() {
+            self.renderer.free_texture(id);
+        }
 
         for id in self.temporary_textures.drain(..) {
             self.renderer.remove_user_texture(id);

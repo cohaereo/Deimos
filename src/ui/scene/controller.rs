@@ -34,6 +34,16 @@ impl CameraController {
     }
 
     pub fn update(&mut self, camera: &mut Camera, ui: &Ui, response: &Response, delta_time: f32) {
+        let scroll_delta = ui.input(|i| {
+            let mut scroll = egui::Vec2::ZERO;
+            for event in i.raw.events.iter() {
+                if let egui::Event::MouseWheel { delta, .. } = event {
+                    scroll += *delta;
+                }
+            }
+            scroll
+        });
+
         match self {
             Self::Orbit {
                 target,
@@ -41,7 +51,6 @@ impl CameraController {
                 yaw_pitch,
             } => {
                 if response.hovered() {
-                    let scroll_delta = ui.input(|i| i.raw_scroll_delta);
                     *distance += -scroll_delta.y / 250.0;
                     *distance = distance.clamp(0.01, 1000.0);
                 }
@@ -75,7 +84,6 @@ impl CameraController {
                 yaw_pitch,
             } => {
                 if response.hovered() {
-                    let scroll_delta = ui.input(|i| i.raw_scroll_delta);
                     if scroll_delta.y != 0.0 {
                         ui.memory_mut(|m| {
                             m.data

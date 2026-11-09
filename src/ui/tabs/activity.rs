@@ -79,38 +79,35 @@ impl ActivityTab {
 
     pub fn ui(&mut self, ui: &mut egui::Ui, gui_renderer: &mut GuiRenderer) {
         if self.maps.len() > 1 {
-            egui::SidePanel::left(format!("activity_{}_map_list", self.tag)).show_inside(
-                ui,
-                |ui| {
-                    egui::ScrollArea::vertical()
-                        .auto_shrink([true, false])
-                        .id_salt("map_list_packages")
-                        .show(ui, |ui| {
-                            ui.style_mut().wrap_mode = Some(egui::TextWrapMode::Extend);
-                            for (i, map) in self.maps.iter_mut().enumerate() {
-                                let state = map.poll_load();
+            egui::Panel::left(format!("activity_{}_map_list", self.tag)).show(ui, |ui| {
+                egui::ScrollArea::vertical()
+                    .auto_shrink([true, false])
+                    .id_salt("map_list_packages")
+                    .show(ui, |ui| {
+                        ui.style_mut().wrap_mode = Some(egui::TextWrapMode::Extend);
+                        for (i, map) in self.maps.iter_mut().enumerate() {
+                            let state = map.poll_load();
 
-                                let mut load_sym = state.symbol();
-                                if self.current_map_index == i
-                                    && load_sym as u32 == GoogleMaterialSymbols::CheckCircle as u32
-                                {
-                                    load_sym = GoogleMaterialSymbols::RadioButtonChecked;
-                                }
-
-                                let btn = if self.current_map_index == i {
-                                    DButton::new_black((load_sym.to_string(), map.name.clone()))
-                                } else {
-                                    DButton::new((load_sym.to_string(), map.name.clone()))
-                                };
-
-                                if btn.min_size(vec2(384.0, 32.0)).ui(ui).clicked() {
-                                    self.current_map_index = i;
-                                    map.start_load(self.renderer.clone());
-                                }
+                            let mut load_sym = state.symbol();
+                            if self.current_map_index == i
+                                && load_sym as u32 == GoogleMaterialSymbols::CheckCircle as u32
+                            {
+                                load_sym = GoogleMaterialSymbols::RadioButtonChecked;
                             }
-                        });
-                },
-            );
+
+                            let btn = if self.current_map_index == i {
+                                DButton::new_black((load_sym.to_string(), map.name.clone()))
+                            } else {
+                                DButton::new((load_sym.to_string(), map.name.clone()))
+                            };
+
+                            if btn.min_size(vec2(384.0, 32.0)).ui(ui).clicked() {
+                                self.current_map_index = i;
+                                map.start_load(self.renderer.clone());
+                            }
+                        }
+                    });
+            });
         }
 
         let Some(map) = self.maps.get_mut(self.current_map_index) else {

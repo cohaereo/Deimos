@@ -167,14 +167,15 @@ impl Scene {
         // }
 
         if self.show_channel_editor {
-            egui::SidePanel::right("channel_editor").show_inside(ui, |ui| {
+            egui::Panel::right("channel_editor").show(ui, |ui| {
                 self.show_channel_editor(ui);
             });
         }
 
-        egui::CentralPanel::default().show_inside(ui, |ui| {
+        egui::CentralPanel::default().show(ui, |ui| {
             let panel_rect = ui.available_rect_before_wrap();
 
+            let size = size.min(panel_rect.size());
             // let r = ui.allocate_response(size, Sense::CLICK | Sense::DRAG | Sense::HOVER);
             let r = ui
                 .image(SizedTexture {
