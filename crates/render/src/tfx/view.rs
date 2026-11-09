@@ -140,3 +140,19 @@ impl ShadowCascade {
         self.camera_to_projective * self.world_to_camera
     }
 }
+
+pub struct ViewSettings {
+    pub exposure_scale: f32,
+    pub exposure_illum_relative: f32,
+    pub draw_hdri_background: bool,
+}
+
+impl Default for ViewSettings {
+    fn default() -> Self {
+        Self {
+            exposure_scale: 1.0,
+            exposure_illum_relative: 1.0,
+            draw_hdri_background: true,
+        }
+    }
+}

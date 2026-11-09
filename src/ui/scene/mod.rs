@@ -499,6 +499,12 @@ impl Scene {
     pub fn render(&mut self, delta_time: f32, canvas_resolution: (u32, u32)) {
         let cmd = self.renderer.gpu.current_command_buffer();
         let mut cmd = CommandList::from_native_command_list(&self.renderer.gpu, cmd);
+
+        let resolution = self.scene_renderer.main_view.resolution();
+        self.camera.aspect_ratio = resolution.0 as f32 / resolution.1 as f32;
+        self.controller.update_rotation(&mut self.camera);
+        self.camera.update();
+
         let _scene_scope = self.renderer.gpu.profiler_scope(&cmd, "scene_render");
         s_update_object_channels(&self.world);
         if let Err(e) = self
@@ -701,43 +707,6 @@ impl Scene {
                 unkc0: vec4(0.00333, -2.33333, 0.00, 0.00),
                 ..Default::default()
             };
-
-            let time = self.start_time.elapsed().as_secs_f32();
-            self.renderer
-                .globals
-                .scopes
-                .frame
-                .write_initial_constants(
-                    FrameScope {
-                        game_time: ext.frame.game_time, //self.start_time.elapsed().as_secs_f32(),
-                        render_time: ext.frame.render_time, //self.start_time.elapsed().as_secs_f32(),
-                        delta_game_time: ext.frame.delta_game_time,
-                        exposure_time: ext.frame.exposure_time,
-
-                        // exposure_scale: 1.,
-                        // exposure_illum_relative_glow: 1.,
-                        // exposure_illum_relative: 1.,
-                        // exposure_scale_for_shading: 1.,
-                        exposure_scale: ext.frame.exposure_scale,
-                        exposure_illum_relative_glow: ext.frame.exposure_illum_relative * 16.0,
-                        exposure_scale_for_shading: ext.frame.exposure_scale,
-                        exposure_illum_relative: ext.frame.exposure_illum_relative,
-
-                        random_seed_scales: vec4(
-                            time.mul_add(60.0, 33.75) * 1.258699,
-                            time.mul_add(60.0, 60.0) * 0.9583125,
-                            time.mul_add(60.0, 60.0) * 8.789123,
-                            time.mul_add(60.0, 33.75) * 2.311535,
-                        ),
-                        unk3: vec4(0.5, 0.5, 0.0, 0.0),
-                        unk4: vec4(1.0, 1.0, 0.0, 1.0),
-                        unk5: vec4(0.00, -f32::NAN, 512.00, 0.00), // z component is used as upper bound for (specular) light intensity
-                        unk6: Vec4::ONE,
-                    }
-                    .to_array()
-                    .as_ref(),
-                )
-                .expect("failed to copy frame constants");
 
             self.renderer
                 .globals
@@ -1040,18 +1009,23 @@ impl Scene {
 
         ui.strong("Exposure Scale");
         ui.spacing_mut().slider_width = ui.available_width() * 0.75;
-        let ext = self.renderer.externs.get_mut();
-        egui::Slider::new(&mut ext.frame.exposure_scale, 0.001..=4.0)
-            .logarithmic(true)
-            .show_value(true)
-            .ui(ui);
+        egui::Slider::new(
+            &mut self.scene_renderer.settings.exposure_scale,
+            0.001..=4.0,
+        )
+        .logarithmic(true)
+        .show_value(true)
+        .ui(ui);
 
         ui.strong("Exposure Illum Relative");
         ui.spacing_mut().slider_width = ui.available_width() * 0.75;
-        egui::Slider::new(&mut ext.frame.exposure_illum_relative, 0.01..=2.0)
-            .logarithmic(false)
-            .show_value(true)
-            .ui(ui);
+        egui::Slider::new(
+            &mut self.scene_renderer.settings.exposure_illum_relative,
+            0.01..=2.0,
+        )
+        .logarithmic(false)
+        .show_value(true)
+        .ui(ui);
 
         ui.add_space(4.0);
 

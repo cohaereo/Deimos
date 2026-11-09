@@ -11,7 +11,7 @@ use deimos_data::{
         FixedFunctionState, PrimitiveType, RenderStage, features::dynamic::RenderStageSubscription,
     },
 };
-use glam::{Vec3, Vec4};
+use glam::{Vec3, Vec4, vec4};
 use rayon::prelude::*;
 use slotmap::SlotMap;
 
@@ -34,7 +34,10 @@ use crate::{
         packet::{FramePacket, RenderPerFrameNode, RenderPerViewNode, SubmitNode, ViewPacket},
         ssr::{SsrConstants, SsrRenderer},
     },
-    tfx::view::ShadedView,
+    tfx::{
+        scope::FrameScope,
+        view::{ShadedView, ViewSettings},
+    },
     visibility::ViewVisibility,
 };
 
@@ -42,6 +45,8 @@ pub struct SceneRenderer {
     pub parent: Arc<Renderer>,
 
     pub frame_packet: FramePacket,
+
+    pub settings: ViewSettings,
 
     pub main_view: ShadedView,
     pub ssr: SsrRenderer,
@@ -57,6 +62,7 @@ impl SceneRenderer {
         let mut r = Self {
             frame_packet: FramePacket::default(),
             main_view,
+            settings: ViewSettings::default(),
             ssr,
             global_channels: parent.globals.channels.default_values(),
             parent,
@@ -100,8 +106,52 @@ impl SceneRenderer {
         draw_sun_shadows: bool,
     ) {
         self.parent.externs.reset_global_channel_frequencies();
+        self.parent.externs.bump_generation();
         let gpu = cmd.gpu().clone();
         // let stream = &gpu.frame().stream;
+
+        {
+            let ext = self.parent.externs.get_mut();
+            ext.frame.exposure_scale = self.settings.exposure_scale;
+            ext.frame.exposure_illum_relative = self.settings.exposure_illum_relative;
+
+            let time = ext.frame.render_time;
+            self.parent
+                .globals
+                .scopes
+                .frame
+                .write_initial_constants(
+                    FrameScope {
+                        game_time: ext.frame.game_time, //self.start_time.elapsed().as_secs_f32(),
+                        render_time: ext.frame.render_time, //self.start_time.elapsed().as_secs_f32(),
+                        delta_game_time: ext.frame.delta_game_time,
+                        exposure_time: ext.frame.exposure_time,
+
+                        // exposure_scale: 1.,
+                        // exposure_illum_relative_glow: 1.,
+                        // exposure_illum_relative: 1.,
+                        // exposure_scale_for_shading: 1.,
+                        exposure_scale: ext.frame.exposure_scale,
+                        exposure_illum_relative_glow: ext.frame.exposure_illum_relative * 16.0,
+                        exposure_scale_for_shading: ext.frame.exposure_scale,
+                        exposure_illum_relative: ext.frame.exposure_illum_relative,
+
+                        random_seed_scales: vec4(
+                            time.mul_add(60.0, 33.75) * 1.258699,
+                            time.mul_add(60.0, 60.0) * 0.9583125,
+                            time.mul_add(60.0, 60.0) * 8.789123,
+                            time.mul_add(60.0, 33.75) * 2.311535,
+                        ),
+                        unk3: vec4(0.5, 0.5, 0.0, 0.0),
+                        unk4: vec4(1.0, 1.0, 0.0, 1.0),
+                        unk5: vec4(0.00, -f32::NAN, 512.00, 0.00), // z component is used as upper bound for (specular) light intensity
+                        unk6: Vec4::ONE,
+                    }
+                    .to_array()
+                    .as_ref(),
+                )
+                .expect("failed to copy frame constants");
+        }
 
         self.parent.globals.scopes.frame.bind(cmd);
         self.parent.globals.scopes.chunk_model.bind(cmd);
@@ -475,7 +525,7 @@ impl SceneRenderer {
             cmd.copy_render_target(&self.main_view.gbuffer.albedo, &self.main_view.output);
         }
 
-        if use_hdri {
+        if use_hdri && self.settings.draw_hdri_background {
             cmd.begin_rendering_rt(
                 &[Some((
                     &self.main_view.output,

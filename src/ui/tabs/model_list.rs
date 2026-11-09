@@ -10,6 +10,7 @@ use deimos_render::{
     },
     gpu::render_target::RenderTarget,
     renderer::Renderer,
+    tfx::view::ViewSettings,
 };
 use egui::{
     Color32, CornerRadius, FontId, Pos2, Rect, RichText, Sense, TextStyle, Ui, Vec2, Widget,
@@ -74,6 +75,13 @@ impl<P: ModelProvider> ModelListBase<P> {
         )
         .expect("Failed to create thumbnail scene")
         .with_controller(CameraController::new_orbit(Vec3::ZERO, 25.0));
+
+        thumbnail_scene.scene_renderer.settings = ViewSettings {
+            draw_hdri_background: false,
+            // TODO(cohae): Lighting is weird in thumbnails, cranking up exposure_scale is a hack
+            exposure_scale: 5.0,
+            ..Default::default()
+        };
 
         // {
         //     let view_settings = thumbnail_scene.view.settings_mut();
