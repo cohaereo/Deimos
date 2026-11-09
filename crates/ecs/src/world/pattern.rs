@@ -235,7 +235,7 @@ where
             }
             0x8080A317 => {
                 let data = S8080A313::read_ds(&mut cur)?;
-                for u1 in data.unka8 {
+                for u1 in data.unk98 {
                     for u2 in u1.unk8 {
                         if u2.pattern.is_none() {
                             continue;

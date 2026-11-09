@@ -109,16 +109,18 @@ pub fn load_component(
         0x808081A1 => {
             let data = get_component_data!(SWaterPlaneComponent);
 
-            let model = DynamicModel::load(renderer, data.model, vec![], vec![])?;
-            world.insert_one(entity, data.bounds)?;
+            if data.model.is_some() {
+                let model = DynamicModel::load(renderer, data.model, vec![], vec![])?;
+                world.insert_one(entity, data.bounds)?;
 
-            let obj = renderer.add_object(RenderObject::new(
-                format!("water_plane {}", data.model),
-                TfxFeatureRenderer::Water,
-                model,
-            ));
-            let obj_component = DynamicRenderObject::new(renderer, obj);
-            world.insert_one(entity, obj_component)?;
+                let obj = renderer.add_object(RenderObject::new(
+                    format!("water_plane {}", data.model),
+                    TfxFeatureRenderer::Water,
+                    model,
+                ));
+                let obj_component = DynamicRenderObject::new(renderer, obj);
+                world.insert_one(entity, obj_component)?;
+            }
         }
         // 0x80808412 => {
         //     let mut cur = Cursor::new(package_manager().read_tag(component.taghash())?);
@@ -183,24 +185,26 @@ pub fn load_component(
         0x80808562 => {
             let data = get_component_data!(SStaticTerrainPatchesComponent);
 
-            let feature_renderer =
-                TerrainPatchesRenderer::load(renderer, data.terrain, data.identifier)?;
-            let bounds = feature_renderer.bounds();
+            if data.terrain.is_some() {
+                let feature_renderer =
+                    TerrainPatchesRenderer::load(renderer, data.terrain, data.identifier)?;
+                let bounds = feature_renderer.bounds();
 
-            world.insert(
-                entity,
-                (
-                    StaticRenderObject::new(
-                        renderer,
-                        renderer.add_object(RenderObject::new(
-                            format!("terrain_patch_set {}", data.terrain),
-                            TfxFeatureRenderer::TerrainPatch,
-                            feature_renderer,
-                        )),
+                world.insert(
+                    entity,
+                    (
+                        StaticRenderObject::new(
+                            renderer,
+                            renderer.add_object(RenderObject::new(
+                                format!("terrain_patch_set {}", data.terrain),
+                                TfxFeatureRenderer::TerrainPatch,
+                                feature_renderer,
+                            )),
+                        ),
+                        bounds,
                     ),
-                    bounds,
-                ),
-            )?;
+                )?;
+            }
         }
         0x808085AF => {
             let data = get_component_data!(SStaticInstancesCollectionComponent);
@@ -404,7 +408,7 @@ pub fn load_component(
         0x808085DD => {
             let data = get_component_data!(SUmbraTomeComponent);
             let Some(tomes) = &*data.tag else {
-                tracing::error!("Missing tag for SUmbraTomeComponent");
+                tracing::warn!("Missing tag for SUmbraTomeComponent");
                 return Ok(ComponentLoadResult::Skipped);
             };
 

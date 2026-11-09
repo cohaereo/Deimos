@@ -50,8 +50,8 @@ pub struct SObjectChannel {
 
 #[tiger_type(id = 0x8080A313, size = 0xC0)]
 pub struct S8080A313 {
-    #[tiger(offset = 0xA8)]
-    pub unka8: Vec<S8080A320>,
+    #[tiger(offset = 0x98)]
+    pub unk98: Vec<S8080A320>,
 }
 
 #[tiger_type(id = 0x8080A320, size = 0x18)]
