@@ -45,16 +45,16 @@ pub struct SActivity {
 }
 
 #[derive(Debug)]
-#[tiger_type(id = 0x8080AB3E, size = 0x48)]
+#[tiger_type(id = 0x8080AB3E, size = 0x38)]
 pub struct SUnk80808924 {
     pub location_name: FnvHash,
     pub activity_name: FnvHash,
     pub bubble_name: FnvHash,
     pub unkc: u32,
+
     pub unk10: ResourcePointer,
     pub unk18: Vec<SUnk80808948>,
     pub map_references: Vec<WideHash>,
-    pub unk28: [u32; 4],
 }
 
 #[derive(Debug)]
