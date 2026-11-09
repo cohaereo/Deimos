@@ -528,17 +528,14 @@ impl FeatureRenderer for StaticInstancesRenderer {
         let key = StaticSubmitKey::from_u64(submit_key);
 
         let (model, transforms_srv) = &self.models[key.model_index as usize];
-        let ids_slice = match cmd
+        let Some(ids_slice) = cmd
             .gpu()
             .frame()
             .upload
             .upload_bytes(bytemuck::cast_slice(&model.visible_instance_ids))
-        {
-            Ok(va) => va,
-            Err(e) => {
-                error!("Failed to upload instance IDs: {}", e);
-                return;
-            }
+        else {
+            error!("Failed to upload instance IDs (UploadHeap OOM)");
+            return;
         };
         cmd.set_vertex_buffers(2, &[ids_slice.buffer()], &[ids_slice.offset() as u64]);
         cmd.set_shader_resource_buffer(ShaderStage::Vertex, 2, Some(*transforms_srv));

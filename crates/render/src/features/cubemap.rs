@@ -102,20 +102,23 @@ impl FeatureRenderer for CubemapRenderer {
         let rotation = data.local_to_world.to_scale_rotation_translation().1;
         let rotation_neg = -rotation;
 
-        let cb_vs = cmd
-            .gpu()
-            .frame()
-            .upload
-            .upload_bytes(bytemuck::bytes_of(&CubemapTransform {
-                translation: data
-                    .local_to_world
-                    .to_scale_rotation_translation()
-                    .2
-                    .extend(1.0),
-                rotation: rotation_neg,
-                scale: self.cubemap.volume_extents,
-            }))
-            .unwrap();
+        let Some(cb_vs) =
+            cmd.gpu()
+                .frame()
+                .upload
+                .upload_bytes(bytemuck::bytes_of(&CubemapTransform {
+                    translation: data
+                        .local_to_world
+                        .to_scale_rotation_translation()
+                        .2
+                        .extend(1.0),
+                    rotation: rotation_neg,
+                    scale: self.cubemap.volume_extents,
+                }))
+        else {
+            error!("Failed to upload cubemap vertex constants (UploadHeap OOM)");
+            return;
+        };
 
         let (_, rotation, translation) = data.local_to_world.to_scale_rotation_translation();
         let local_to_world = Mat4::from_scale_rotation_translation(

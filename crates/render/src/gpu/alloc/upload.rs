@@ -73,7 +73,7 @@ impl UploadHeap {
         self.num_allocations.store(0, Ordering::Relaxed);
     }
 
-    pub fn alloc_slice(&self, size: usize) -> anyhow::Result<RingSlice> {
+    pub fn alloc_slice(&self, size: usize) -> Option<RingSlice> {
         let size_aligned = size.next_multiple_of(Self::BLOCK_ALIGNMENT);
         let start = self.head.fetch_add(size_aligned, Ordering::Relaxed);
         self.num_allocations.fetch_add(1, Ordering::Relaxed);
@@ -83,7 +83,7 @@ impl UploadHeap {
             "Misaligned ring buffer"
         );
         if start + size_aligned > self.capacity {
-            Err(anyhow::anyhow!("Out of memory"))
+            None
         } else {
             let slice = RingSlice {
                 ptr: unsafe { self.mapped_ptr.add(start) },
@@ -98,24 +98,24 @@ impl UploadHeap {
                 slice.ptr.write_bytes(0x00, slice.capacity());
             }
 
-            Ok(slice)
+            Some(slice)
         }
     }
 
-    pub fn alloc<T: Sized>(&self) -> anyhow::Result<TypedRingAllocation<T>> {
+    pub fn alloc<T: Sized>(&self) -> Option<TypedRingAllocation<T>> {
         let slice = self.alloc_slice(std::mem::size_of::<T>())?;
-        Ok(TypedRingAllocation {
+        Some(TypedRingAllocation {
             ptr: slice.ptr.cast::<T>(),
             gpu_va: slice.gpu_va,
         })
     }
 
-    pub fn upload_bytes(&self, data: &[u8]) -> anyhow::Result<RingSlice> {
+    pub fn upload_bytes(&self, data: &[u8]) -> Option<RingSlice> {
         let slice = self.alloc_slice(data.len())?;
         unsafe {
             std::ptr::copy_nonoverlapping(data.as_ptr(), slice.ptr, data.len());
         }
-        Ok(slice)
+        Some(slice)
     }
 
     pub const fn null(&self) -> vk::DeviceAddress {

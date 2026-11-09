@@ -1,5 +1,6 @@
 use std::sync::Arc;
 
+use anyhow::Context;
 use ash::vk;
 use bytemuck::{Pod, Zeroable};
 use deimos_data::tfx::{FixedFunctionState, ShaderStage};
@@ -144,7 +145,9 @@ impl SsrRenderer {
         let upload = gpu
             .frame()
             .upload
-            .upload_bytes(bytemuck::bytes_of(constants))?;
+            .upload_bytes(bytemuck::bytes_of(constants))
+            .context("Failed to upload SSR constants (UploadHeap OOM)")?;
+
         cmd.set_shader_constant_buffer_view(
             ShaderStage::Pixel,
             0,

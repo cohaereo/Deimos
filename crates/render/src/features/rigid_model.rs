@@ -356,12 +356,9 @@ impl FeatureRenderer for DynamicModel {
         let data = unsafe { frame_node.data::<DynamicObjectData>() }
             .expect("DynamicModel was extracted with no data!");
 
-        let rigid_model_cb = match cmd.gpu().frame().upload.alloc::<RigidModelConstants>() {
-            Ok(o) => o,
-            Err(e) => {
-                error!("Failed to allocate rigid model constants: {e:?}");
-                return;
-            }
+        let Some(rigid_model_cb) = cmd.gpu().frame().upload.alloc::<RigidModelConstants>() else {
+            error!("Failed to allocate rigid model constants (UploadHeap OOM)");
+            return;
         };
 
         let scale_and_offset = self.model.model_offset.with_w(self.scale_factor_1d);
