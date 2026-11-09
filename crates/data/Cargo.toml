@@ -13,7 +13,6 @@ anyhow.workspace = true
 assert-offset = "0.1"
 bitflags = "2"
 glam.workspace = true
-paste = "1"
 tiger-pkg.workspace = true
 tiger-parse.workspace = true
 int-enum = "1.2.0"

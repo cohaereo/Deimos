@@ -21,15 +21,14 @@ members = [
 ]
 
 [workspace.dependencies]
-ash = "0.38"
 anyhow = "1"
+ash = "0.38"
 bytemuck = "1.25"
-crossbeam = "0.8"
 egui = { version = "0.33", default-features = false, features = ["bytemuck"] }
 egui_dock = "0.18"
 glam = { version = "0.29", features = ["bytemuck", "fast-math", "serde"] }
-itertools = "0.14"
 hecs = "0.10.5"
+itertools = "0.14"
 parking_lot = "0.12"
 profiling = "1"
 rayon = "1.12.0"
@@ -60,11 +59,14 @@ toml = "0.9.10"
 
 # General
 anyhow.workspace = true
-bitflags = "2"
-bytemuck = "1.22.0"
 itertools.workspace = true
+nu-ansi-term = "0.50.1"
 parking_lot.workspace = true
 profiling.workspace = true
+regex = "1.12.3"
+sysinfo = { version = "0.38.4", default-features = false, features = [
+    "system",
+] }
 tracing-subscriber = { version = "0.3", features = [
     "env-filter",
     "fmt",
@@ -81,28 +83,25 @@ sdl3.workspace = true
 
 # UI
 ahash = "0.8.12"
-chroma-dbg = "0.2.1"
 clap = { version = "4.5.37", features = ["derive"] }
 egui.workspace = true
 egui-ash-renderer = { version = "0.11.0", features = ["dynamic-rendering"] }
+egui_commonmark = { version = "0.22.0", default-features = false }
 egui_dock.workspace = true
 egui_extras = { version = "0.33", features = ["image", "svg"] }
 google_material_symbols = "0.2.9"
 hecs.workspace = true
-image = { version = "0.25", default-features = false, features = ["png"] }
+image = { version = "0.25", default-features = false, features = ["png"] } # Required for PNG support in egui
 native-dialog = "0.7.0"
-nu-ansi-term = "0.50.1"
-rayon.workspace = true
 
-sysinfo = { version = "0.38.4", default-features = false, features = [
-    "system",
-] }
-zip = "8.5.0"
+# Update system
 ehttp = { version = "0.7.1", features = ["json"] }
 semver = "1.0.28"
-egui_commonmark = { version = "0.22.0", default-features = false }
-regex = "1.12.3"
-fastrand = "2.4.1"
+zip = "8.5.0"
+
+[dev-dependencies]
+chroma-dbg = "0.2.1"
+rayon.workspace = true
 
 [build-dependencies]
 embed-resource = "3.0.1"

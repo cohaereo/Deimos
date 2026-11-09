@@ -10,4 +10,3 @@ profiling.workspace = true
 
 [dev-dependencies]
 anyhow = "1.0.102"
-rayon = "1.11.0"

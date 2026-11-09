@@ -4,7 +4,6 @@ version = "0.1.0"
 edition = "2024"
 
 [dependencies]
-deimos-core = { path = "../core" }
 deimos-data = { path = "../data" }
 deimos-ecs = { path = "../ecs" }
 dxil2spirv = { path = "../dxil2spirv" }
@@ -14,32 +13,25 @@ ash.workspace = true
 ash-window = "0.13.0"
 ahash = "0.8.12"
 anyhow.workspace = true
-assert-offset = "0.1"
 bit_field = "0.10.3"
 bitflags = "2.11.0"
 bumpalo = { version = "3.20.2", features = ["allocator-api2"] }
 bytemuck = { version = "1", features = ["derive"] }
-chroma-dbg = "0.1.1"
-crossbeam.workspace = true
-ddsfile = "0.5.2"
 glam.workspace = true
 gpu-allocator = { version = "0.28.0", default-features = false, features = [
     "vulkan",
     "std",
 ] }
 hecs.workspace = true
-image = { version = "0.25.10", default-features = false }
 int-enum = "1.2.0"
 itertools.workspace = true
 lazy_static = "1"
 parking_lot.workspace = true
 profiling.workspace = true
-rand = "0.9.0"
 rand_chacha = "0.10.0"
 rand_core = "0.10.0"
 raw-window-handle = "0.6.2"
 rayon.workspace = true
-sdl3.workspace = true
 slotmap = "1.1.1"
 smallvec = "1.14.0"
 static_assertions = "1.1.0"
@@ -47,9 +39,7 @@ tiger-parse.workspace = true
 tiger-pkg.workspace = true
 tracing.workspace = true
 inline_tweak = { version = "1.2.5", features = ["release_tweak"] }
-uuid = "1.21.0"
 zstd = "0.13.3"
-fastrand = "2.4.1"
 
 [features]
 tracy = []
