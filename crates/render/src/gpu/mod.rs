@@ -89,6 +89,7 @@ pub struct Gpu {
     pub surface: vk::SurfaceKHR,
     pub surface_format: vk::SurfaceFormatKHR,
     pub swapchain_state: RwLock<SwapchainState>,
+    vsync: AtomicBool,
 
     allocator: Mutex<Allocator>,
 
@@ -355,6 +356,7 @@ impl Gpu {
                 width: resolution.0,
                 height: resolution.1,
             }),
+            true,
         )?;
 
         let image_available_semaphores = (0..Self::MAX_FRAMES_IN_FLIGHT)
@@ -477,6 +479,7 @@ impl Gpu {
             surface,
             surface_format,
             swapchain_state: RwLock::new(swapchain_state),
+            vsync: AtomicBool::new(true),
             image_available_semaphores,
 
             allocator: allocator.into(),
@@ -542,6 +545,21 @@ impl Gpu {
         self.swapchain_state.read().images.len()
     }
 
+    pub fn set_vsync(&self, vsync: bool) -> anyhow::Result<()> {
+        let previous = self.vsync.swap(vsync, Ordering::Relaxed);
+        if previous == vsync {
+            return Ok(());
+        }
+
+        let extent = self.swapchain_state.read().extent;
+        if let Err(e) = self.recreate_swapchain(extent.width, extent.height) {
+            self.vsync.store(previous, Ordering::Relaxed);
+            return Err(e);
+        }
+
+        Ok(())
+    }
+
     /// Recreates the swapchain for a new window size.
     ///
     /// Does nothing if the extent is already current.
@@ -591,6 +609,7 @@ impl Gpu {
             self.surface_format,
             old_swapchain,
             Some(vk::Extent2D { width, height }),
+            self.vsync.load(Ordering::Relaxed),
         )?;
 
         *self.swapchain_state.write() = new_state;
@@ -975,6 +994,24 @@ impl Gpu {
     }
 }
 
+fn select_present_mode(available: &[vk::PresentModeKHR], vsync: bool) -> vk::PresentModeKHR {
+    let preferred: &[vk::PresentModeKHR] = if vsync {
+        &[vk::PresentModeKHR::FIFO, vk::PresentModeKHR::MAILBOX]
+    } else {
+        &[
+            vk::PresentModeKHR::IMMEDIATE,
+            vk::PresentModeKHR::MAILBOX,
+            vk::PresentModeKHR::FIFO,
+        ]
+    };
+
+    preferred
+        .iter()
+        .copied()
+        .find(|mode| available.contains(mode))
+        .unwrap_or(vk::PresentModeKHR::FIFO)
+}
+
 #[allow(clippy::too_many_arguments)]
 fn create_swapchain_state(
     device: &ash::Device,
@@ -985,6 +1022,7 @@ fn create_swapchain_state(
     surface_format: vk::SurfaceFormatKHR,
     old_swapchain: vk::SwapchainKHR,
     requested_extent: Option<vk::Extent2D>,
+    vsync: bool,
 ) -> anyhow::Result<SwapchainState> {
     let capabilities = unsafe {
         surface_loader.get_physical_device_surface_capabilities(physical_device, surface)?
@@ -1029,11 +1067,8 @@ fn create_swapchain_state(
     let present_modes = unsafe {
         surface_loader.get_physical_device_surface_present_modes(physical_device, surface)?
     };
-    let present_mode = present_modes
-        .iter()
-        .cloned()
-        .find(|&mode| mode == vk::PresentModeKHR::MAILBOX)
-        .unwrap_or(vk::PresentModeKHR::FIFO);
+    let present_mode = select_present_mode(&present_modes, vsync);
+    info!("Using present mode: {:?}", present_mode);
 
     let swapchain_create_info = vk::SwapchainCreateInfoKHR::default()
         .surface(surface)

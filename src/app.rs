@@ -59,9 +59,12 @@ impl App {
         *gpu.extern_source.write() =
             deimos_render::tfx::externs::BaseExternSource::Renderer(renderer.clone());
 
-        let shared_state = SharedState::new(renderer.clone())
+        let shared_state: Arc<_> = SharedState::new(renderer.clone())
             .context("Failed to create shared state")?
             .into();
+        if let Err(e) = gpu.set_vsync(shared_state.config.read().vsync) {
+            error!("Failed to apply vsync setting: {e:?}");
+        }
         let mut gui = Gui::new(&gpu, sdl.clone(), window.clone())?;
         if let Some(map_hash) = args.open_map.as_ref() {
             match TagHash::from_str(map_hash) {
@@ -247,6 +250,9 @@ impl App {
         }
 
         let config = self.shared_state.config.read();
+        if let Err(e) = self.gpu.set_vsync(config.vsync) {
+            error!("Failed to apply vsync setting: {e:?}");
+        }
         if config.framelimiter_enabled {
             let target_frame_delta = 1.0 / config.framerate_limit as f32;
             while self.last_frame_time.elapsed().as_secs_f32() < target_frame_delta {
