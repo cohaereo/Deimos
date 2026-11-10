@@ -44,7 +44,7 @@ use crate::{
     visibility::{ViewVisibility, bvh::Bvh},
 };
 
-use super::FeatureRenderer;
+use super::{FeatureRenderer, LOD_COUNT, LOD_ENABLED, lod_for_sphere};
 
 struct SpecialMesh {
     mesh: SStaticSpecialMesh,
@@ -142,7 +142,10 @@ pub struct StaticModelRenderer {
     instance_buffer_offset: usize,
 
     model: StaticModel,
-    visible_instance_ids: Vec<u32>,
+    visible_instance_ids: [Vec<u32>; LOD_COUNT as usize],
+    visible_instance_scratch: Vec<u32>,
+    min_lod: u8,
+    max_lod: u8,
     transforms: Vec<(SStaticInstanceTransform, AxisAlignedBBox)>,
     pub bounds: AxisAlignedBBox,
     identifier: u64,
@@ -176,28 +179,52 @@ impl StaticModelRenderer {
         // Instance IDs dictate from where in the instance buffer to read the transform data. This is calculated as the ID * 0x50 (in bytes).
         // In the past, the engine would skip the 32 bytes where the quantization information was stored, but the offset must now be an exact multiple of 0x40 bytes.
         // cb0[0].x dictates where the quantization information  is stored. For now I've opted to just skip the first instance and use that slot for the quantization information.
-        let visible_instance_ids = (0..transforms.len() as u32).map(|i| i + 1).collect_vec();
+        let visible_instance_ids = std::array::from_fn(|_| Vec::new());
 
         let bounds = transforms.iter().map(|(_, b)| *b).collect_vec();
         let group_bounds = bounds.iter().cloned().sum();
         let bvh = Bvh::build(&bounds);
 
+        let opaque_meshes = &model.model.opaque_meshes;
+        let special_meshes = &model.special_meshes;
+        let mut min_lod = u8::MAX;
+        let mut max_lod = 0;
+        for group in &opaque_meshes.mesh_groups {
+            let lod = opaque_meshes.parts[group.part_index as usize].lod_category;
+            if lod.is_empty() {
+                continue;
+            }
+            min_lod = min_lod.min(lod.min_lod());
+            max_lod = max_lod.max(lod.max_lod());
+        }
+        for mesh in special_meshes {
+            if mesh.lod.is_empty() {
+                continue;
+            }
+            min_lod = min_lod.min(mesh.lod.min_lod());
+            max_lod = max_lod.max(mesh.lod.max_lod());
+        }
+        let min_lod = if min_lod == u8::MAX { 0 } else { min_lod };
+
         let mut precomputed_submit_nodes = vec![];
 
-        let opaque_meshes = &model.model.opaque_meshes;
-        for (group_index, group, _part) in opaque_meshes
-            .mesh_groups
-            .iter()
-            .enumerate()
-            .map(|(i, g)| (i, g, &opaque_meshes.parts[g.part_index as usize]))
-            .filter(|(_, _, p)| p.lod_category.is_highest_detail())
-        {
-            if let Some(technique) = model.materials_by_group.get(group_index) {
+        for (group_index, group) in opaque_meshes.mesh_groups.iter().enumerate() {
+            let part = &opaque_meshes.parts[group.part_index as usize];
+            let Some(technique) = model.materials_by_group.get(group_index) else {
+                continue;
+            };
+
+            for lod in 0..=max_lod {
+                if !part.lod_category.is_lod(lod) {
+                    continue;
+                }
+
                 let key = StaticSubmitKey {
                     technique: technique.hash().0,
                     model_index: 0, // fixed up in the StaticInstancesRenderer
                     is_special_mesh: false,
                     mesh_index: group_index as u16,
+                    lod,
                 };
                 precomputed_submit_nodes.push((
                     group.render_stage,
@@ -209,25 +236,27 @@ impl StaticModelRenderer {
             }
         }
 
-        let special_meshes = &model.special_meshes;
-        for (mesh_index, mesh) in special_meshes
-            .iter()
-            .enumerate()
-            .filter(|(_, m)| m.lod.is_highest_detail())
-        {
-            let key = StaticSubmitKey {
-                technique: mesh.technique.hash().0,
-                model_index: 0, // fixed up in the StaticInstancesRenderer
-                is_special_mesh: true,
-                mesh_index: mesh_index as u16,
-            };
-            precomputed_submit_nodes.push((
-                mesh.render_stage,
-                SubmitNode {
-                    key: key.to_u64(),
-                    view_node: 0, // fixed up at submit time
-                },
-            ));
+        for (mesh_index, mesh) in special_meshes.iter().enumerate() {
+            for lod in 0..=max_lod {
+                if !mesh.lod.is_lod(lod) {
+                    continue;
+                }
+
+                let key = StaticSubmitKey {
+                    technique: mesh.technique.hash().0,
+                    model_index: 0, // fixed up in the StaticInstancesRenderer
+                    is_special_mesh: true,
+                    mesh_index: mesh_index as u16,
+                    lod,
+                };
+                precomputed_submit_nodes.push((
+                    mesh.render_stage,
+                    SubmitNode {
+                        key: key.to_u64(),
+                        view_node: 0, // fixed up at submit time
+                    },
+                ));
+            }
         }
 
         trace!(instances = transforms.len(), model_hash=%model_hash, "Loading model");
@@ -238,6 +267,9 @@ impl StaticModelRenderer {
             bounds: group_bounds,
             bvh,
             visible_instance_ids,
+            visible_instance_scratch: Vec::new(),
+            min_lod,
+            max_lod,
             transforms,
             identifier,
             precomputed_submit_nodes,
@@ -245,7 +277,13 @@ impl StaticModelRenderer {
     }
 
     #[profiling::function]
-    pub fn render_group(&self, cmd: &mut CommandList, is_special_mesh: bool, mesh_index: usize) {
+    pub fn render_group(
+        &self,
+        cmd: &mut CommandList,
+        is_special_mesh: bool,
+        mesh_index: usize,
+        instance_count: usize,
+    ) {
         cmd.enable_smart_technique_binding();
 
         // let is_opaque = matches!(
@@ -270,11 +308,7 @@ impl StaticModelRenderer {
                 return;
             }
 
-            cmd.draw_indexed(
-                mesh.index_range(),
-                0..self.visible_instance_ids.len() as u32,
-                0,
-            );
+            cmd.draw_indexed(mesh.index_range(), 0..instance_count as u32, 0);
         } else {
             let opaque_meshes = &self.model.model.opaque_meshes;
             let group = &opaque_meshes.mesh_groups[mesh_index];
@@ -297,11 +331,7 @@ impl StaticModelRenderer {
                 return;
             }
 
-            cmd.draw_indexed(
-                part.index_range(),
-                0..self.visible_instance_ids.len() as u32,
-                0,
-            );
+            cmd.draw_indexed(part.index_range(), 0..instance_count as u32, 0);
         }
     }
 
@@ -476,15 +506,30 @@ impl StaticInstancesRenderer {
 
 impl FeatureRenderer for StaticInstancesRenderer {
     fn visibility_test(&mut self, visibility: &ViewVisibility) {
+        let lod_enabled = LOD_ENABLED.load(Ordering::Relaxed);
         self.models.par_iter_mut().for_each(|(model, _)| {
-            model.visible_instance_ids.clear();
+            model.visible_instance_scratch.clear();
+            model.visible_instance_ids.iter_mut().for_each(Vec::clear);
+
             model
                 .bvh
-                .collect_visible_leaves(visibility, &mut model.visible_instance_ids, 1);
-            assert!(
-                model.visible_instance_ids.len() <= model.transforms.len(),
-                "Visible instance count exceeds transform count"
-            );
+                .collect_visible_leaves(visibility, &mut model.visible_instance_scratch, 1);
+
+            for &id in &model.visible_instance_scratch {
+                let (_, bounds) = &model.transforms[(id - 1) as usize];
+                let lod = if lod_enabled {
+                    lod_for_sphere(
+                        bounds.centroid(),
+                        bounds.radius(),
+                        visibility.position,
+                        model.max_lod,
+                    )
+                    .clamp(model.min_lod, model.max_lod)
+                } else {
+                    model.min_lod
+                };
+                model.visible_instance_ids[lod as usize].push(id);
+            }
         });
     }
 
@@ -500,7 +545,7 @@ impl FeatureRenderer for StaticInstancesRenderer {
         for (model, _) in self
             .models
             .iter()
-            .filter(|(m, _)| !m.visible_instance_ids.is_empty())
+            .filter(|(m, _)| m.visible_instance_ids.iter().any(|ids| !ids.is_empty()))
         {
             renderer
                 .gpu
@@ -511,6 +556,11 @@ impl FeatureRenderer for StaticInstancesRenderer {
                 .iter()
                 .filter(|(stage, _)| visibility.render_stages.is_subscribed(*stage))
             {
+                let key = StaticSubmitKey::from_u64(node.key);
+                if model.visible_instance_ids[key.lod as usize].is_empty() {
+                    continue;
+                }
+
                 node.view_node = view_node;
                 submit_node_blocks.push(stage, node);
             }
@@ -528,18 +578,24 @@ impl FeatureRenderer for StaticInstancesRenderer {
         let key = StaticSubmitKey::from_u64(submit_key);
 
         let (model, transforms_srv) = &self.models[key.model_index as usize];
+        let instance_ids = &model.visible_instance_ids[key.lod as usize];
         let Some(ids_slice) = cmd
             .gpu()
             .frame()
             .upload
-            .upload_bytes(bytemuck::cast_slice(&model.visible_instance_ids))
+            .upload_bytes(bytemuck::cast_slice(instance_ids))
         else {
             error!("Failed to upload instance IDs (UploadHeap OOM)");
             return;
         };
         cmd.set_vertex_buffers(2, &[ids_slice.buffer()], &[ids_slice.offset() as u64]);
         cmd.set_shader_resource_buffer(ShaderStage::Vertex, 2, Some(*transforms_srv));
-        model.render_group(cmd, key.is_special_mesh, key.mesh_index as usize);
+        model.render_group(
+            cmd,
+            key.is_special_mesh,
+            key.mesh_index as usize,
+            instance_ids.len(),
+        );
     }
 
     fn subscribed_stages(&self) -> RenderStageSubscription {
@@ -558,26 +614,49 @@ pub struct StaticSubmitKey {
     pub model_index: u16,
     pub is_special_mesh: bool,
     pub mesh_index: u16,
+    pub lod: u8,
 }
 
 impl StaticSubmitKey {
     pub fn from_u64(k: u64) -> Self {
         Self {
             technique: k.get_bits(32..64) as u32,
-            model_index: k.get_bits(16..32) as u16,
-            is_special_mesh: k.get_bit(15),
-            mesh_index: k.get_bits(0..15) as u16,
+            model_index: k.get_bits(12..28) as u16,
+            is_special_mesh: k.get_bit(11),
+            mesh_index: k.get_bits(0..8) as u16,
+            lod: k.get_bits(8..11) as u8,
         }
     }
 
     pub fn to_u64(self) -> u64 {
         let mut k = 0u64;
 
-        k.set_bits(0..15, self.mesh_index as u64);
-        k.set_bit(15, self.is_special_mesh);
-        k.set_bits(16..32, self.model_index as u64);
+        k.set_bits(0..8, self.mesh_index as u64);
+        k.set_bits(8..11, self.lod as u64);
+        k.set_bit(11, self.is_special_mesh);
+        k.set_bits(12..28, self.model_index as u64);
         k.set_bits(32..64, self.technique as u64);
 
         k
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn submit_key_roundtrip() {
+        let key = StaticSubmitKey {
+            technique: 0xDEAD_BEEF,
+            model_index: 1234,
+            is_special_mesh: true,
+            mesh_index: 37,
+            lod: 5,
+        };
+        let decoded = StaticSubmitKey::from_u64(key.to_u64());
+
+        assert_eq!(decoded.to_u64(), key.to_u64());
+        assert_eq!({ decoded.lod }, 5);
     }
 }
