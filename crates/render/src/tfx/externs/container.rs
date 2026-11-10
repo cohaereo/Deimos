@@ -19,7 +19,7 @@ extern_container! {
         deferred_uber_light: DeferredUberLight,
         deferred_shadow: DeferredShadow,
         atmosphere: Atmosphere,
-        rigid_model: RigidModel,
+        dynamic_model: RigidModel,
         editor_mesh_material: EditorMeshMaterial,
         editor_decal: EditorDecal,
         editor_terrain: EditorTerrain,

@@ -11,7 +11,7 @@ use tiger_pkg::TagHash;
 
 use crate::{
     asset::{Handle, vertex_buffer::VertexBuffer},
-    features::{FeatureRenderer, rigid_model::DynamicModel},
+    features::{FeatureRenderer, dynamic_model::DynamicModel},
     gpu::buffer::ImmutableBuffer,
     renderer::{
         Renderer,

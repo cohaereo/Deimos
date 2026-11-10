@@ -10,7 +10,7 @@ use rayon::iter::{IntoParallelIterator, ParallelIterator};
 
 use crate::{
     ecs::render_objects::{DynamicRenderObject, StaticRenderObject},
-    features::rigid_model::{DynamicModel, DynamicObjectData},
+    features::dynamic_model::{DynamicModel, DynamicObjectData},
     gpu::command_list::ConstantBufferView,
     renderer::{Renderer, packet::ViewPacket, scene::SceneRenderer},
     visibility::ViewVisibility,
@@ -144,12 +144,12 @@ pub fn s_extract_frame_packet(
         };
 
         if let Some(object_channels) = object_channels
-            && let Some(rigid_model) = render_objects
+            && let Some(dynamic_model) = render_objects
                 .get_mut(render_object.handle())
                 .and_then(|r| r.get_mut::<DynamicModel>())
         {
             for channel in &object_channels.0 {
-                rigid_model.channels.insert(channel.name, channel.clone());
+                dynamic_model.channels.insert(channel.name, channel.clone());
             }
         }
 

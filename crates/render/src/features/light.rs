@@ -12,7 +12,7 @@ use tiger_pkg::TagHash;
 
 use crate::{
     asset::{index_buffer::IndexBuffer, vertex_buffer::VertexBuffer},
-    features::rigid_model::DynamicObjectData,
+    features::dynamic_model::DynamicObjectData,
     renderer::{
         Renderer,
         packet::{RenderPerFrameNode, RenderPerViewNode},
@@ -210,7 +210,7 @@ impl FeatureRenderer for LightRenderer {
     //             ..Default::default()
     //         }));
 
-    //         cmd.externs.rigid_model = Some(Box::new(externs::RigidModel {
+    //         cmd.externs.dynamic_model = Some(Box::new(externs::RigidModel {
     //             local_to_world: light_local_to_world,
     //             ..Default::default()
     //         }));

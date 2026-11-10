@@ -214,7 +214,7 @@ impl DynamicModel {
         }
     }
 
-    // /// ⚠ Expects the `rigid_model` scope to be bound
+    // /// ⚠ Expects the `dynamic_model` scope to be bound
     // pub fn draw(
     //     &self,
     //     renderer: &Renderer,
@@ -356,13 +356,13 @@ impl FeatureRenderer for DynamicModel {
         let data = unsafe { frame_node.data::<DynamicObjectData>() }
             .expect("DynamicModel was extracted with no data!");
 
-        let Some(rigid_model_cb) = cmd.gpu().frame().upload.alloc::<RigidModelConstants>() else {
+        let Some(dynamic_model_cb) = cmd.gpu().frame().upload.alloc::<RigidModelConstants>() else {
             error!("Failed to allocate rigid model constants (UploadHeap OOM)");
             return;
         };
 
         let scale_and_offset = self.model.model_offset.with_w(self.scale_factor_1d);
-        rigid_model_cb.write(&RigidModelConstants {
+        dynamic_model_cb.write(&RigidModelConstants {
             mesh_to_world: data.local_to_world,
             position_scale: self.model.model_scale,
             position_offset: self.model.model_offset,
@@ -381,7 +381,7 @@ impl FeatureRenderer for DynamicModel {
         });
 
         data.cbuffer = ConstantBufferView {
-            addr: rigid_model_cb.virtual_address(),
+            addr: dynamic_model_cb.virtual_address(),
             size: size_of::<RigidModelConstants>() as u64,
         };
     }

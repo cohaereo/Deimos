@@ -24,8 +24,8 @@ use deimos_render::{
     ecs::render_objects::{DynamicRenderObject, StaticRenderObject},
     features::{
         cubemap::CubemapRenderer, decals::DecalCollectionRenderer, decorators::DecoratorRenderer,
-        light::LightRenderer, rigid_model::DynamicModel, static_instances::StaticInstancesRenderer,
-        terrain_patches::TerrainPatchesRenderer,
+        dynamic_model::DynamicModel, light::LightRenderer,
+        static_instances::StaticInstancesRenderer, terrain_patches::TerrainPatchesRenderer,
     },
     renderer::{Renderer, object::RenderObject},
 };

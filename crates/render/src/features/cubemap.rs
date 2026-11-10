@@ -10,7 +10,7 @@ use glam::{Mat3, Mat4, Quat, Vec3, Vec4, Vec4Swizzles};
 
 use crate::{
     asset::{Handle, index_buffer::IndexBuffer, texture::Texture, vertex_buffer::VertexBuffer},
-    features::rigid_model::DynamicObjectData,
+    features::dynamic_model::DynamicObjectData,
     gpu::command_list::ConstantBufferView,
     renderer::{
         Renderer,
