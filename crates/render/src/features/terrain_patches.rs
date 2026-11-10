@@ -26,7 +26,7 @@ use crate::{
     visibility::ViewVisibility,
 };
 
-use super::FeatureRenderer;
+use super::{DETAIL_LOD_DISTANCE_RATIOS, FeatureRenderer, LOD_ENABLED, lod_for_sphere_with_ratios};
 
 #[repr(C)]
 #[derive(Default, Clone, Copy, Debug, Pod, Zeroable)]
@@ -45,7 +45,6 @@ pub struct TerrainPatchesRenderer {
     techniques: Vec<Handle<Technique>>,
     dyemaps: Vec<Handle<Texture>>,
     group_cbuffers: Vec<ImmutableBuffer>,
-    detail_level: TerrainDetailLevel,
 
     technique_shadow: Handle<Technique>,
     technique_depth_only: Handle<Technique>,
@@ -53,6 +52,10 @@ pub struct TerrainPatchesRenderer {
     pub vertex0_buffer: Handle<VertexBuffer>,
     pub vertex1_buffer: Handle<VertexBuffer>,
     pub index_buffer: Handle<IndexBuffer>,
+
+    pub thumb_vertex0_buffer: Handle<VertexBuffer>,
+    pub thumb_vertex1_buffer: Handle<VertexBuffer>,
+    pub thumb_index_buffer: Handle<IndexBuffer>,
 
     pub hash: TagHash,
     pub identifier: u64,
@@ -114,7 +117,9 @@ impl TerrainPatchesRenderer {
             vertex0_buffer: assets.load(terrain.vertex0_buffer),
             vertex1_buffer: assets.load(terrain.vertex1_buffer),
             index_buffer: assets.load(terrain.index_buffer),
-            detail_level: TerrainDetailLevel::Medium,
+            thumb_vertex0_buffer: assets.load(terrain.thumb_vertex0_buffer),
+            thumb_vertex1_buffer: assets.load(terrain.thumb_vertex1_buffer),
+            thumb_index_buffer: assets.load(terrain.thumb_index_buffer),
             technique_depth_only: assets.load(terrain.technique_depth_only),
             technique_shadow: assets.load(terrain.technique_shadow),
             terrain,
@@ -148,11 +153,25 @@ impl TerrainPatchesRenderer {
         cmd.set_input_layout(22);
         cmd.set_input_topology(deimos_data::tfx::PrimitiveType::TriangleStrip);
 
-        if let (Some(vertex0), Some(vertex1), Some(index)) = (
-            self.vertex0_buffer.get(),
-            self.vertex1_buffer.get(),
-            self.index_buffer.get(),
-        ) {
+        let Some(part) = self.terrain.mesh_parts.get(group_index) else {
+            return;
+        };
+
+        let (vertex0, vertex1, index) = if part.detail_level == TerrainDetailLevel::Thumbnail {
+            (
+                self.thumb_vertex0_buffer.get(),
+                self.thumb_vertex1_buffer.get(),
+                self.thumb_index_buffer.get(),
+            )
+        } else {
+            (
+                self.vertex0_buffer.get(),
+                self.vertex1_buffer.get(),
+                self.index_buffer.get(),
+            )
+        };
+
+        if let (Some(vertex0), Some(vertex1), Some(index)) = (vertex0, vertex1, index) {
             index.bind(cmd);
             cmd.set_vertex_buffers(
                 0,
@@ -162,10 +181,6 @@ impl TerrainPatchesRenderer {
         } else {
             return;
         }
-
-        let Some(part) = self.terrain.mesh_parts.get(group_index) else {
-            return;
-        };
 
         let constants = &self.group_cbuffers[part.group_index as usize];
         constants.bind_cbv(cmd, ShaderStage::Vertex, 11);
@@ -190,21 +205,6 @@ impl TerrainPatchesRenderer {
 }
 
 impl FeatureRenderer for TerrainPatchesRenderer {
-    // fn visibility_test(&mut self, camera: &Camera) -> bool {
-    //     let center = self.terrain.bounds.center();
-    //     let _radius = self.terrain.bounds.radius();
-    //     let _distance = camera.position.distance(center);
-    //     // self.detail_level = match distance {
-    //     //     d if d > radius * 4.0 => TerrainDetailLevel::Low,
-    //     //     d if d > radius * 2.0 => TerrainDetailLevel::Medium,
-    //     //     _ => TerrainDetailLevel::High,
-    //     // };
-
-    //     camera
-    //         .culling_frustum
-    //         .aabb_intersecting(&self.terrain.bounds)
-    // }
-
     fn submit(
         &self,
         cmd: &mut CommandList,
@@ -225,12 +225,29 @@ impl FeatureRenderer for TerrainPatchesRenderer {
         visibility: &ViewVisibility,
         submit_node_blocks: &mut SubmitNodeContainer,
     ) {
+        let detail_level = if LOD_ENABLED.load(std::sync::atomic::Ordering::Relaxed) {
+            match lod_for_sphere_with_ratios(
+                self.terrain.bounds.centroid(),
+                self.terrain.bounds.radius(),
+                visibility.position,
+                &DETAIL_LOD_DISTANCE_RATIOS,
+                3,
+            ) {
+                0 => TerrainDetailLevel::High,
+                1 => TerrainDetailLevel::Medium,
+                2 => TerrainDetailLevel::Low,
+                _ => TerrainDetailLevel::Thumbnail,
+            }
+        } else {
+            TerrainDetailLevel::High
+        };
+
         for (i, _part) in self
             .terrain
             .mesh_parts
             .iter()
             .enumerate()
-            .filter(|(_, u)| u.detail_level == self.detail_level)
+            .filter(|(_, part)| part.detail_level == detail_level)
         {
             submit_node_blocks.broadcast(
                 self.subscribed_stages() & visibility.render_stages,

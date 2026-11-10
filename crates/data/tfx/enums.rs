@@ -301,29 +301,28 @@ impl std::fmt::Debug for LodCategory {
 }
 
 impl LodCategory {
-    pub const fn is_highest_detail(&self) -> bool {
-        self.0 & 0b1 != 0
-        // (self.0 & 0b10000000) != 0
-        // matches!(
-        //     self,
-        //     LodCategory::Lod_0_0
-        //         | LodCategory::Lod_0_1
-        //         | LodCategory::Lod_0_2
-        //         | LodCategory::Lod_0_3
-        //         | LodCategory::Lod_Detail
-        // )
+    pub const fn is_lod(&self, level: u8) -> bool {
+        level < 8 && self.0 & (1 << level) != 0
     }
-    pub const fn is_second_highest_detail(&self) -> bool {
-        self.0 & 0b10 == 0b10
-        // (self.0 & 0b10000000) != 0
-        // matches!(
-        //     self,
-        //     LodCategory::Lod_0_0
-        //         | LodCategory::Lod_0_1
-        //         | LodCategory::Lod_0_2
-        //         | LodCategory::Lod_0_3
-        //         | LodCategory::Lod_Detail
-        // )
+
+    pub const fn is_empty(&self) -> bool {
+        self.0 == 0
+    }
+
+    pub const fn max_lod(&self) -> u8 {
+        if self.0 == 0 {
+            0
+        } else {
+            7 - self.0.leading_zeros() as u8
+        }
+    }
+
+    pub const fn min_lod(&self) -> u8 {
+        if self.0 == 0 {
+            0
+        } else {
+            self.0.trailing_zeros() as u8
+        }
     }
 }
 

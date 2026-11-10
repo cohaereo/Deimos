@@ -9,7 +9,7 @@ use crate::tfx::geometry::AxisAlignedBBox;
 
 /// Terrain
 #[derive(Debug)]
-#[tiger_type(id = 0x80808567, size = 0x88)]
+#[tiger_type(id = 0x80808567, size = 0xA4)]
 pub struct STerrain {
     pub file_size: u64,
     pub unk8: u64,
@@ -28,6 +28,11 @@ pub struct STerrain {
 
     #[tiger(offset = 0x78)]
     pub mesh_parts: Vec<STerrainMeshPart>,
+
+    #[tiger(offset = 0x88)]
+    pub thumb_vertex0_buffer: TagHash,
+    pub thumb_vertex1_buffer: TagHash,
+    pub thumb_index_buffer: TagHash,
 }
 
 #[derive(Debug)]

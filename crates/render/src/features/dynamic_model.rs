@@ -16,7 +16,7 @@ use tiger_pkg::package_manager;
 
 use crate::{
     asset::{Handle, handle::is_technique_loaded, vertex_buffer::VertexBuffer},
-    features::{FeatureRenderer, skinning},
+    features::{FeatureRenderer, LOD_ENABLED, lod_for_sphere, skinning},
     gpu::{
         buffer::ImmutableBuffer,
         command_list::{CommandList, ConstantBufferView},
@@ -39,6 +39,10 @@ pub struct DynamicModel {
     pub model: SDynamicModel,
     pub scale_factor_1d: f32,
     pub mesh_stages: Vec<RenderStageSubscription>,
+    mesh_min_lod: Vec<u8>,
+    mesh_max_lod: Vec<u8>,
+    min_lod: u8,
+    max_lod: u8,
     pub subscribed_stages: RenderStageSubscription,
     part_techniques: Vec<Vec<Handle<Technique>>>,
 
@@ -126,6 +130,33 @@ impl DynamicModel {
             .map(|m| RenderStageSubscription::from_partrange_list(&m.part_range_per_render_stage))
             .collect_vec();
 
+        let mesh_min_lod = model
+            .meshes
+            .iter()
+            .map(|m| {
+                m.parts
+                    .iter()
+                    .filter(|p| !p.lod_category.is_empty())
+                    .map(|p| p.lod_category.min_lod())
+                    .min()
+                    .unwrap_or(0)
+            })
+            .collect_vec();
+        let mesh_max_lod = model
+            .meshes
+            .iter()
+            .map(|m| {
+                m.parts
+                    .iter()
+                    .filter(|p| !p.lod_category.is_empty())
+                    .map(|p| p.lod_category.max_lod())
+                    .max()
+                    .unwrap_or(0)
+            })
+            .collect_vec();
+        let min_lod = mesh_min_lod.iter().copied().min().unwrap_or(0);
+        let max_lod = mesh_max_lod.iter().copied().max().unwrap_or(0);
+
         let part_techniques = model
             .meshes
             .iter()
@@ -176,6 +207,10 @@ impl DynamicModel {
                 .iter()
                 .fold(RenderStageSubscription::empty(), |acc, &x| acc | x),
             mesh_stages,
+            mesh_min_lod,
+            mesh_max_lod,
+            min_lod,
+            max_lod,
             part_techniques,
             hash,
             channels: AHashMap::default(),
@@ -242,6 +277,7 @@ impl DynamicModel {
         stage: RenderStage,
         identifier: u16,
         permutation: Option<usize>,
+        lod: u8,
         mut f: F,
     ) where
         F: FnMut(&Self, &mut CommandList, &SDynamicMesh, &SDynamicMeshPart),
@@ -250,16 +286,22 @@ impl DynamicModel {
             mesh,
             subscribed_stages,
             (mesh_buffers, skinning_posbuffer, skinning_normalbuffer),
+            mesh_min_lod,
+            mesh_max_lod,
             mesh_techniques,
         ) in multizip((
             self.model.meshes.iter(),
             self.mesh_stages.iter(),
             self.mesh_buffers.iter(),
+            self.mesh_min_lod.iter(),
+            self.mesh_max_lod.iter(),
             self.part_techniques.iter(),
         )) {
             if !subscribed_stages.is_subscribed(stage) {
                 continue;
             }
+
+            let mesh_lod = lod.clamp(*mesh_min_lod, *mesh_max_lod);
 
             // self.cb.bind(cmd, ShaderStage::Vertex, 1);
             // self.cb.bind(cmd, ShaderStage::Pixel, 1);
@@ -276,7 +318,7 @@ impl DynamicModel {
                     continue;
                 }
 
-                if !part.lod_category.is_highest_detail() {
+                if !part.lod_category.is_lod(mesh_lod) {
                     continue;
                 }
 
@@ -393,7 +435,7 @@ impl FeatureRenderer for DynamicModel {
         stage: RenderStage,
         frame_node: &RenderPerFrameNode,
         _view_node: &RenderPerViewNode,
-        _submit_key: u64,
+        submit_key: u64,
     ) {
         cmd.disable_smart_technique_binding();
         let data = unsafe { frame_node.data::<DynamicObjectData>() }
@@ -402,11 +444,13 @@ impl FeatureRenderer for DynamicModel {
         cmd.set_shader_constant_buffer_view(ShaderStage::Vertex, 1, Some(data.cbuffer));
         cmd.set_shader_constant_buffer_view(ShaderStage::Pixel, 1, Some(data.cbuffer));
 
+        let lod = (submit_key >> 56) as u8;
         self.draw_wrapped(
             cmd,
             stage,
             u16::MAX,
             Some(data.permutation),
+            lod,
             |_model, cmd, _mesh, part| {
                 cmd.draw_indexed(part.index_range(), 0..1, 0);
             },
@@ -431,11 +475,22 @@ impl FeatureRenderer for DynamicModel {
         let distance_normalized = 1.0 - (distance as f64 / visibility.far_plane as f64);
         let distance_u32 = (distance_normalized.clamp(0.0, 1.0) * u32::MAX as f64) as u32;
 
+        let (center, radius) = self.model.bounding_sphere();
+        let (scale, _, _) = data.local_to_world.to_scale_rotation_translation();
+        let center = data.local_to_world.transform_point3(center);
+        let radius = radius * scale.max_element();
+        let lod = if LOD_ENABLED.load(std::sync::atomic::Ordering::Relaxed) {
+            lod_for_sphere(center, radius, visibility.position, self.max_lod)
+                .clamp(self.min_lod, self.max_lod)
+        } else {
+            self.min_lod
+        };
+
         submit_node_blocks.broadcast(
             self.subscribed_stages & visibility.render_stages,
             SubmitNode {
                 view_node,
-                key: distance_u32 as u64,
+                key: ((lod as u64) << 56) | distance_u32 as u64,
             },
         );
     }

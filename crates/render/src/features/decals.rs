@@ -98,6 +98,7 @@ impl FeatureRenderer for DecalCollectionRenderer {
                             model_index: i as u16,
                             is_special_mesh: false,
                             mesh_index: 0,
+                            lod: 0,
                         }
                         .to_u64(),
                     },

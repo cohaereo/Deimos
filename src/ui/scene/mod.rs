@@ -12,7 +12,7 @@ use deimos_ecs::transform::Transform;
 use deimos_render::{
     camera::{Camera, CameraProjection},
     ecs::{s_extract_frame_packet, s_update_object_channels, s_visibility_test},
-    features::decorators::DECORATOR_QUALITY,
+    features::{LOD_ENABLED, decorators::DECORATOR_QUALITY},
     gpu::{command_list::CommandList, render_target::RenderTarget},
     renderer::{
         Renderer,
@@ -1158,22 +1158,34 @@ impl Scene {
         //         PerformanceImpact::Medium,
         //     );
 
+        let mut lod_enabled = LOD_ENABLED.load(Ordering::Relaxed);
+
         let mut decorator_quality = DECORATOR_QUALITY.load(Ordering::Relaxed) as usize;
-        egui::Slider::new(&mut decorator_quality, 0..=2)
-            .text("Decorator Quality").custom_formatter(|n, _| match n as u8 {
-                0 => "High".to_string(),
-                1 => "Medium".to_string(),
-                2 => "Low".to_string(),
-                _ => n.to_string(),
-            })
-            .show_value(true).ui(ui)
+        ui.add_enabled_ui(!lod_enabled, |ui| {
+            egui::Slider::new(&mut decorator_quality, 0..=2)
+                .text("Decorator Quality (Manual)")
+                .custom_formatter(|n, _| match n as u8 {
+                    0 => "High".to_string(),
+                    1 => "Medium".to_string(),
+                    2 => "Low".to_string(),
+                    _ => n.to_string(),
+                })
+                .show_value(true)
+                .ui(ui)
+                .setting_description_tooltip(
+                    "Manual decorator quality, used when Distance LOD is disabled.",
+                    PerformanceImpact::High,
+                );
+        });
+        DECORATOR_QUALITY.store(decorator_quality as u8, Ordering::Relaxed);
+
+        ui.checkbox(&mut lod_enabled, "Distance LOD")
             .setting_description_tooltip(
-                "Sets the quality level for decorator rendering, which affects the visual fidelity of \
-                 small details like grass and debris. Higher quality levels may significantly \
-                 reduce performance on lower-end hardware.",
+                "Selects lower-detail mesh LODs based on distance. Disable to render the \
+                 highest-detail geometry.",
                 PerformanceImpact::High,
             );
-        DECORATOR_QUALITY.store(decorator_quality as u8, Ordering::Relaxed);
+        LOD_ENABLED.store(lod_enabled, Ordering::Relaxed);
 
         ui.checkbox(&mut self.draw_sun_shadows, "Sun Shadows")
             .setting_description_tooltip(
