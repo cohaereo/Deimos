@@ -1,27 +1,48 @@
-use std::sync::atomic::AtomicU8;
+use std::{ops::Range, sync::atomic::Ordering};
 
 use ash::vk;
 use bytemuck::cast_slice;
 use deimos_data::tfx::{
     ShaderStage,
     features::{decorators::SDecorator, dynamic::RenderStageSubscription},
+    geometry::AxisAlignedBBox,
 };
 use glam::{Mat4, Vec4};
+use parking_lot::RwLock;
 use tiger_pkg::TagHash;
 
 use crate::{
-    asset::{Handle, vertex_buffer::VertexBuffer},
-    features::{FeatureRenderer, dynamic_model::DynamicModel},
+    asset::vertex_buffer::VertexBuffer,
+    features::{
+        DETAIL_LOD_DISTANCE_RATIOS, FeatureRenderer, LOD_ENABLED, dynamic_model::DynamicModel,
+        lod_for_sphere_with_ratios,
+    },
     gpu::buffer::ImmutableBuffer,
     renderer::{
         Renderer,
         packet::{RenderPerFrameNode, RenderPerViewNode},
     },
     tfx::externs,
+    visibility::{ViewVisibility, bvh::Bvh},
 };
 
-lazy_static::lazy_static! {
-    pub static ref DECORATOR_QUALITY: AtomicU8 = AtomicU8::new(1);
+/// Cull clusters beyond this distance
+const DECORATOR_CULL_DISTANCE_RATIO: f32 = 32.0;
+
+#[derive(Clone, Copy)]
+struct DecoratorDraw {
+    group_index: u16,
+    quality: u8,
+    offset: usize,
+    instance_count: u32,
+}
+
+#[derive(Default)]
+struct DecoratorViewData {
+    visible: Vec<u32>,
+    segments: Vec<(u16, u8, Range<u32>)>,
+    compacted: Vec<u8>,
+    draws: Vec<DecoratorDraw>,
 }
 
 pub struct DecoratorRenderer {
@@ -33,13 +54,21 @@ pub struct DecoratorRenderer {
         Box<externs::RigidModel>,
         Option<ImmutableBuffer>,
     )>,
-    instance_buffer: Handle<VertexBuffer>,
+    group_quality_ranges: Vec<Range<u8>>,
+    instance_raw: Vec<u8>,
+    instance_stride: usize,
+    cluster_bounds: Vec<AxisAlignedBBox>,
+    cluster_bvh: Option<Bvh>,
+    cluster_segments: Vec<Vec<(u16, Range<u32>)>>,
+    view_data: DecoratorViewData,
+    uploaded: RwLock<Option<(vk::Buffer, usize)>>,
     instance_blend_indices_vb: VertexBuffer,
 }
 
 impl DecoratorRenderer {
     pub fn load(renderer: &Renderer, hash: TagHash, decorator: SDecorator) -> anyhow::Result<Self> {
         let mut models = vec![];
+        let mut model_quality_ranges = vec![];
         for smodel in &decorator.unk8 {
             let model = DynamicModel::load(renderer, smodel.entity_model, vec![], vec![])?;
             let ext = Box::new(externs::RigidModel {
@@ -112,6 +141,21 @@ impl DecoratorRenderer {
                 None
             };
 
+            let (min_quality, max_quality) = model
+                .model
+                .meshes
+                .iter()
+                .flat_map(|mesh| mesh.parts.iter().map(|part| part.unk17))
+                .fold((u8::MAX, 0), |(min, max), quality| {
+                    (min.min(quality), max.max(quality))
+                });
+            let min_quality = if min_quality == u8::MAX {
+                0
+            } else {
+                min_quality
+            };
+            model_quality_ranges.push(min_quality..max_quality);
+
             models.push((model, ext, speedtree_cbuffer));
         }
 
@@ -124,16 +168,112 @@ impl DecoratorRenderer {
             warn!("Decorators with more than one model are WIP");
         }
 
+        let instance_count = decorator.unk48.instance_data.data.len();
+        let (instance_raw, instance_stride) =
+            VertexBuffer::get_raw_data_and_stride(decorator.unk48.instance_buffer)?;
+        let instance_stride = instance_stride as usize;
+        if instance_stride == 0 {
+            anyhow::bail!("Decorator {hash} has a zero instance stride");
+        }
+        if instance_raw.len() != instance_count * instance_stride {
+            warn!(
+                decorator_set = %hash,
+                instances = instance_count,
+                raw_instances = instance_raw.len() / instance_stride,
+                "Decorator instance count does not match the instance buffer"
+            );
+        }
+        if decorator.unk38.last().copied() != Some(instance_count as u32) {
+            warn!(
+                decorator_set = %hash,
+                instances = instance_count,
+                cluster_end = ?decorator.unk38.last(),
+                "Decorator cluster ranges do not cover all instances"
+            );
+        }
+        if decorator.unk18.last().copied() != Some(instance_count as u32) {
+            warn!(
+                decorator_set = %hash,
+                instances = instance_count,
+                group_end = ?decorator.unk18.last(),
+                "Decorator group ranges do not cover all instances"
+            );
+        }
+
+        let group_bounds = &decorator.unk18;
+        let group_count = group_bounds.len().saturating_sub(1);
+        let group_quality_ranges = (0..group_count)
+            .map(|group| {
+                let model_id = if models.len() == 1 { 0 } else { group };
+                model_quality_ranges.get(model_id).cloned().unwrap_or(0..3)
+            })
+            .collect::<Vec<_>>();
+
+        let cluster_bounds = decorator
+            .unk4c
+            .bounds
+            .iter()
+            .map(|bound| bound.bb)
+            .collect::<Vec<_>>();
+        let cluster_bvh = if cluster_bounds.is_empty() {
+            None
+        } else {
+            Some(Bvh::build(&cluster_bounds))
+        };
+
+        let cluster_ranges = &decorator.unk38;
+        let mut cluster_segments = Vec::with_capacity(cluster_bounds.len());
+        if cluster_ranges.len() == cluster_bounds.len() + 1 && group_bounds.len() >= 2 {
+            let mut group = 0usize;
+            for cluster in 0..cluster_bounds.len() {
+                let start = cluster_ranges[cluster];
+                let end = cluster_ranges[cluster + 1];
+
+                while group + 1 < group_bounds.len() && group_bounds[group + 1] <= start {
+                    group += 1;
+                }
+
+                let mut segments = Vec::new();
+                let mut current = group;
+                while current + 1 < group_bounds.len() && group_bounds[current] < end {
+                    let segment_start = start.max(group_bounds[current]);
+                    let segment_end = end.min(group_bounds[current + 1]);
+                    if segment_start < segment_end {
+                        segments.push((current as u16, segment_start..segment_end));
+                    }
+                    current += 1;
+                }
+
+                cluster_segments.push(segments);
+            }
+        } else {
+            warn!(
+                decorator_set = %hash,
+                clusters = cluster_bounds.len(),
+                cluster_ranges = cluster_ranges.len(),
+                groups = group_bounds.len(),
+                "Decorator occlusion bounds do not match the instance ranges"
+            );
+            cluster_segments.resize_with(cluster_bounds.len(), Vec::new);
+        }
+
         // u8 for decorators, f32 for speedtree
         // let blend_index_data = vec![0xC8u8; decorator.unk48.instance_data.data.len() * 4];
-        let blend_index_data = vec![1f32; decorator.unk48.instance_data.data.len() * 4];
+        let blend_index_data = vec![1f32; instance_count * 4];
         let instance_blend_indices_vb =
             VertexBuffer::load_data(&renderer.gpu, bytemuck::cast_slice(&blend_index_data), 4)?;
 
         Ok(Self {
             models,
+            group_quality_ranges,
+            instance_raw,
+            instance_stride,
+            cluster_bounds,
+            cluster_bvh,
+            cluster_segments,
+            view_data: DecoratorViewData::default(),
+            uploaded: RwLock::new(None),
             hash,
-            instance_buffer: renderer.asset_manager.load(decorator.unk48.instance_buffer),
             instance_blend_indices_vb,
             data: decorator,
         })
@@ -141,16 +281,122 @@ impl DecoratorRenderer {
 }
 
 impl FeatureRenderer for DecoratorRenderer {
+    fn visibility_test(&mut self, visibility: &ViewVisibility) {
+        let Some(bvh) = &self.cluster_bvh else {
+            self.view_data = DecoratorViewData::default();
+            return;
+        };
+
+        let DecoratorViewData {
+            visible,
+            segments,
+            compacted,
+            draws,
+        } = &mut self.view_data;
+        visible.clear();
+        segments.clear();
+        compacted.clear();
+        draws.clear();
+
+        bvh.collect_visible_leaves(visibility, visible, 0);
+
+        let lod_enabled = LOD_ENABLED.load(Ordering::Relaxed);
+
+        for &cluster in visible.iter() {
+            let Some(bounds) = self.cluster_bounds.get(cluster as usize) else {
+                continue;
+            };
+            let center = bounds.centroid();
+            let radius = bounds.radius();
+            let distance = center.distance(visibility.position);
+            if distance > radius.max(1.0) * DECORATOR_CULL_DISTANCE_RATIO {
+                continue;
+            }
+
+            let quality = if lod_enabled {
+                lod_for_sphere_with_ratios(
+                    center,
+                    radius,
+                    visibility.position,
+                    &DETAIL_LOD_DISTANCE_RATIOS,
+                    3,
+                )
+            } else {
+                1 // medium
+            };
+
+            let Some(cluster_segments) = self.cluster_segments.get(cluster as usize) else {
+                continue;
+            };
+            for &(group, ref segment_range) in cluster_segments {
+                let quality_range = self
+                    .group_quality_ranges
+                    .get(group as usize)
+                    .cloned()
+                    .unwrap_or(0..3);
+                segments.push((
+                    group,
+                    quality.clamp(quality_range.start, quality_range.end),
+                    segment_range.clone(),
+                ));
+            }
+        }
+
+        segments.sort_unstable_by_key(|&(group, quality, _)| (group, quality));
+
+        let stride = self.instance_stride;
+        let raw = &self.instance_raw;
+        for &(group, quality, ref segment_range) in segments.iter() {
+            if draws.last().map(|draw| (draw.group_index, draw.quality)) != Some((group, quality)) {
+                draws.push(DecoratorDraw {
+                    group_index: group,
+                    quality,
+                    offset: compacted.len(),
+                    instance_count: 0,
+                });
+            }
+
+            let byte_start = segment_range.start as usize * stride;
+            let byte_end = segment_range.end as usize * stride;
+            if byte_start >= byte_end || byte_end > raw.len() {
+                continue;
+            }
+
+            compacted.extend_from_slice(&raw[byte_start..byte_end]);
+            if let Some(draw) = draws.last_mut() {
+                draw.instance_count += segment_range.len() as u32;
+            }
+        }
+    }
+
     fn populate_submit_node_blocks(
         &self,
-        _renderer: &Renderer,
+        renderer: &Renderer,
         (view_node, _): (usize, &RenderPerViewNode),
         _frame_node: &RenderPerFrameNode,
-        visibility: &crate::visibility::ViewVisibility,
+        visibility: &ViewVisibility,
         submit_node_blocks: &mut crate::renderer::packet::SubmitNodeContainer,
     ) {
+        let stages = self.subscribed_stages() & visibility.render_stages;
+        if stages.is_empty() || self.view_data.draws.is_empty() {
+            *self.uploaded.write() = None;
+            return;
+        }
+
+        let Some(slice) = renderer
+            .gpu
+            .frame()
+            .upload
+            .upload_bytes(&self.view_data.compacted)
+        else {
+            error!("Failed to upload decorator instance data (UploadHeap OOM)");
+            *self.uploaded.write() = None;
+            return;
+        };
+
+        *self.uploaded.write() = Some((slice.buffer(), slice.offset()));
         submit_node_blocks.broadcast(
-            self.subscribed_stages() & visibility.render_stages,
+            stages,
             crate::renderer::packet::SubmitNode { view_node, key: 0 },
         );
     }
@@ -163,6 +409,10 @@ impl FeatureRenderer for DecoratorRenderer {
         _view_node: &crate::renderer::packet::RenderPerViewNode,
         _submit_key: u64,
     ) {
+        let Some((instance_buffer, instance_buffer_offset)) = *self.uploaded.read() else {
+            return;
+        };
+
         let speedtree_vertex_slot = 0xA; // renderer.globals.scopes.speedtree.vertex_slot() as u32;
 
         {
@@ -188,19 +438,12 @@ impl FeatureRenderer for DecoratorRenderer {
             .into();
         }
 
-        for id in 0..(self.data.unk18.len() - 1) {
-            let instance_start = self.data.unk18[id];
-            let instance_end = self.data.unk18[id + 1];
-
-            // let group_mask = if self.models.len() == 1 {
-            //     1 << id
-            // } else {
-            //     // cohae: Multi-models (usually trees) seem to use the ID as a LOD level?
-            //     u64::MAX
-            // };
-
-            let model_id = if self.models.len() == 1 { 0 } else { id };
-            // cmd_event_span!(cmd, format!("<id {}, model {}>", id, model_id));
+        for draw in &self.view_data.draws {
+            let model_id = if self.models.len() == 1 {
+                0
+            } else {
+                draw.group_index as usize
+            };
 
             let Some((model, ext, cb)) = self.models.get(model_id) else {
                 warn!(
@@ -208,7 +451,8 @@ impl FeatureRenderer for DecoratorRenderer {
                     mesh_count = self.models[0].0.model.meshes.len(),
                     variant_count = self.models[0].0.variant_count(),
                     identifier_count = self.models[0].0.identifier_count(),
-                    "Decorator model index {id} out of bounds for models list of length {}",
+                    "Decorator model index {} out of bounds for models list of length {}",
+                    draw.group_index,
                     self.models.len(),
                 );
                 continue;
@@ -227,26 +471,30 @@ impl FeatureRenderer for DecoratorRenderer {
             cmd.externs.rigid_model = Box::clone(ext).into();
 
             let dyn_id = if self.models.len() == 1 {
-                id as u16
+                draw.group_index
             } else {
                 // cohae: Multi-models (usually trees) seem to use the ID as a LOD level?
                 0
             };
 
             self.instance_blend_indices_vb.bind_single(cmd, 3);
-            model.draw_wrapped(cmd, stage, dyn_id, None, move |_model, cmd, _mesh, part| {
-                // LOD selector. 0=high, 1=medium, 2=low
-                if part.unk17 != DECORATOR_QUALITY.load(std::sync::atomic::Ordering::Relaxed) {
-                    return;
-                }
+            let buffer_offset = (instance_buffer_offset + draw.offset) as u64;
+            model.draw_wrapped(
+                cmd,
+                stage,
+                dyn_id,
+                None,
+                0,
+                move |_model, cmd, _mesh, part| {
+                    // LOD selector. 0=high, 1=medium, 2=low
+                    if part.unk17 != draw.quality {
+                        return;
+                    }
 
-                let Some(cb) = self.instance_buffer.get() else {
-                    return;
-                };
-                cb.bind_single(cmd, 1);
-
-                cmd.draw_indexed(part.index_range(), instance_start..instance_end, 0);
-            });
+                    cmd.set_vertex_buffers(1, &[instance_buffer], &[buffer_offset]);
+                    cmd.draw_indexed(part.index_range(), 0..draw.instance_count, 0);
+                },
+            );
         }
     }
 
