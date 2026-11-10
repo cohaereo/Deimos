@@ -111,7 +111,8 @@ pub fn load_component(
 
             if data.model.is_some() {
                 let model = DynamicModel::load(renderer, data.model, vec![], vec![])?;
-                world.insert_one(entity, data.bounds)?;
+                // TODO(cohae): Water planes are being over-culled?
+                // world.insert_one(entity, data.bounds)?;
 
                 let obj = renderer.add_object(RenderObject::new(
                     format!("water_plane {}", data.model),

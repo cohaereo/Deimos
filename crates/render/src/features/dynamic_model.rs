@@ -349,11 +349,6 @@ impl DynamicModel {
                     continue;
                 }
 
-                // TODO(cohae): Reimplement in pipeline cache
-                // if all_scopes.contains(TfxScopeBits::SKINNING) {
-                //     cmd.vertex_set_shader(&Renderer::instance().common.disable_skinning_vs);
-                // }
-
                 cmd.set_input_topology(part.primitive_type);
 
                 f(self, cmd, mesh, part);
