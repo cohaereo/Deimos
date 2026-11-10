@@ -1,7 +1,7 @@
-use deimos_data::tfx::geometry::AxisAlignedBBox;
+use deimos_data::tfx::{features::dynamic::RenderStageSubscription, geometry::AxisAlignedBBox};
 use smallvec::SmallVec;
 
-use crate::visibility::ViewVisibility;
+use crate::visibility::{ViewVisibility, frustum::AabbVisibility};
 
 #[derive(Debug, Clone)]
 struct FlatNode {
@@ -68,21 +68,44 @@ impl Bvh {
             return;
         }
 
-        let mut stack = SmallVec::<[u32; 64]>::new();
-        stack.push(0u32);
+        let is_shadow_view =
+            vis.render_stages.bits() == RenderStageSubscription::SHADOW_VIEW.bits();
 
-        while let Some(idx) = stack.pop() {
+        let mut stack = SmallVec::<[(u32, bool); 64]>::new();
+        stack.push((0u32, false));
+
+        while let Some((idx, inside)) = stack.pop() {
             let node = &self.nodes[idx as usize];
 
             match node.data {
                 NodeData::Internal { right_child } => {
-                    if vis.is_visible_frustum(&node.aabb) {
-                        stack.push(right_child);
-                        stack.push(idx + 1);
+                    if inside {
+                        stack.push((right_child, true));
+                        stack.push((idx + 1, true));
+                    } else if is_shadow_view {
+                        match vis.culling_frustum.aabb_test(&node.aabb) {
+                            AabbVisibility::Outside => {}
+                            AabbVisibility::Intersecting => {
+                                stack.push((right_child, false));
+                                stack.push((idx + 1, false));
+                            }
+                            AabbVisibility::Inside => {
+                                stack.push((right_child, true));
+                                stack.push((idx + 1, true));
+                            }
+                        }
+                    } else if vis.is_visible_frustum(&node.aabb) {
+                        stack.push((right_child, false));
+                        stack.push((idx + 1, false));
                     }
                 }
                 NodeData::Leaf { original_index } => {
-                    if vis.is_visible(&node.aabb) {
+                    let visible = if inside {
+                        vis.is_visible_projected(&node.aabb)
+                    } else {
+                        vis.is_visible(&node.aabb)
+                    };
+                    if visible {
                         out.push(offset + original_index);
                     }
                 }

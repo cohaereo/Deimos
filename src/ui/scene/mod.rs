@@ -791,7 +791,7 @@ impl Scene {
         }
 
         let vis = ViewVisibility {
-            enabled: self.camera.projection != CameraProjection::Orthographic,
+            enabled: true,
             culling_frustum: self.camera.culling_frustum.clone(),
             far_plane: Camera::FAR,
             position: self.camera.position,

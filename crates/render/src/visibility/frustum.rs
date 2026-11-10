@@ -42,6 +42,14 @@ impl Deref for Plane {
 pub struct Frustum {
     pub planes: [Plane; 6],
     pub points: [Vec3A; 8],
+    plane_abs_normals: [Vec3A; 6],
+}
+
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub enum AabbVisibility {
+    Outside,
+    Intersecting,
+    Inside,
 }
 
 impl Frustum {
@@ -65,7 +73,13 @@ impl Frustum {
             Plane::intersect(&planes[Self::FAR], &planes[Self::RIGHT], &planes[Self::BOTTOM]),
         ];
 
-        Self { planes, points }
+        let plane_abs_normals = std::array::from_fn(|i| planes[i].normal().abs());
+
+        Self {
+            planes,
+            points,
+            plane_abs_normals,
+        }
     }
 
     pub fn from_camera(cam: &Camera) -> Self {
@@ -120,16 +134,28 @@ impl Frustum {
     }
 
     pub fn aabb_intersecting(&self, bb: &AxisAlignedBBox) -> bool {
-        let extents: Vec3A = bb.extents().into();
-        let center: Vec3A = bb.centroid().into();
-        let is_on_or_forward_plane = |plane: &Plane| {
-            let r = extents.dot(Vec3A::from(plane.xyz()).abs());
-            // let r =
-            //     extents.x * plane.x.abs() + extents.y * plane.y.abs() + extents.z * plane.z.abs();
-            -r <= plane.get_signed_distance(center)
-        };
+        self.aabb_test(bb) != AabbVisibility::Outside
+    }
 
-        self.planes.iter().all(is_on_or_forward_plane)
+    pub fn aabb_test(&self, bb: &AxisAlignedBBox) -> AabbVisibility {
+        let extents = Vec3A::from(bb.extents()) * 0.5;
+        let center = Vec3A::from(bb.centroid()).extend(1.0);
+        let mut inside = true;
+
+        for i in 0..6 {
+            let distance = center.dot(self.planes[i].0);
+            let radius = extents.dot(self.plane_abs_normals[i]);
+            if distance < -radius {
+                return AabbVisibility::Outside;
+            }
+            inside &= distance >= radius;
+        }
+
+        if inside {
+            AabbVisibility::Inside
+        } else {
+            AabbVisibility::Intersecting
+        }
     }
 
     pub fn sphere_intersecting(&self, sphere: &SphereBounds) -> bool {

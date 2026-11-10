@@ -112,10 +112,9 @@ pub fn s_extract_frame_packet(
 
         if sun_shadows {
             for v in main_view.shadow_views.iter() {
-                // TODO(cohae): Fix culling for shadow views
-                // if v.frustum.aabb_intersecting(&bounds) {
-                frame_packet.push_view_node::<()>(v.id, frame_node, None);
-                // }
+                if v.frustum.aabb_intersecting(&bounds) {
+                    frame_packet.push_view_node::<()>(v.id, frame_node, None);
+                }
             }
         }
     }

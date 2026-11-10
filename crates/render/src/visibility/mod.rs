@@ -74,6 +74,10 @@ impl ViewVisibility {
             return false;
         }
 
+        self.is_visible_projected(aabb)
+    }
+
+    pub(crate) fn is_visible_projected(&self, aabb: &AxisAlignedBBox) -> bool {
         // Project the AABB corners to check how big they appear on screen
         let corners = aabb.points();
         let mut min_ndc = Vec3::splat(f32::MAX);
