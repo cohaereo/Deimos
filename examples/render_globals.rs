@@ -1,5 +1,6 @@
 use anyhow::Context;
 use deimos_data::tfx::{STechnique, render_globals::SRenderGlobals};
+use deimos_ecs::object::find_fnv_name;
 use tiger_parse::PackageManagerExt;
 use tiger_pkg::package_manager;
 
@@ -8,6 +9,14 @@ fn main() -> anyhow::Result<()> {
 
     let data: SRenderGlobals = package_manager().read_named_tag_struct("render_globals")?;
     let globs = &data.unk8.first().context("No render globals found")?.unk8.0;
+
+    for (i, channel) in globs.global_channels.0.channel_ids.iter().enumerate() {
+        if let Some(name) = find_fnv_name(*channel) {
+            println!("{}: {} (0x{:08X})", i, name, channel);
+        } else {
+            println!("{}: 0x{:08X}", i, channel);
+        }
+    }
 
     for pipeline in &globs.pipelines {
         println!("{} > techniques/{}.tfx", pipeline.technique, *pipeline.name,);
@@ -30,7 +39,7 @@ fn main() -> anyhow::Result<()> {
 
     for scope in &globs.scopes {
         println!(
-            "./target/debug/examples/scope_decompile {} > reversing/scopes/scope_{}.txt",
+            "./target/debug/examples/scope_decompile {} | ansistrip > reversing/scopes/scope_{}.txt",
             scope.scope, scope.name.0
         );
     }

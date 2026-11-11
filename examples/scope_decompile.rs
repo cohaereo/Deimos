@@ -23,7 +23,13 @@ fn main() -> anyhow::Result<()> {
         .context("Failed to read/parse tag")?;
 
     for (scope, stage) in scope.iter_stages() {
-        println!("// Stage: {stage:?}");
+        if scope.core.constant_buffer.is_none() && scope.core.bytecode.is_empty() {
+            continue;
+        }
+        println!(
+            "// Stage: {stage:?} (cb{})",
+            scope.core.constant_buffer_slot
+        );
         println!("\t// Disassembly:");
         match expression_vm::disassemble(&scope.core.bytecode) {
             Ok(lines) => {

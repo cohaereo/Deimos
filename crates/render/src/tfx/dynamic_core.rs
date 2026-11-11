@@ -443,7 +443,9 @@ const fn extern_filler(index: ExternIndex, offset: u32) -> Option<([u8; 4], u32,
         (ExternIndex::Atmosphere, 0xF0)   => Some(([0x00, 0x00, 0x00, 0xFF], 4, 4, 1)),
         (ExternIndex::Atmosphere, _)      => Some(([0x00, 0x00, 0x00, 0xFF], 4, 4, 1)),
 
-        (ExternIndex::Water, 0x08)        => Some(([0x7F, 0x7F, 0x00, 0x00], 4, 4, 1)),
+        (ExternIndex::Water, 0x08)        => Some(([0x00, 0x00, 0x00, 0x00], 4, 4, 1)),
+        (ExternIndex::Water, 0x18)        => Some(([0xFF, 0x00, 0x00, 0x00], 4, 4, 1)), // only the red channel seems to be significant
+        (ExternIndex::Water, 0x28)        => Some(([0x7F, 0x7F, 0x00, 0x00], 4, 4, 1)), // RG texture, some UV offset, 0.5 is neutral
         // // (ExternIndex::Water, 0x18)        => Some(([0x7F, 0x7F, 0x00, 0x00], 4, 4, 1)),
         // // (ExternIndex::Water, 0x28)        => Some(([0x7F, 0x7F, 0x00, 0x00], 4, 4, 1)),
 

@@ -1231,8 +1231,7 @@ impl Scene {
 
         // let automated_ids = s_get_all_global_channel_ids(&self.world);
         egui::ScrollArea::vertical().show(ui, |ui| {
-            ui.heading("Frame");
-            {
+            ui.collapsing("Frame", |ui| {
                 let frame = &mut self.scene_renderer.parent.externs.get_mut().frame;
                 for (label, set) in [
                     ("unk240", &mut frame.unk240),
@@ -1263,7 +1262,108 @@ impl Scene {
                             .ui(ui);
                     });
                 }
-            }
+            });
+
+            ui.collapsing("Atmosphere", |ui| {
+                let atmos = &mut self.scene_renderer.parent.externs.get_mut().atmosphere;
+                for (label, set) in [
+                    ("unk90", &mut atmos.unk90),
+                    ("unkd0", &mut atmos.unkd0),
+                    ("unk110", &mut atmos.unk110),
+                    ("unk130", &mut atmos.unk130),
+                    ("unk150", &mut atmos.unk150),
+                    ("unk190", &mut atmos.unk190),
+                    ("unk1e0", &mut atmos.unk1e0),
+                    ("unk230", &mut atmos.unk230),
+                ] {
+                    ui.label(label);
+                    ui.horizontal(|ui| {
+                        ui.spacing_mut().button_padding = vec2(4.0, 1.0);
+                        ui.spacing_mut().interact_size = egui::vec2(100.0, 32.0);
+                        egui::DragValue::new(&mut set.x)
+                            .fixed_decimals(4)
+                            .speed(0.01)
+                            .ui(ui);
+                        egui::DragValue::new(&mut set.y)
+                            .fixed_decimals(4)
+                            .speed(0.01)
+                            .ui(ui);
+                        egui::DragValue::new(&mut set.z)
+                            .fixed_decimals(4)
+                            .speed(0.01)
+                            .ui(ui);
+                        egui::DragValue::new(&mut set.w)
+                            .fixed_decimals(4)
+                            .speed(0.01)
+                            .ui(ui);
+                    });
+                }
+                for (label, value) in [
+                    ("unk160", &mut atmos.unk160),
+                    ("unk164", &mut atmos.unk164),
+                    ("unk170", &mut atmos.unk170),
+                    ("unk174", &mut atmos.unk174),
+                    ("unk178", &mut atmos.unk178),
+                    ("unk17c", &mut atmos.unk17c),
+                    ("unk180", &mut atmos.unk180),
+                    ("unk184", &mut atmos.unk184),
+                    ("unk188", &mut atmos.unk188),
+                    ("unk18c", &mut atmos.unk18c),
+                    ("unk1a0", &mut atmos.unk1a0),
+                    ("unk1a4", &mut atmos.unk1a4),
+                    ("unk1a8", &mut atmos.unk1a8),
+                    ("unk1ac", &mut atmos.unk1ac),
+                    ("unk1c4", &mut atmos.unk1c4),
+                    ("unk1c8", &mut atmos.unk1c8),
+                    ("unk1cc", &mut atmos.unk1cc),
+                    ("unk1d0", &mut atmos.unk1d0),
+                    ("unk1d4", &mut atmos.unk1d4),
+                    ("unk1f0", &mut atmos.unk1f0),
+                    ("unk1f4", &mut atmos.unk1f4),
+                    ("unk1f8", &mut atmos.unk1f8),
+                    ("unk1fc", &mut atmos.unk1fc),
+                    ("unk214", &mut atmos.unk214),
+                    ("unk218", &mut atmos.unk218),
+                    ("unk224", &mut atmos.unk224),
+                ] {
+                    ui.horizontal(|ui| {
+                        ui.label(label);
+                        ui.spacing_mut().button_padding = vec2(4.0, 1.0);
+                        ui.spacing_mut().interact_size = egui::vec2(100.0, 32.0);
+                        egui::DragValue::new(value)
+                            .fixed_decimals(4)
+                            .speed(0.01)
+                            .ui(ui);
+                    });
+                }
+            });
+
+            ui.collapsing("Water", |ui| {
+                let water = &mut self.scene_renderer.parent.externs.get_mut().water;
+                for (label, set) in [("unk40", &mut water.unk40), ("unk50", &mut water.unk50)] {
+                    ui.label(label);
+                    ui.horizontal(|ui| {
+                        ui.spacing_mut().button_padding = vec2(4.0, 1.0);
+                        ui.spacing_mut().interact_size = egui::vec2(100.0, 32.0);
+                        egui::DragValue::new(&mut set.x)
+                            .fixed_decimals(4)
+                            .speed(0.01)
+                            .ui(ui);
+                        egui::DragValue::new(&mut set.y)
+                            .fixed_decimals(4)
+                            .speed(0.01)
+                            .ui(ui);
+                        egui::DragValue::new(&mut set.z)
+                            .fixed_decimals(4)
+                            .speed(0.01)
+                            .ui(ui);
+                        egui::DragValue::new(&mut set.w)
+                            .fixed_decimals(4)
+                            .speed(0.01)
+                            .ui(ui);
+                    });
+                }
+            });
 
             ui.heading("Global Channels");
             for (i, channel) in self.scene_renderer.global_channels.iter_mut().enumerate() {

@@ -25,7 +25,16 @@ fn main() -> anyhow::Result<()> {
         .context("Failed to read/parse tag")?;
 
     for (stage, shader) in tech.all_valid_shaders() {
+        if shader.core.constant_buffer.is_none() && shader.core.bytecode.is_empty() {
+            continue;
+        }
+
         println!("// Stage: {stage:?}");
+        println!("\t// Initial constants:");
+        for (i, constant) in shader.core.unk30.iter().enumerate() {
+            println!("\t  [{i}]: {}", constant);
+        }
+
         println!("\t// Disassembly:");
         match expression_vm::disassemble(&shader.core.bytecode) {
             Ok(lines) => {

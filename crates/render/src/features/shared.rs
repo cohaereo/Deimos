@@ -48,7 +48,7 @@ impl ModelBuffers {
                     &renderer.gpu,
                     "color_buffer_fallback",
                     vk::Format::R8G8B8A8_UNORM,
-                    &[255u8, 255, 255, 255],
+                    &[0u8, 0, 0, 255],
                 )
                 .context("Failed to create color buffer for dynamic model")?
             },
