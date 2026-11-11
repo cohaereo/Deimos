@@ -129,22 +129,37 @@ impl FrameProfiler {
             return "No profiling data available yet".to_string();
         }
 
-        let mut results = Vec::new();
+        let mut results: Vec<ProfilerSpan> = Vec::new();
         for scope in state
             .resolved_frames
             .last()
             .expect("resolved_frames cannot be empty")
         {
+            if results
+                .iter()
+                .any(|r| r.name == scope.name && r.depth == scope.depth)
+            {
+                continue;
+            }
+
             let mut total_cpu = 0.0;
             let mut total_gpu = 0.0;
             let mut count = 0;
             for frame in state.resolved_frames.iter().rev() {
-                if let Some(s) = frame
+                let mut frame_cpu = 0.0;
+                let mut frame_gpu = 0.0;
+                let mut found = false;
+                for s in frame
                     .iter()
-                    .find(|s| s.name == scope.name && s.depth == scope.depth)
+                    .filter(|s| s.name == scope.name && s.depth == scope.depth)
                 {
-                    total_cpu += s.cpu_duration_us;
-                    total_gpu += s.gpu_duration_us;
+                    frame_cpu += s.cpu_duration_us;
+                    frame_gpu += s.gpu_duration_us;
+                    found = true;
+                }
+                if found {
+                    total_cpu += frame_cpu;
+                    total_gpu += frame_gpu;
                     count += 1;
                 }
             }
