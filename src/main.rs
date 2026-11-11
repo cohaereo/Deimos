@@ -39,6 +39,10 @@ extern crate tracing;
 const TRACING_DISABLED_TARGETS: &[&str] = &["ehttp", "ureq", "rustls"];
 
 fn main() -> anyhow::Result<()> {
+    rayon::ThreadPoolBuilder::new()
+        .thread_name(|i| format!("rayon-{i}"))
+        .build_global()?;
+
     fix_windows_console();
     print_banner();
     std::panic::set_hook(Box::new(panic_hook::hook));
