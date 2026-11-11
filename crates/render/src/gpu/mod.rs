@@ -126,6 +126,11 @@ pub struct Gpu {
     // Per-frame stats
     pub num_drawcalls: AtomicUsize,
     pub num_static_instances: AtomicUsize,
+    frame_count: AtomicUsize,
+    pub num_cbuffer_prepares: AtomicUsize,
+    pub num_expression_cache_hits: AtomicUsize,
+    pub num_expression_cache_misses: AtomicUsize,
+    pub num_expression_cache_bypasses: AtomicUsize,
 
     pub(crate) sampler_cache: Mutex<HashMap<D3D12SamplerDesc, vk::Sampler>>,
 }
@@ -519,6 +524,11 @@ impl Gpu {
 
             num_drawcalls: AtomicUsize::new(0),
             num_static_instances: AtomicUsize::new(0),
+            frame_count: AtomicUsize::new(0),
+            num_cbuffer_prepares: AtomicUsize::new(0),
+            num_expression_cache_hits: AtomicUsize::new(0),
+            num_expression_cache_misses: AtomicUsize::new(0),
+            num_expression_cache_bypasses: AtomicUsize::new(0),
 
             sampler_cache: Mutex::new(HashMap::default()),
         }
@@ -788,8 +798,14 @@ impl Gpu {
         lock
     }
 
+    /// Returns a frame counter that wraps every `MAX_FRAMES_IN_FLIGHT` frames.
     pub fn frame_index(&self) -> usize {
-        self.frame_index.load(std::sync::atomic::Ordering::Relaxed)
+        self.frame_index.load(Ordering::Relaxed)
+    }
+
+    /// Returns a frame counter that doesn't wrap.
+    pub fn frame_serial(&self) -> usize {
+        self.frame_count.load(Ordering::Relaxed)
     }
 
     pub fn frame(&self) -> &FrameContext {
@@ -806,13 +822,16 @@ impl Gpu {
     }
 
     pub fn begin_frame(&self) -> &FrameContext {
-        self.num_drawcalls
-            .store(0, std::sync::atomic::Ordering::Relaxed);
-        self.num_static_instances
-            .store(0, std::sync::atomic::Ordering::Relaxed);
+        self.num_drawcalls.store(0, Ordering::Relaxed);
+        self.num_static_instances.store(0, Ordering::Relaxed);
+        self.num_cbuffer_prepares.store(0, Ordering::Relaxed);
+        self.num_expression_cache_hits.store(0, Ordering::Relaxed);
+        self.num_expression_cache_misses.store(0, Ordering::Relaxed);
+        self.num_expression_cache_bypasses
+            .store(0, Ordering::Relaxed);
 
         // self.swapchain.lock().wait_on_present();
-        let frame_index = self.frame_index.load(std::sync::atomic::Ordering::Relaxed);
+        let frame_index = self.frame_index.load(Ordering::Relaxed);
         let frame = &self.frames[frame_index % Self::MAX_FRAMES_IN_FLIGHT];
 
         unsafe {
@@ -846,8 +865,7 @@ impl Gpu {
     }
 
     pub fn submit(&self, image_index: u32) -> anyhow::Result<()> {
-        let frame_index = self.frame_index.load(std::sync::atomic::Ordering::Relaxed)
-            % Self::MAX_FRAMES_IN_FLIGHT;
+        let frame_index = self.frame_index.load(Ordering::Relaxed) % Self::MAX_FRAMES_IN_FLIGHT;
         self.frame_index.store(
             (frame_index + 1) % Self::MAX_FRAMES_IN_FLIGHT,
             Ordering::Relaxed,

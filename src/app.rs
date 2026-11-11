@@ -49,11 +49,10 @@ pub struct App {
     // _spinner: FullscreenSpinner,
     last_frame_time: Instant,
     frametime_histogram: FrametimeHistogram,
-    current_frame: u64,
 }
 
 impl App {
-    const ASSET_CULL_INTERVAL_FRAMES: u64 = 60;
+    const ASSET_CULL_INTERVAL_FRAMES: usize = 60;
 
     pub fn new(sdl: Rc<sdl3::Sdl>, window: Rc<Window>, args: AppArgs) -> anyhow::Result<Self> {
         let gpu =
@@ -107,7 +106,6 @@ impl App {
 
             last_frame_time: Instant::now(),
             frametime_histogram: FrametimeHistogram::new(10),
-            current_frame: 0,
         })
     }
 
@@ -151,12 +149,12 @@ impl App {
         self.last_frame_time = std::time::Instant::now();
 
         if self
-            .current_frame
+            .gpu
+            .frame_serial()
             .is_multiple_of(Self::ASSET_CULL_INTERVAL_FRAMES)
         {
             self.renderer.asset_manager.remove_unreferenced();
         }
-        self.current_frame = self.current_frame.wrapping_add(1);
 
         self.frametime_histogram.push(delta_time);
 

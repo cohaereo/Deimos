@@ -148,7 +148,13 @@ pub fn s_extract_frame_packet(
                 .and_then(|r| r.get_mut::<DynamicModel>())
         {
             for channel in &object_channels.0 {
-                dynamic_model.channels.insert(channel.name, channel.clone());
+                if let Some(target) = dynamic_model.channels.get_mut(&channel.name) {
+                    target.value = channel.value;
+                    target.expression.clone_from(&channel.expression);
+                    target.usage.clone_from(&channel.usage);
+                } else {
+                    dynamic_model.channels.insert(channel.name, channel.clone());
+                }
             }
         }
 
@@ -190,18 +196,18 @@ pub fn node_visibility_test(
         return;
     };
 
-    let mut tested = HashSet::default();
-    for per_frame_node in view_nodes
+    let tested: HashSet<_> = view_nodes
         .iter()
-        .map(|v| &frame_packet.per_frame_nodes[v.frame_node])
-    {
-        if !tested.insert(per_frame_node.object) {
-            continue;
-        }
+        .map(|v| frame_packet.per_frame_nodes[v.frame_node].object)
+        .collect();
 
-        let render_object = &mut render_objects[per_frame_node.object];
-        render_object.renderer.visibility_test(visibility);
-    }
+    render_objects
+        .iter_mut()
+        .filter(|(key, _)| tested.contains(key))
+        .map(|(_, render_object)| render_object)
+        .collect::<Vec<_>>()
+        .into_par_iter()
+        .for_each(|render_object| render_object.renderer.visibility_test(visibility));
 }
 
 pub fn populate_submit_nodes(
