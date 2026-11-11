@@ -1,8 +1,8 @@
 use ahash::HashMap;
 use anyhow::Context;
 use ash::vk;
-use deimos_data::tfx::texture::DxgiFormat;
-use parking_lot::{RwLock, RwLockUpgradableReadGuard};
+use deimos_data::tfx::{ExternIndex, texture::DxgiFormat};
+use parking_lot::RwLock;
 use rand_chacha::ChaCha8Rng;
 use rand_core::{Rng, SeedableRng};
 use std::collections::hash_map::DefaultHasher;
@@ -41,77 +41,76 @@ fn texture_from_hash(hash: u64) -> [u8; 32 * 32 * 4] {
 }
 
 pub struct MagicTextureContainer {
-    textures: RwLock<HashMap<u64, Texture>>,
+    textures: RwLock<HashMap<(ExternIndex, u32), Texture>>,
 }
 
 impl MagicTextureContainer {
     pub fn get_texture(
         &self,
         gpu: &Arc<Gpu>,
-        key: String,
+        key: (ExternIndex, u32),
         filler: Option<([u8; 4], u32, u32, u32)>,
     ) -> anyhow::Result<vk::ImageView> {
+        if let Some(texture) = self.textures.read().get(&key) {
+            return Ok(texture.view);
+        }
+
+        let name = format!("{:?}->_0x{:X}", key.0, key.1);
         let mut hasher = DefaultHasher::new();
         key.hash(&mut hasher);
         let hash = hasher.finish();
 
-        let textures = self.textures.upgradable_read();
-        if let Some(tex) = textures.get(&hash) {
-            Ok(tex.view)
-        } else {
-            let texture = if let Some((filler, width, height, depth)) = filler {
-                let mut data: Vec<u8> = vec![0u8; (width * height * depth * 4) as usize];
-                for chunk in data.as_chunks_mut::<4>().0 {
-                    chunk.copy_from_slice(&filler);
-                }
+        let texture = if let Some((filler, width, height, depth)) = filler {
+            let mut data: Vec<u8> = vec![0u8; (width * height * depth * 4) as usize];
+            for chunk in data.as_chunks_mut::<4>().0 {
+                chunk.copy_from_slice(&filler);
+            }
 
-                if depth > 1 {
-                    Texture::load(
-                        gpu,
-                        &TextureDesc::texture_3d(
-                            format!("[PH] unresolved {key}"),
-                            DxgiFormat::R8G8B8A8_UNORM,
-                            width,
-                            height,
-                            depth,
-                        ),
-                        &data,
-                    )
-                    .context("uploading texture")?
-                } else {
-                    Texture::load(
-                        gpu,
-                        &TextureDesc::texture_2d(
-                            format!("[PH] unresolved {key}"),
-                            DxgiFormat::R8G8B8A8_UNORM,
-                            width,
-                            height,
-                        ),
-                        &data,
-                    )
-                    .context("uploading texture")?
-                }
-            } else {
-                let data = texture_from_hash(hash);
+            if depth > 1 {
                 Texture::load(
                     gpu,
-                    &TextureDesc::texture_2d(
-                        format!("[PH] unresolved {key}"),
+                    &TextureDesc::texture_3d(
+                        format!("[PH] unresolved {name}"),
                         DxgiFormat::R8G8B8A8_UNORM,
-                        32,
-                        32,
+                        width,
+                        height,
+                        depth,
                     ),
                     &data,
                 )
                 .context("uploading texture")?
-            };
-            let srv = texture.view;
+            } else {
+                Texture::load(
+                    gpu,
+                    &TextureDesc::texture_2d(
+                        format!("[PH] unresolved {name}"),
+                        DxgiFormat::R8G8B8A8_UNORM,
+                        width,
+                        height,
+                    ),
+                    &data,
+                )
+                .context("uploading texture")?
+            }
+        } else {
+            let data = texture_from_hash(hash);
+            Texture::load(
+                gpu,
+                &TextureDesc::texture_2d(
+                    format!("[PH] unresolved {name}"),
+                    DxgiFormat::R8G8B8A8_UNORM,
+                    32,
+                    32,
+                ),
+                &data,
+            )
+            .context("uploading texture")?
+        };
+        let srv = texture.view;
 
-            let mut textures = RwLockUpgradableReadGuard::upgrade(textures);
-            textures.insert(hash, texture);
+        self.textures.write().insert(key, texture);
 
-            Ok(srv)
-        }
+        Ok(srv)
     }
 }
 

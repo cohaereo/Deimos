@@ -1,6 +1,7 @@
 use std::sync::Arc;
 
 use ash::vk;
+use deimos_data::tfx::ExternIndex;
 
 use crate::gpu::{Gpu, command_list::ConstantBufferView};
 
@@ -201,7 +202,7 @@ impl<'a> DescriptorWriter<'a> {
             .magic_textures
             .get_texture(
                 self.gpu,
-                "descriptor-fallback".to_string(),
+                (ExternIndex::None, 0),
                 Some(([0, 0, 0, 0], 4, 4, 1)),
             )
             .unwrap_or_else(|e| {

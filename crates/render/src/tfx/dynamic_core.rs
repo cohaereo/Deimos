@@ -396,7 +396,7 @@ impl DynamicCore {
                     } else {
                         match cmd.gpu().magic_textures.get_texture(
                             cmd.gpu(),
-                            format!("{extern_index:?}->_0x{offset:X}"),
+                            (*extern_index, *offset),
                             extern_filler(*extern_index, *offset),
                         ) {
                             Ok(srv) => {
