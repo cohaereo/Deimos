@@ -22,7 +22,9 @@ use deimos_data::tfx::{
 };
 use glam::{Mat4, Vec3, Vec4};
 use itertools::Itertools;
-use rayon::iter::{IntoParallelRefIterator, IntoParallelRefMutIterator, ParallelIterator};
+use rayon::iter::{
+    IndexedParallelIterator, IntoParallelRefIterator, IntoParallelRefMutIterator, ParallelIterator,
+};
 use tiger_parse::PackageManagerExt;
 use tiger_pkg::TagHash;
 use tiger_pkg::package_manager;
@@ -420,6 +422,7 @@ pub struct StaticInstancesRenderer {
     subscribed_stages: RenderStageSubscription,
     /// (model, transforms buffer SRV)
     models: Vec<(StaticModelRenderer, BufferResource)>,
+    visible_models: Vec<u32>,
     _transforms_buffer: ImmutableBuffer,
 }
 
@@ -499,6 +502,7 @@ impl StaticInstancesRenderer {
                     (m, transforms_srv)
                 })
                 .collect(),
+            visible_models: Vec::new(),
             _transforms_buffer: transforms_buffer,
         }
     }
@@ -507,30 +511,43 @@ impl StaticInstancesRenderer {
 impl FeatureRenderer for StaticInstancesRenderer {
     fn visibility_test(&mut self, visibility: &ViewVisibility) {
         let lod_enabled = LOD_ENABLED.load(Ordering::Relaxed);
-        self.models.par_iter_mut().for_each(|(model, _)| {
-            model.visible_instance_scratch.clear();
-            model.visible_instance_ids.iter_mut().for_each(Vec::clear);
+        self.visible_models = self
+            .models
+            .par_iter_mut()
+            .enumerate()
+            .filter_map(|(model_index, (model, _))| {
+                model.visible_instance_scratch.clear();
+                model.visible_instance_ids.iter_mut().for_each(Vec::clear);
 
-            model
-                .bvh
-                .collect_visible_leaves(visibility, &mut model.visible_instance_scratch, 1);
+                model.bvh.collect_visible_leaves(
+                    visibility,
+                    &mut model.visible_instance_scratch,
+                    1,
+                );
 
-            for &id in &model.visible_instance_scratch {
-                let (_, bounds) = &model.transforms[(id - 1) as usize];
-                let lod = if lod_enabled {
-                    lod_for_sphere(
-                        bounds.centroid(),
-                        bounds.radius(),
-                        visibility.position,
-                        model.max_lod,
-                    )
-                    .clamp(model.min_lod, model.max_lod)
-                } else {
-                    model.min_lod
-                };
-                model.visible_instance_ids[lod as usize].push(id);
-            }
-        });
+                for &id in &model.visible_instance_scratch {
+                    let (_, bounds) = &model.transforms[(id - 1) as usize];
+                    let lod = if lod_enabled {
+                        lod_for_sphere(
+                            bounds.centroid(),
+                            bounds.radius(),
+                            visibility.position,
+                            model.max_lod,
+                        )
+                        .clamp(model.min_lod, model.max_lod)
+                    } else {
+                        model.min_lod
+                    };
+                    model.visible_instance_ids[lod as usize].push(id);
+                }
+
+                model
+                    .visible_instance_ids
+                    .iter()
+                    .any(|ids| !ids.is_empty())
+                    .then_some(model_index as u32)
+            })
+            .collect();
     }
 
     #[profiling::function]
@@ -542,11 +559,8 @@ impl FeatureRenderer for StaticInstancesRenderer {
         visibility: &ViewVisibility,
         submit_node_blocks: &mut SubmitNodeContainer,
     ) {
-        for (model, _) in self
-            .models
-            .iter()
-            .filter(|(m, _)| m.visible_instance_ids.iter().any(|ids| !ids.is_empty()))
-        {
+        for &model_index in &self.visible_models {
+            let (model, _) = &self.models[model_index as usize];
             renderer
                 .gpu
                 .num_static_instances
