@@ -11,12 +11,13 @@ use deimos_data::{
         FixedFunctionState, PrimitiveType, RenderStage, features::dynamic::RenderStageSubscription,
     },
 };
-use glam::{Vec3, Vec4, vec4};
+use glam::{Mat4, Vec3, Vec4, vec4};
 use rayon::prelude::*;
 use slotmap::SlotMap;
 
 use crate::{
     ecs::{node_visibility_test, populate_submit_nodes},
+    features::light::{LightRenderer, SHADOWMAP_RESOLUTION},
     gpu::{
         Gpu,
         command_buffer::{
@@ -26,6 +27,7 @@ use crate::{
         command_list::{
             ColorLoadOp, CommandList, CommandListForkState, DepthLoadOp, DepthMode, StoreOp,
         },
+        render_target::DepthBuffer,
     },
     renderer::{
         Renderer,
@@ -38,7 +40,7 @@ use crate::{
         scope::FrameScope,
         view::{ShadedView, ViewSettings},
     },
-    visibility::ViewVisibility,
+    visibility::{ViewVisibility, frustum::Frustum},
 };
 
 pub struct SceneRenderer {
@@ -51,7 +53,22 @@ pub struct SceneRenderer {
     pub main_view: ShadedView,
     pub ssr: SsrRenderer,
 
+    // TODO(cohae): Dynamically updated shadow views
+    // TODO(cohae): (related to the above) we currently render a shadowmap for *every* light in the scene, even if it's not visible, which eats up a good bit of VRAM. Ideally we should only render them when they're visible
+    pub shadow_views: Vec<ShadowView>,
+
     pub global_channels: [Vec4; 256],
+}
+
+pub struct ShadowView {
+    pub id: usize,
+    pub object: RenderObjectHandle,
+    pub depth: Option<DepthBuffer>,
+    pub world_to_camera: Mat4,
+    pub camera_to_projective: Mat4,
+    pub far_plane: f32,
+    pub frustum: Frustum,
+    pub rendered: bool,
 }
 
 impl SceneRenderer {
@@ -64,6 +81,7 @@ impl SceneRenderer {
             main_view,
             settings: ViewSettings::default(),
             ssr,
+            shadow_views: Vec::new(),
             global_channels: parent.globals.channels.default_values(),
             parent,
         };
@@ -73,6 +91,7 @@ impl SceneRenderer {
 
         r.set_global_channel_by_name("global_ambient_intensity", Vec4::splat(3.0));
         r.set_global_channel_by_name("sun_direct_intensity", Vec4::splat(2.5));
+        r.set_global_channel_by_name("fog_decay_color", Vec4::splat(0.1));
         r.set_global_channel_by_id(0xE16B6B6B, Vec4::splat(1000000.0));
         r.set_global_channel_by_id(0x462A7037, Vec4::splat(0.0)); // >0 causes moss to glow?
         r.set_global_channel_by_id(0xCF70AC7C, Vec4::splat(0.0)); // something about transmission
@@ -176,6 +195,8 @@ impl SceneRenderer {
                 view.depth.clear(cmd, 1.0, 0);
             }
         }
+
+        self.render_local_light_shadow_views(&gpu, cmd);
 
         self.render_main_view(&gpu, cmd, visibility, debug_pipeline);
     }
@@ -727,6 +748,116 @@ impl SceneRenderer {
             self.main_view.shadow_views[shadow_view_index]
                 .depth
                 .transition(cmd, IMAGE_STATE_SHADER_READ);
+        }
+
+        cmd.set_depth_mode(DepthMode::Reverse);
+    }
+
+    fn render_local_light_shadow_views(&mut self, gpu: &Arc<Gpu>, cmd: &mut CommandList) {
+        if self.shadow_views.iter().all(|view| view.rendered) {
+            return;
+        }
+
+        let _scope = gpu.profiler_scope(cmd, "render_light_shadow_views");
+
+        cmd.set_depth_mode(DepthMode::Reverse);
+
+        for shadow_view_index in 0..self.shadow_views.len() {
+            if self.shadow_views[shadow_view_index].rendered {
+                continue;
+            }
+
+            let _view_scope = gpu.profiler_scope(cmd, "render_light_shadow_view");
+            self.parent.externs.bump_generation();
+
+            let (visibility, view_id, object) = {
+                let shadow_view = &self.shadow_views[shadow_view_index];
+
+                let ext = self.parent.externs.get_mut();
+                ext.view.world_to_camera = shadow_view.world_to_camera;
+                ext.view.camera_to_projective = shadow_view.camera_to_projective;
+                ext.view
+                    .derive_matrices((SHADOWMAP_RESOLUTION, SHADOWMAP_RESOLUTION));
+
+                (
+                    ViewVisibility {
+                        enabled: true,
+                        position: Vec3::ZERO,
+                        far_plane: shadow_view.far_plane,
+                        culling_frustum: shadow_view.frustum.clone(),
+                        world_to_projective: ext.view.world_to_projective,
+                        render_stages: RenderStageSubscription::SHADOW_VIEW,
+                        occlusion_buffer: None,
+                        visible_cluster_bounds: None,
+                    },
+                    shadow_view.id,
+                    shadow_view.object,
+                )
+            };
+
+            self.parent.globals.scopes.view.bind(cmd);
+
+            {
+                let _scope = gpu.profiler_scope(cmd, "node_visibility_test");
+                node_visibility_test(self, &visibility, view_id);
+            }
+
+            {
+                let _scope = gpu.profiler_scope(cmd, "populate_submit_nodes");
+                populate_submit_nodes(self, &visibility, view_id);
+            }
+
+            {
+                let _scope = gpu.profiler_scope(cmd, "prepare_per_view");
+
+                let render_objects = self.parent.objects.read();
+                for view_node in &self.frame_packet.views[view_id].view_nodes {
+                    let frame_node = &self.frame_packet.per_frame_nodes[view_node.frame_node];
+                    let obj = &render_objects[frame_node.object];
+                    obj.renderer.prepare_per_view(cmd, frame_node, view_node);
+                }
+            }
+
+            let shadow_depth = self.shadow_views[shadow_view_index].depth.take();
+            let Some(mut shadow_depth) = shadow_depth else {
+                error!("Missing shadow map depth buffer for view {view_id}");
+                self.shadow_views[shadow_view_index].rendered = true;
+                continue;
+            };
+
+            shadow_depth.transition(cmd, IMAGE_STATE_DEPTH_ATTACHMENT);
+            {
+                let _scope = gpu.profiler_scope(cmd, "submit_shadow_generate");
+
+                cmd.begin_rendering_rt(
+                    &[],
+                    Some((&shadow_depth, DepthLoadOp::Clear(0.0, 0), StoreOp::Store)),
+                    vk::RenderingFlags::CONTENTS_SECONDARY_COMMAND_BUFFERS,
+                );
+
+                cmd.set_ffstate(FixedFunctionState::new(Some(0), Some(2), Some(2), Some(0)));
+                cmd.flush_states();
+                self.submit_stage(
+                    cmd,
+                    &self.frame_packet.views[view_id],
+                    RenderStage::ShadowGenerate,
+                );
+                cmd.end_rendering();
+            }
+
+            shadow_depth.transition(cmd, IMAGE_STATE_SHADER_READ);
+
+            {
+                let mut render_objects = self.parent.objects.write();
+                if let Some(light) = render_objects
+                    .get_mut(object)
+                    .and_then(|object| object.get_mut::<LightRenderer>())
+                {
+                    light.set_shadow_view(shadow_depth);
+                }
+            }
+
+            self.shadow_views[shadow_view_index].rendered = true;
         }
 
         cmd.set_depth_mode(DepthMode::Reverse);

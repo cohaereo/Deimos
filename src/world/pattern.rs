@@ -307,7 +307,7 @@ pub fn load_component(
                 light
             };
 
-            let _transform = world
+            let transform = world
                 .get::<&Transform>(entity)
                 .clone()
                 .map_or_default(|c| *c);
@@ -318,7 +318,7 @@ pub fn load_component(
             //     light.far_plane,
             // );
 
-            let mut light_renderer = LightRenderer::new_shadowing(renderer, &light)
+            let mut light_renderer = LightRenderer::new_shadowing(renderer, &light, transform)
                 .context("reading shadowing light")?;
             let bb = light_renderer.calculate_bounds();
 

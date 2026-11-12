@@ -1,18 +1,22 @@
 use anyhow::Context;
+use ash::vk;
 use deimos_data::tfx::{
-    PrimitiveType, RenderStage,
+    ExternIndex, PrimitiveType, RenderStage, ShaderStage,
     features::{
         dynamic::RenderStageSubscription,
         light::{SLight, SShadowingLight},
     },
     geometry::AxisAlignedBBox,
 };
+use deimos_ecs::transform::Transform;
 use glam::{Mat4, Vec3, Vec4, Vec4Swizzles};
 use tiger_pkg::TagHash;
 
 use crate::{
     asset::{index_buffer::IndexBuffer, vertex_buffer::VertexBuffer},
+    camera::CameraProjection,
     features::dynamic_model::DynamicObjectData,
+    gpu::render_target::DepthBuffer,
     renderer::{
         Renderer,
         packet::{RenderPerFrameNode, RenderPerViewNode},
@@ -25,8 +29,19 @@ use crate::{
 };
 
 use super::FeatureRenderer;
+
+pub const SHADOWMAP_RESOLUTION: u32 = 1024;
+
+#[derive(Clone, Copy)]
+pub struct ShadowCamera {
+    pub world_to_camera: Mat4,
+    pub camera_to_projective: Mat4,
+    pub far_plane: f32,
+}
+
 pub struct LightRenderer {
     technique_lighting_apply: Box<Technique>,
+    technique_lighting_apply_shadowing: Option<Box<Technique>>,
     // technique_volumetrics: Option<Technique>,
     // technique_light_probe_apply: Technique,
 
@@ -37,6 +52,10 @@ pub struct LightRenderer {
     unk50: Vec4,
     light_space_transform: glam::Mat4,
     bounds: Option<AxisAlignedBBox>,
+
+    shadowmap_projection: Mat4,
+    shadow_camera: Option<ShadowCamera>,
+    shadow_map: Option<DepthBuffer>,
 }
 
 impl LightRenderer {
@@ -48,10 +67,12 @@ impl LightRenderer {
         Self::new_impl(
             renderer,
             light.technique_lighting_apply,
+            TagHash::NONE,
             light.technique_volumetrics,
             // light.technique_light_probe_apply,
             light.unk50,
             light.light_space_transform,
+            None,
             Some(bounds),
         )
     }
@@ -59,24 +80,43 @@ impl LightRenderer {
     pub fn new_shadowing(
         renderer: &Renderer,
         light: &SShadowingLight,
+        transform: Transform,
     ) -> anyhow::Result<Box<Self>> {
+        let shadow_camera = ShadowCamera {
+            world_to_camera: transform.view_matrix(),
+            camera_to_projective: CameraProjection::Perspective.matrix(
+                1.0,
+                (light.half_fov * 2.0).to_degrees(),
+                0.5,
+                light.far_plane,
+            ),
+            far_plane: light.far_plane,
+        };
+
         Self::new_impl(
             renderer,
             light.technique_lighting_apply,
+            light.technique_lighting_apply_shadowing,
             light.technique_volumetrics,
             light.unk50,
             light.light_space_transform,
+            Some(shadow_camera),
             None,
         )
     }
 
+    #[allow(clippy::too_many_arguments)]
     fn new_impl(
         renderer: &Renderer,
         technique_shading: TagHash,
+        technique_shading_shadowing: TagHash,
         _technique_volumetrics: TagHash,
+        // technique_volumetrics_shadowing: TagHash,
         // technique_light_probe: TagHash,
+        // technique_light_probe_shadowing: TagHash,
         unk50: Vec4,
         light_space_transform: Mat4,
+        shadow_camera: Option<ShadowCamera>,
         bounds: Option<AxisAlignedBBox>,
     ) -> anyhow::Result<Box<Self>> {
         let vb = VertexBuffer::load_data(
@@ -97,6 +137,17 @@ impl LightRenderer {
                 technique_shading,
             )
             .context("load technique lighting_apply")?,
+            technique_lighting_apply_shadowing: technique_shading_shadowing
+                .is_some()
+                .then(|| {
+                    Technique::load(
+                        &renderer.asset_manager,
+                        &renderer.gpu,
+                        technique_shading_shadowing,
+                    )
+                    .context("load technique lighting_apply_shadowing")
+                })
+                .transpose()?,
             // technique_volumetrics: technique_volumetrics
             //     .is_some()
             //     .then(|| {
@@ -114,7 +165,23 @@ impl LightRenderer {
             unk50,
             light_space_transform,
             bounds,
+            shadowmap_projection: shadow_camera.map_or(Mat4::IDENTITY, |c| c.camera_to_projective),
+            shadow_camera,
+            shadow_map: None,
         }))
+    }
+
+    /// Returns the shadow map if it needs to be registered with a shadow view.
+    pub const fn pending_shadow_camera(&self) -> Option<ShadowCamera> {
+        if self.shadow_map.is_some() {
+            return None;
+        }
+
+        self.shadow_camera
+    }
+
+    pub fn set_shadow_view(&mut self, depth: DepthBuffer) {
+        self.shadow_map = Some(depth);
     }
 
     pub fn calculate_bounds(&mut self) -> AxisAlignedBBox {
@@ -258,6 +325,7 @@ impl FeatureRenderer for LightRenderer {
         let data = unsafe { frame_node.data::<DynamicObjectData>() }
             .expect("DynamicModel was extracted with no data!");
 
+        let transform_relative;
         {
             // let (scale, _rotation, _translation) =
             //     self.local_to_world.to_scale_rotation_translation();
@@ -282,6 +350,14 @@ impl FeatureRenderer for LightRenderer {
 
             let (min, max) = compute_light_bounds(self.light_space_transform);
             let light_local_to_world = compute_light_local_to_world(data.local_to_world, min, max);
+
+            let (_, transform_rot, transform_translation) =
+                data.local_to_world.to_scale_rotation_translation();
+            let forward = transform_rot * Vec3::X;
+            let up = transform_rot * Vec3::Z;
+            let transform_translation = transform_translation - view.position();
+            transform_relative =
+                Mat4::look_at_rh(transform_translation, transform_translation + forward, up);
 
             cmd.externs.deferred_light = Some(Box::new(externs::DeferredLight {
                 // unk40: local_to_world_relative.inverse().transpose(),
@@ -309,7 +385,48 @@ impl FeatureRenderer for LightRenderer {
         self.vb.bind_single(cmd, 0);
         self.ib.bind(cmd);
 
-        self.technique_lighting_apply.bind(cmd);
+        // TODO(cohae): Unknown what this texture is supposed to be. VS loads the first pixel and uses it as multiplier for the shadowmap UVs
+        if let Some(depth) = &self.shadow_map {
+            let shadowmap_vs_t2 = cmd
+                .gpu()
+                .magic_textures
+                .get_texture(
+                    cmd.gpu(),
+                    (ExternIndex::DeferredShadow, 255), // TODO(cohae): DeferredShadow->_0xFF is not a real extern, this should be a proper global texture
+                    Some(([0, 0, 0, 0], 4, 4, 1)),
+                )
+                .unwrap_or_else(|e| {
+                    error!("Failed to create fallback texture for descriptor: {e:?}");
+                    vk::ImageView::null()
+                });
+            cmd.set_shader_resource_view(ShaderStage::Vertex, 2, Some(shadowmap_vs_t2));
+
+            let existing_shadowmap = cmd
+                .externs
+                .deferred_shadow
+                .as_ref()
+                .cloned()
+                .unwrap_or_default();
+
+            cmd.externs.deferred_shadow = Some(
+                externs::DeferredShadow {
+                    shadow_depthmap: depth.depth_view().into(),
+                    resolution_width: depth.resolution().0 as f32,
+                    resolution_height: depth.resolution().1 as f32,
+                    unkc0: self.shadowmap_projection * transform_relative,
+                    unk180: 1.0,
+                    ..*existing_shadowmap
+                }
+                .into(),
+            );
+
+            self.technique_lighting_apply_shadowing
+                .as_ref()
+                .unwrap_or(&self.technique_lighting_apply)
+                .bind(cmd);
+        } else {
+            self.technique_lighting_apply.bind(cmd);
+        }
 
         cmd.draw_indexed(0..geometry::CUBE_INDICES.len() as u32, 0..1, 0);
         cmd.flush_states();

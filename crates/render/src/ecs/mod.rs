@@ -6,14 +6,22 @@ use deimos_ecs::{
     visibility::Visible,
 };
 use glam::Vec3;
+use itertools::Itertools;
 use rayon::iter::{IntoParallelIterator, ParallelIterator};
 
 use crate::{
     ecs::render_objects::{DynamicRenderObject, StaticRenderObject},
-    features::dynamic_model::{DynamicModel, DynamicObjectData},
-    gpu::command_list::ConstantBufferView,
-    renderer::{Renderer, packet::ViewPacket, scene::SceneRenderer},
-    visibility::ViewVisibility,
+    features::{
+        dynamic_model::{DynamicModel, DynamicObjectData},
+        light::{LightRenderer, SHADOWMAP_RESOLUTION},
+    },
+    gpu::{command_list::ConstantBufferView, render_target::DepthBuffer},
+    renderer::{
+        Renderer,
+        packet::ViewPacket,
+        scene::{SceneRenderer, ShadowView},
+    },
+    visibility::{ViewVisibility, frustum::Frustum},
 };
 
 pub mod render_objects;
@@ -78,6 +86,7 @@ pub fn s_extract_frame_packet(
     let SceneRenderer {
         frame_packet,
         main_view,
+        shadow_views,
         parent: renderer,
         ..
     } = scene;
@@ -91,7 +100,65 @@ pub fn s_extract_frame_packet(
             frame_packet.insert_view(shadow_view.id);
         }
     }
+
+    // Register shadow maps for shadowing lights that have not been rendered yet
+    let mut next_light_shadow_view_id = 1 + main_view.shadow_views.len();
+    if renderer.asset_manager.is_idle() {
+        for (_entity, render_object) in world.query::<&DynamicRenderObject>().iter() {
+            let object = render_object.handle();
+
+            if shadow_views
+                .iter()
+                .any(|view| !view.rendered && view.object == object)
+            {
+                continue;
+            }
+
+            let Some(light_renderer) = render_objects
+                .get_mut(object)
+                .and_then(|render_object| render_object.get_mut::<LightRenderer>())
+            else {
+                continue;
+            };
+            let Some(shadow_camera) = light_renderer.pending_shadow_camera() else {
+                continue;
+            };
+
+            let depth =
+                match DepthBuffer::new(&renderer.gpu, (SHADOWMAP_RESOLUTION, SHADOWMAP_RESOLUTION))
+                {
+                    Ok(depth) => depth,
+                    Err(e) => {
+                        error!("Failed to create light shadow map: {e:?}");
+                        continue;
+                    }
+                };
+
+            let view_id = next_light_shadow_view_id;
+            next_light_shadow_view_id += 1;
+
+            frame_packet.insert_view(view_id);
+            shadow_views.push(ShadowView {
+                id: view_id,
+                object,
+                depth: Some(depth),
+                world_to_camera: shadow_camera.world_to_camera,
+                camera_to_projective: shadow_camera.camera_to_projective,
+                far_plane: shadow_camera.far_plane,
+                frustum: Frustum::from_view_and_projection(
+                    shadow_camera.world_to_camera,
+                    shadow_camera.camera_to_projective,
+                ),
+                rendered: false,
+            });
+        }
+    }
+
     let views = [&main_view];
+    let pending_shadow_views = shadow_views
+        .iter()
+        .filter(|view| !view.rendered)
+        .collect_vec();
 
     for (_entity, (static_render_object, bounds)) in world
         .query::<(&StaticRenderObject, Option<&AxisAlignedBBox>)>()
@@ -115,6 +182,12 @@ pub fn s_extract_frame_packet(
                 if v.frustum.aabb_intersecting(&bounds) {
                     frame_packet.push_view_node::<()>(v.id, frame_node, None);
                 }
+            }
+        }
+
+        for v in &pending_shadow_views {
+            if v.frustum.aabb_intersecting(&bounds) {
+                frame_packet.push_view_node::<()>(v.id, frame_node, None);
             }
         }
     }

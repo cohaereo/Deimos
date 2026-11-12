@@ -132,6 +132,7 @@ impl Scene {
 
     pub fn set_world(&mut self, world: World) {
         self.world = world;
+        self.scene_renderer.shadow_views.clear();
     }
 
     pub fn take_world(&mut self) -> hecs::World {
@@ -140,6 +141,7 @@ impl Scene {
 
     pub fn clear(&mut self) {
         self.world.clear();
+        self.scene_renderer.shadow_views.clear();
     }
 }
 
