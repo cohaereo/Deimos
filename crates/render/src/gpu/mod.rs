@@ -277,7 +277,6 @@ impl Gpu {
                         swapchain::NAME.as_ptr(),
                         descriptor_buffer::NAME.as_ptr(),
                         memory_budget::NAME.as_ptr(),
-                        maintenance4::NAME.as_ptr(),
                     ])
                     .enabled_features(
                         &vk::PhysicalDeviceFeatures::default()
@@ -304,7 +303,8 @@ impl Gpu {
                     .push_next(
                         &mut vk::PhysicalDeviceVulkan13Features::default()
                             .dynamic_rendering(true)
-                            .shader_demote_to_helper_invocation(true),
+                            .shader_demote_to_helper_invocation(true)
+                            .maintenance4(true),
                     )
                     .push_next(
                         &mut vk::PhysicalDeviceExtendedDynamicStateFeaturesEXT::default()
