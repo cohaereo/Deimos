@@ -12,6 +12,11 @@ macro_rules! extern_container {
             pub globals: [Vec4; 256],
             pub global_channel_frequency: [AtomicUsize; 256],
             pub global_ids: Vec<u32>,
+
+            pub unk5e: [Vec4; 256],
+            pub unk5e_frequency: [AtomicUsize; 256],
+            pub unk5e_ids: Vec<u32>,
+
             generation: AtomicU64,
         }
 
@@ -42,6 +47,9 @@ macro_rules! extern_container {
                 for freq in self.global_channel_frequency.iter() {
                     freq.store(0, Ordering::Relaxed);
                 }
+                for freq in self.unk5e_frequency.iter() {
+                    freq.store(0, Ordering::Relaxed);
+                }
             }
 
             pub fn bump_generation(&self) {
@@ -69,14 +77,26 @@ macro_rules! extern_container {
                 self.global_channel_frequency[index as usize].fetch_add(1, Ordering::Relaxed);
                 self.globals[index as usize]
             }
+
+            fn get_unk5e_channel(&self, index: u8) -> Vec4 {
+                self.unk5e_frequency[index as usize].fetch_add(1, Ordering::Relaxed);
+                self.unk5e[index as usize]
+            }
         }
 
         impl Default for ExternContainer {
             fn default() -> Self {
-                let global_channels = &crate::renderer::globals::GLOBAL_CHANNELS;
+                let global_channels = &crate::renderer::globals::RENDER_GLOBALS.global_channels;
                 let mut globals = [Vec4::ONE; 256];
                 globals[..global_channels.default_values.len()].copy_from_slice(&global_channels.default_values);
 
+                let unk5e_channels = &crate::renderer::globals::RENDER_GLOBALS.unk5e_channels;
+                let unk5e = [Vec4::ONE; 256];
+                let mut unk5e_ids = vec![0; 256];
+
+                for channel in &unk5e_channels.all_channels {
+                    unk5e_ids[channel.index as usize] = channel.id;
+                }
 
                 let r = Self {
                     $(
@@ -85,6 +105,11 @@ macro_rules! extern_container {
                     globals,
                     global_channel_frequency: [const { AtomicUsize::new(0) }; 256],
                     global_ids: global_channels.channel_ids.clone(),
+
+                    unk5e,
+                    unk5e_frequency: [const { AtomicUsize::new(0) }; 256],
+                    unk5e_ids,
+
                     generation: AtomicU64::new(1),
                 };
 
@@ -166,6 +191,10 @@ macro_rules! local_extern_container {
 
             fn get_global_channel(&self, index: u8) -> Vec4 {
                 self.base.get_global_channel(index)
+            }
+
+            fn get_unk5e_channel(&self, index: u8) -> Vec4 {
+                self.base.get_unk5e_channel(index)
             }
         }
     }

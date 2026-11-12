@@ -233,6 +233,20 @@ const GLOBAL_CHANNEL_NAMES: &[&str] = &[
     "switch_volumetric_glow_hash0",
     "fog_density_interior",
     "reticle_utilize_filtering",
+    "rain_amount",
+    "time_of_day",
+    "rain_disabled",
+    "stored_rain_amount",
+    "regional_lighting_1",
+    "regional_lighting_2",
+    "regional_lighting_3",
+    "srk_lighting_01",
+    "srk_lighting_02",
+    "srk_vfx_01",
+    "srk_vfx_02",
+    "srk_audio_01",
+    "srk_audio_02",
+    "is_night",
 ];
 
 pub fn get_global_channel_name(hash: u32) -> Option<&'static str> {

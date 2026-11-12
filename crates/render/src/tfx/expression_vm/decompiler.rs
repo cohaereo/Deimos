@@ -658,9 +658,9 @@ impl<'a> DecompilerState<'a> {
                         cl[10]
                     );
                 }
-                Opcode::Unknown0x5e => {
-                    let unk = ptr[1];
-                    cached_top = self.push(format!("unknown0x5e({unk})"))?;
+                Opcode::Push0x5eChannelVector => {
+                    let channel = ptr[1];
+                    cached_top = self.push(format!("unk5e_channels[{channel}]"))?;
                 }
                 Opcode::PushTexTilingParams => {
                     let unk1 = ptr[1];

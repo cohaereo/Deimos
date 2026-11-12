@@ -38,7 +38,7 @@ impl Default for SsrSettings {
         Self {
             enabled: true,
             intensity: 1.5,
-            max_distance: 100.0,
+            max_distance: 250.0,
             thickness: 0.04,
             max_steps: 50,
             smoothness_threshold: 0.5,

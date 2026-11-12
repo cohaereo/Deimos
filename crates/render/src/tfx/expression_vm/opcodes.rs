@@ -113,8 +113,8 @@ pub enum Opcode {
     PushSamplerState = 0x61,
     PushObjectChannelVector,
     PushGlobalChannelVector,
+    Push0x5eChannelVector,
     // TODO(cohae): Once these are figured out, make sure to update `analyze_expression` and `data_source`
-    Unknown0x5e,
     Unknown0x5f,
     // TODO(cohae): These need to be rechecked
     PushTexDimensions,
@@ -243,7 +243,7 @@ impl Opcode {
             | Self::Unknown0x66
             | Self::Unknown0x67 => 1,
 
-            Self::Unknown0x49 |  Self::Unknown0x57 | Self::Unknown0x5a | Self::Unknown0x5e => 2,
+            Self::Unknown0x49 |  Self::Unknown0x57 | Self::Unknown0x5a | Self::Push0x5eChannelVector => 2,
         }
     }
 
@@ -349,6 +349,7 @@ impl Opcode {
             => ExpressionDataSource::EXTERN,
 
             Self::PushGlobalChannelVector=> ExpressionDataSource::GLOBAL_CHANNEL,
+            Self::Push0x5eChannelVector=> ExpressionDataSource::GLOBAL_CHANNEL,
             Self::PushObjectChannelVector => ExpressionDataSource::OBJECT_CHANNEL,
 
             Self::ExtReturn => ExpressionDataSource::empty(),
@@ -360,7 +361,7 @@ impl Opcode {
             | Self::Unknown0x65
             | Self::Unknown0x66
             | Self::Unknown0x67
-            | Self::Unknown0x49 |  Self::Unknown0x57 | Self::Unknown0x5b | Self::Unknown0x5a | Self::Unknown0x5e
+            | Self::Unknown0x49 |  Self::Unknown0x57 | Self::Unknown0x5b | Self::Unknown0x5a
             => ExpressionDataSource::UNKNOWN,
 
         }
@@ -518,6 +519,7 @@ pub struct ExpressionAccess {
     pub sources: ExpressionDataSource,
     pub local_extern_reads: Vec<ExternRead>,
     pub global_channels: Vec<u8>,
+    pub unk5e: Vec<u8>,
     pub object_channels: Vec<u32>,
     pub cacheable: bool,
 }
@@ -528,6 +530,7 @@ impl Default for ExpressionAccess {
             sources: ExpressionDataSource::empty(),
             local_extern_reads: Vec::new(),
             global_channels: Vec::new(),
+            unk5e: Vec::new(),
             object_channels: Vec::new(),
             cacheable: false,
         }
@@ -545,7 +548,7 @@ pub fn analyze_expression(data: &[u8]) -> anyhow::Result<ExpressionAccess> {
         let sources = op.data_source();
         access.sources |= sources;
 
-        if sources.contains(ExpressionDataSource::UNKNOWN) && op != Opcode::Unknown0x5e {
+        if sources.contains(ExpressionDataSource::UNKNOWN) && op != Opcode::Push0x5eChannelVector {
             access.cacheable = false;
         }
 
@@ -586,10 +589,15 @@ pub fn analyze_expression(data: &[u8]) -> anyhow::Result<ExpressionAccess> {
                     });
                 }
             }
-            Opcode::PushGlobalChannelVector | Opcode::Unknown0x5e => {
+            Opcode::PushGlobalChannelVector => {
                 access
                     .global_channels
                     .push(*args.first().context("Missing global channel index")?);
+            }
+            Opcode::Push0x5eChannelVector => {
+                access
+                    .unk5e
+                    .push(*args.first().context("Missing 0x5e channel index")?);
             }
             Opcode::PushObjectChannelVector => {
                 let hash = u32::from_be_bytes([

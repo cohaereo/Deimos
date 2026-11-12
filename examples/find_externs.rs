@@ -20,6 +20,8 @@ fn main() -> anyhow::Result<()> {
     }
 
     let mut fields: HashSet<(ExternIndex, ExternFieldType, usize)> = Default::default();
+    let mut global_channels = [0u8; 256];
+    let mut unk5e = [0u8; 256];
 
     let mut process_constants = |dc: &SDynamicCore| {
         for op in OpcodeIterator::new(&dc.bytecode) {
@@ -43,6 +45,18 @@ fn main() -> anyhow::Result<()> {
                     | Opcode::PushExternInputU32
                     | Opcode::PushExternInputUav
             ) {
+                match op {
+                    Opcode::PushGlobalChannelVector => {
+                        let channel = args[0] as usize;
+                        global_channels[channel] += 1;
+                    }
+                    Opcode::Push0x5eChannelVector => {
+                        let channel = args[0] as usize;
+                        unk5e[channel] += 1;
+                    }
+                    _ => {}
+                }
+
                 continue;
             }
 
@@ -126,6 +140,18 @@ fn main() -> anyhow::Result<()> {
 
         println!("\t}}");
         println!("}}\n");
+    }
+
+    for (channel_index, &count) in global_channels.iter().enumerate() {
+        if count > 0 {
+            println!("global_channels[{channel_index}] used {count} times");
+        }
+    }
+
+    for (channel_index, &count) in unk5e.iter().enumerate() {
+        if count > 0 {
+            println!("0x5e[{channel_index}] used {count} times");
+        }
     }
 
     Ok(())

@@ -613,12 +613,22 @@ impl<'a> InterpreterState<'a> {
 
                 //     cached_top = self.push(val)?;
                 // }
-                Opcode::Unknown0x5e | Opcode::PushGlobalChannelVector => {
+                Opcode::PushGlobalChannelVector => {
                     let channel = ptr[1];
 
-                    // Direct indexing is safe here, as globals is 256 elements long
                     let val = if let Some(externs) = self.externs {
                         externs.get_global_channel(channel)
+                    } else {
+                        Vec4::ONE
+                    };
+
+                    cached_top = self.push(val)?;
+                }
+                Opcode::Push0x5eChannelVector => {
+                    let channel = ptr[1];
+
+                    let val = if let Some(externs) = self.externs {
+                        externs.get_unk5e_channel(channel)
                     } else {
                         Vec4::ONE
                     };

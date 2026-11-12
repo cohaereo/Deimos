@@ -10,7 +10,7 @@ use deimos_data::tfx::{
 };
 use deimos_ecs::transform::Transform;
 use deimos_render::{
-    camera::{Camera, CameraProjection},
+    camera::Camera,
     ecs::{s_extract_frame_packet, s_update_object_channels, s_visibility_test},
     features::LOD_ENABLED,
     gpu::{command_list::CommandList, render_target::RenderTarget},
@@ -445,11 +445,6 @@ impl Scene {
             self.scene_renderer
                 .set_global_channel_by_name("sun_light_direction", sun_light_direction.extend(0.0));
 
-            self.scene_renderer
-                .set_global_channel_by_id(0x156C2B22, Vec4::splat(self.raininess));
-            self.scene_renderer
-                .set_global_channel_by_id(0xD8281393, Vec4::splat(self.raininess));
-
             let ssr_enabled = self.scene_renderer.ssr.settings.enabled;
 
             self.scene_renderer.set_global_channel_by_id(
@@ -465,18 +460,12 @@ impl Scene {
             self.scene_renderer
                 .set_global_channel_by_id(0x2C53817A, Vec4::splat(1.0 - self.raininess));
             self.scene_renderer
-                .set_global_channel_by_id(0xFDCC7BAA, Vec4::splat(self.heat_cascade));
+                .set_unk5e_channel_by_id(0x324AD09D, Vec4::splat(self.raininess));
+            self.scene_renderer
+                .set_unk5e_channel_by_name("rain_amount", Vec4::splat(self.raininess * 100.0));
 
-            // for (e, (transform, source)) in self
-            //     .world
-            //     .query::<With<(&Transform, &PatternSource), &TempAudioMarker>>()
-            //     .iter()
-            // {
-            //     if transform.translation.distance(self.camera.position) < 16.0 {
-            //         println!("Near audio pattern {}", source.tag);
-            //     }
-            // }
-            // println!("---------------------------------------");
+            self.scene_renderer
+                .set_unk5e_channel_by_id(0x798A4399, Vec4::splat(self.heat_cascade));
 
             self.render(delta_time, resolution);
 
@@ -580,6 +569,7 @@ impl Scene {
         {
             let ext = self.renderer.externs.get_mut();
             ext.globals = self.scene_renderer.global_channels;
+            ext.unk5e = self.scene_renderer.unk5e_channels;
 
             let global_tex = &self.renderer.globals.textures;
             *ext.frame = externs::Frame {
@@ -1199,7 +1189,7 @@ impl Scene {
             ui.add(
                 egui::Slider::new(
                     &mut self.scene_renderer.ssr.settings.max_distance,
-                    0.0..=100.0,
+                    0.0..=500.0,
                 )
                 .text("SSR Max Ray Distance"),
             );
@@ -1413,55 +1403,107 @@ impl Scene {
                 }
             });
 
-            ui.heading("Global Channels");
-            for (i, channel) in self.scene_renderer.global_channels.iter_mut().enumerate() {
-                let frequency =
-                    self.renderer.externs.global_channel_frequency[i].load(Ordering::Relaxed);
+            ui.collapsing("Global Channels", |ui| {
+                for (i, channel) in self.scene_renderer.global_channels.iter_mut().enumerate() {
+                    let frequency =
+                        self.renderer.externs.global_channel_frequency[i].load(Ordering::Relaxed);
 
-                if self.only_show_used_channels && frequency == 0 {
-                    continue;
-                }
+                    if self.only_show_used_channels && frequency == 0 {
+                        continue;
+                    }
 
-                let Some(channel_id) = self.renderer.externs.global_ids.get(i) else {
-                    continue;
-                };
-                // let is_automated = automated_ids.contains(channel_id);
-                let is_automated = false;
-                ui.horizontal(|ui| {
-                    ui.spacing_mut().item_spacing.x = 4.0;
-                    if let Some(name) = get_global_channel_name(*channel_id) {
-                        ui.label(format!("Channel #{i} {name} (0x{channel_id:08X})"));
-                    } else {
-                        ui.label(format!("Channel #{i} 0x{channel_id:08X}"));
-                    }
-                    if is_automated {
-                        ui.weak("(automated)");
-                    }
-                    ui.weak(format!("used x{frequency}"))
-                });
-                ui.add_enabled_ui(!is_automated, |ui| {
+                    let Some(channel_id) = self.renderer.externs.global_ids.get(i) else {
+                        continue;
+                    };
+                    // let is_automated = automated_ids.contains(channel_id);
+                    let is_automated = false;
                     ui.horizontal(|ui| {
-                        ui.spacing_mut().button_padding = vec2(4.0, 1.0);
-                        ui.spacing_mut().interact_size = egui::vec2(100.0, 32.0);
-                        egui::DragValue::new(&mut channel.x)
-                            .fixed_decimals(4)
-                            .speed(0.01)
-                            .ui(ui);
-                        egui::DragValue::new(&mut channel.y)
-                            .fixed_decimals(4)
-                            .speed(0.01)
-                            .ui(ui);
-                        egui::DragValue::new(&mut channel.z)
-                            .fixed_decimals(4)
-                            .speed(0.01)
-                            .ui(ui);
-                        egui::DragValue::new(&mut channel.w)
-                            .fixed_decimals(4)
-                            .speed(0.01)
-                            .ui(ui);
+                        ui.spacing_mut().item_spacing.x = 4.0;
+                        if let Some(name) = get_global_channel_name(*channel_id) {
+                            ui.label(format!("Channel #{i} {name} (0x{channel_id:08X})"));
+                        } else {
+                            ui.label(format!("Channel #{i} 0x{channel_id:08X}"));
+                        }
+                        if is_automated {
+                            ui.weak("(automated)");
+                        }
+                        ui.weak(format!("used x{frequency}"))
                     });
-                });
-            }
+                    ui.add_enabled_ui(!is_automated, |ui| {
+                        ui.horizontal(|ui| {
+                            ui.spacing_mut().button_padding = vec2(4.0, 1.0);
+                            ui.spacing_mut().interact_size = egui::vec2(100.0, 32.0);
+                            egui::DragValue::new(&mut channel.x)
+                                .fixed_decimals(4)
+                                .speed(0.01)
+                                .ui(ui);
+                            egui::DragValue::new(&mut channel.y)
+                                .fixed_decimals(4)
+                                .speed(0.01)
+                                .ui(ui);
+                            egui::DragValue::new(&mut channel.z)
+                                .fixed_decimals(4)
+                                .speed(0.01)
+                                .ui(ui);
+                            egui::DragValue::new(&mut channel.w)
+                                .fixed_decimals(4)
+                                .speed(0.01)
+                                .ui(ui);
+                        });
+                    });
+                }
+            });
+
+            ui.collapsing("Unk5e Channels", |ui| {
+                for (i, channel) in self.scene_renderer.unk5e_channels.iter_mut().enumerate() {
+                    let frequency =
+                        self.renderer.externs.unk5e_frequency[i].load(Ordering::Relaxed);
+
+                    if self.only_show_used_channels && frequency == 0 {
+                        continue;
+                    }
+
+                    let Some(channel_id) = self.renderer.externs.unk5e_ids.get(i) else {
+                        continue;
+                    };
+                    // let is_automated = automated_ids.contains(channel_id);
+                    let is_automated = false;
+                    ui.horizontal(|ui| {
+                        ui.spacing_mut().item_spacing.x = 4.0;
+                        if let Some(name) = get_global_channel_name(*channel_id) {
+                            ui.label(format!("Channel #{i} {name} (0x{channel_id:08X})"));
+                        } else {
+                            ui.label(format!("Channel #{i} 0x{channel_id:08X}"));
+                        }
+                        if is_automated {
+                            ui.weak("(automated)");
+                        }
+                        ui.weak(format!("used x{frequency}"))
+                    });
+                    ui.add_enabled_ui(!is_automated, |ui| {
+                        ui.horizontal(|ui| {
+                            ui.spacing_mut().button_padding = vec2(4.0, 1.0);
+                            ui.spacing_mut().interact_size = egui::vec2(100.0, 32.0);
+                            egui::DragValue::new(&mut channel.x)
+                                .fixed_decimals(4)
+                                .speed(0.01)
+                                .ui(ui);
+                            egui::DragValue::new(&mut channel.y)
+                                .fixed_decimals(4)
+                                .speed(0.01)
+                                .ui(ui);
+                            egui::DragValue::new(&mut channel.z)
+                                .fixed_decimals(4)
+                                .speed(0.01)
+                                .ui(ui);
+                            egui::DragValue::new(&mut channel.w)
+                                .fixed_decimals(4)
+                                .speed(0.01)
+                                .ui(ui);
+                        });
+                    });
+                }
+            });
         });
     }
 

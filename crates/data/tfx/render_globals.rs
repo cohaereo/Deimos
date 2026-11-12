@@ -29,7 +29,7 @@ pub struct SRenderGlobalsData {
     /// Lookup textures
     pub unk30: TagRef<SRenderGlobalLookupTextures>,
     pub global_channels: TagRef<SRenderGlobalsGlobalChannels>,
-    pub unk38: TagHash,
+    pub unk5e_channels: TagRef<SRenderGlobalsUnk5eChannels>,
     pub unk3c: TagRef<SWaterDisplacementGlobals>,
     pub unk40: TagHash,
 }
@@ -92,6 +92,23 @@ impl SRenderGlobalsGlobalChannels {
         default_values[..self.default_values.len()].copy_from_slice(&self.default_values);
         default_values
     }
+}
+
+#[derive(Debug, Clone)]
+#[tiger_type(id = 0x8080A002)]
+pub struct SRenderGlobalsUnk5eChannels {
+    pub file_size: u64,
+    pub all_channels: Vec<S8080A004>, // official name
+    pub set1: Vec<S8080A004>,         // official name pending (hash 0x84E4911C)
+    // TODO(cohae): Some kind of quick inline lookup?
+    pub unk28: [S8080A004; 6],
+}
+
+#[derive(Debug, Clone)]
+#[tiger_type(id = 0x8080A004)]
+pub struct S8080A004 {
+    pub id: u32,
+    pub index: u32,
 }
 
 #[tiger_type(id = 0x80808661, size = 0x38)]

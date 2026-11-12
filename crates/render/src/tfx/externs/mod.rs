@@ -33,6 +33,7 @@ pub trait ExternAccessor {
     fn get_value_ptr(&self, index: ExternIndex, offset: usize) -> Option<(*const (), TypeId)>;
 
     fn get_global_channel(&self, index: u8) -> Vec4;
+    fn get_unk5e_channel(&self, index: u8) -> Vec4;
 }
 
 pub trait ExternAccessorExt {
@@ -261,6 +262,13 @@ impl ExternAccessor for BaseExternSource {
         match self {
             Self::None => Vec4::ONE,
             Self::Renderer(renderer) => renderer.externs.get_global_channel(index),
+        }
+    }
+
+    fn get_unk5e_channel(&self, index: u8) -> Vec4 {
+        match self {
+            Self::None => Vec4::ONE,
+            Self::Renderer(renderer) => renderer.externs.get_unk5e_channel(index),
         }
     }
 }

@@ -58,6 +58,7 @@ pub struct SceneRenderer {
     pub shadow_views: Vec<ShadowView>,
 
     pub global_channels: [Vec4; 256],
+    pub unk5e_channels: [Vec4; 256],
 }
 
 pub struct ShadowView {
@@ -83,6 +84,7 @@ impl SceneRenderer {
             ssr,
             shadow_views: Vec::new(),
             global_channels: parent.globals.channels.default_values(),
+            unk5e_channels: [Vec4::ONE; 256],
             parent,
         };
 
@@ -934,6 +936,18 @@ impl SceneRenderer {
             .iter()
             .position(|i| *i == id)
             .map(|pos| self.global_channels[pos])
+    }
+
+    pub fn set_unk5e_channel_by_id(&mut self, id: u32, v: Vec4) -> Option<Vec4> {
+        if let Some(pos) = self.parent.externs.unk5e_ids.iter().position(|i| *i == id) {
+            Some(std::mem::replace(&mut self.unk5e_channels[pos], v))
+        } else {
+            None
+        }
+    }
+
+    pub fn set_unk5e_channel_by_name(&mut self, name: &str, v: Vec4) -> Option<Vec4> {
+        self.set_unk5e_channel_by_id(fnv1(name), v)
     }
 }
 
