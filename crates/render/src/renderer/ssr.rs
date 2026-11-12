@@ -37,10 +37,10 @@ impl Default for SsrSettings {
     fn default() -> Self {
         Self {
             enabled: true,
-            intensity: 1.0,
-            max_distance: 25.0,
-            thickness: 0.02,
-            max_steps: 40,
+            intensity: 1.5,
+            max_distance: 100.0,
+            thickness: 0.04,
+            max_steps: 50,
             smoothness_threshold: 0.5,
         }
     }

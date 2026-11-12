@@ -63,6 +63,7 @@ pub struct Scene {
     time_of_day: f32,
     animate_time_of_day: bool,
     sun_light_angle: f32,
+    sun_light_elevation: f32,
 
     // Metrics
     frametimes: Vec<f32>,
@@ -105,6 +106,7 @@ impl Scene {
             time_of_day: 1200.0,
             animate_time_of_day: false,
             sun_light_angle: 60f32,
+            sun_light_elevation: 0.95,
 
             frametimes: Vec::new(),
             last_frame_time: Instant::now(),
@@ -206,8 +208,13 @@ impl Scene {
 
             if r.dragged_by(egui::PointerButton::Middle) {
                 let delta_adjusted = r.drag_delta() / 4.0;
-                self.sun_light_angle += delta_adjusted.x;
-                self.sun_light_angle = self.sun_light_angle.rem_euclid(360.0);
+                if ui.input(|i| i.modifiers.shift) {
+                    self.sun_light_elevation += delta_adjusted.y / 100.0;
+                    self.sun_light_elevation = self.sun_light_elevation.clamp(0.0, 1.0);
+                } else {
+                    self.sun_light_angle += delta_adjusted.x;
+                    self.sun_light_angle = self.sun_light_angle.rem_euclid(360.0);
+                }
             }
 
             let sun_light_direction = if self.render_mode == RenderMode::Lookdev {
@@ -216,7 +223,7 @@ impl Scene {
                 vec3(
                     self.sun_light_angle.to_radians().cos(),
                     self.sun_light_angle.to_radians().sin(),
-                    0.95,
+                    self.sun_light_elevation,
                 )
                 .normalize()
             };
@@ -1187,6 +1194,28 @@ impl Scene {
                 egui::Slider::new(&mut self.scene_renderer.ssr.settings.intensity, 0.0..=2.0)
                     .text("SSR Intensity"),
             );
+            ui.add(
+                egui::Slider::new(
+                    &mut self.scene_renderer.ssr.settings.max_distance,
+                    0.0..=100.0,
+                )
+                .text("SSR Max Ray Distance"),
+            );
+            ui.add(
+                egui::Slider::new(&mut self.scene_renderer.ssr.settings.thickness, 0.0..=0.1)
+                    .text("SSR Thickness"),
+            );
+            ui.add(
+                egui::Slider::new(&mut self.scene_renderer.ssr.settings.max_steps, 1..=100)
+                    .text("SSR Max Steps"),
+            );
+            ui.add(
+                egui::Slider::new(
+                    &mut self.scene_renderer.ssr.settings.smoothness_threshold,
+                    0.0..=1.0,
+                )
+                .text("SSR Smoothness Threshold"),
+            );
         }
 
         ui.checkbox(&mut self.umbra_enabled, "Umbra Culling")
@@ -1257,6 +1286,23 @@ impl Scene {
                             .speed(0.01)
                             .ui(ui);
                         egui::DragValue::new(&mut set.w)
+                            .fixed_decimals(4)
+                            .speed(0.01)
+                            .ui(ui);
+                    });
+                }
+                for (label, value) in [
+                    ("unk0c", &mut frame.unk0c),
+                    ("unk10", &mut frame.unk10),
+                    ("unk20", &mut frame.unk20),
+                    ("unk24", &mut frame.unk24),
+                    ("unk70", &mut frame.unk70),
+                ] {
+                    ui.horizontal(|ui| {
+                        ui.label(label);
+                        ui.spacing_mut().button_padding = vec2(4.0, 1.0);
+                        ui.spacing_mut().interact_size = egui::vec2(100.0, 32.0);
+                        egui::DragValue::new(value)
                             .fixed_decimals(4)
                             .speed(0.01)
                             .ui(ui);

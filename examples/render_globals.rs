@@ -10,11 +10,18 @@ fn main() -> anyhow::Result<()> {
     let data: SRenderGlobals = package_manager().read_named_tag_struct("render_globals")?;
     let globs = &data.unk8.first().context("No render globals found")?.unk8.0;
 
-    for (i, channel) in globs.global_channels.0.channel_ids.iter().enumerate() {
+    for (i, (channel, value)) in globs
+        .global_channels
+        .0
+        .channel_ids
+        .iter()
+        .zip(globs.global_channels.0.default_values.iter())
+        .enumerate()
+    {
         if let Some(name) = find_fnv_name(*channel) {
-            println!("{}: {} (0x{:08X})", i, name, channel);
+            println!("{}: {} (0x{:08X}) - {}", i, name, channel, value);
         } else {
-            println!("{}: 0x{:08X}", i, channel);
+            println!("{}: 0x{:08X} - {}", i, channel, value);
         }
     }
 

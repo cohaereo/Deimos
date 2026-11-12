@@ -462,7 +462,9 @@ const fn extern_filler(index: ExternIndex, offset: u32) -> Option<([u8; 4], u32,
     match (index, offset) {
         //                                          fill color               w  h  d
         (ExternIndex::ShadowMask, _)      => Some(([0xFF, 0xFF, 0xFF, 0xFF], 4, 4, 1)),
+        (ExternIndex::Atmosphere, 0x80)   => Some(([0xFF, 0xFF, 0xFF, 0xFF], 4, 4, 1)),
         (ExternIndex::Atmosphere, 0xF0)   => Some(([0x00, 0x00, 0x00, 0xFF], 4, 4, 1)),
+        (ExternIndex::Atmosphere, 0x108)   => Some(([0xFF, 0xFF, 0xFF, 0xFF], 4, 4, 4)),
         (ExternIndex::Atmosphere, _)      => Some(([0x00, 0x00, 0x00, 0xFF], 4, 4, 1)),
 
         (ExternIndex::Water, 0x08)        => Some(([0x00, 0x00, 0x00, 0x00], 4, 4, 1)),
