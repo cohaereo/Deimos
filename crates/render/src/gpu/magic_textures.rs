@@ -2,7 +2,7 @@ use ahash::HashMap;
 use anyhow::Context;
 use ash::vk;
 use deimos_data::tfx::{ExternIndex, texture::DxgiFormat};
-use parking_lot::RwLock;
+use parking_lot::{RwLock, RwLockUpgradableReadGuard, RwLockWriteGuard};
 use rand_chacha::ChaCha8Rng;
 use rand_core::{Rng, SeedableRng};
 use std::collections::hash_map::DefaultHasher;
@@ -51,10 +51,12 @@ impl MagicTextureContainer {
         key: (ExternIndex, u32),
         filler: Option<([u8; 4], u32, u32, u32)>,
     ) -> anyhow::Result<vk::ImageView> {
-        if let Some(texture) = self.textures.read().get(&key) {
+        let textures = self.textures.upgradable_read();
+        if let Some(texture) = textures.get(&key) {
             return Ok(texture.view);
         }
 
+        let mut textures = RwLockUpgradableReadGuard::upgrade(textures);
         let name = format!("{:?}->_0x{:X}", key.0, key.1);
         let mut hasher = DefaultHasher::new();
         key.hash(&mut hasher);
@@ -108,7 +110,7 @@ impl MagicTextureContainer {
         };
         let srv = texture.view;
 
-        self.textures.write().insert(key, texture);
+        textures.insert(key, texture);
 
         Ok(srv)
     }
