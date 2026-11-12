@@ -41,7 +41,7 @@ pub struct FrameProfiler {
 }
 
 impl FrameProfiler {
-    pub const MAX_PROFILER_SPANS: u32 = 256;
+    pub const MAX_PROFILER_SPANS: u32 = 1024;
     pub const MAX_PROFILER_QUERIES: u32 = Self::MAX_PROFILER_SPANS * 2;
     /// The maximum number of frames to keep for averaging results.
     pub const MAX_RESOLVED_FRAMES: usize = 60;
