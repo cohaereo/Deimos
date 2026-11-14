@@ -100,6 +100,7 @@ void mainPS(VSOutput input, out float4 light_diffuse: SV_TARGET0,
   float metallic = rt2.r;
   float textureEmissive = saturate(rt2.g * 2.0f - 1.0f);
   float textureAo = saturate(rt2.g * 2.0f);
+  float transmission = saturate(rt2.b);
 
   float3 V = normalize(camera_position - worldPos);
   float3 R = reflect(-V, N);
@@ -114,7 +115,11 @@ void mainPS(VSOutput input, out float4 light_diffuse: SV_TARGET0,
   float3 kS = F_SchlickRoughness(NoV, F0, roughness);
   float3 kD = (1.0f - kS) * (1.0f - metallic);
 
-  float3 diffuse = kD * irradiance * textureAo;
+  float3 diffuse = kD * irradiance * textureAo * (1.0f - transmission);
+
+  float3 backIrradiance = EvaluateSH(-N) * 0.4f;
+  float transFresnel = 1.0f + pow(1.0f - NoV, 3.0f);
+  float3 transDiffuse = transmission * kD * backIrradiance * textureAo * transFresnel;
 
   float specularMip = roughness * MAX_MIP;
   float3 LD = SampleHDRI(R, specularMip);
@@ -126,6 +131,6 @@ void mainPS(VSOutput input, out float4 light_diffuse: SV_TARGET0,
   float shadowFactor = 0.93f;
   shadow = lerp(1.0f, shadow, shadowFactor);
 
-  light_diffuse = float4(diffuse * shadow * exposure_scale, 1.0f);
+  light_diffuse = float4((diffuse + transDiffuse) * shadow * exposure_scale, 1.0f);
   light_specular = float4(specular * shadow * exposure_scale, 1.0f);
 }
