@@ -35,6 +35,7 @@ pub struct PipelineKey {
 
 #[derive(Clone)]
 pub struct ShaderInfo {
+    pub module_tag: TagHash,
     pub module: vk::ShaderModule,
     pub slots: dxil2spirv::SlotUsage,
 }
@@ -42,6 +43,7 @@ pub struct ShaderInfo {
 impl ShaderInfo {
     fn empty() -> Self {
         Self {
+            module_tag: TagHash::default(),
             module: vk::ShaderModule::null(),
             slots: dxil2spirv::SlotUsage::default(),
         }
@@ -457,7 +459,13 @@ impl PipelineCache {
                 let create_info = vk::ShaderModuleCreateInfo::default().code(&spirv);
                 let module = unsafe { self.device.create_shader_module(&create_info, None)? };
 
-                Ok(entry.insert(ShaderInfo { module, slots }).clone())
+                Ok(entry
+                    .insert(ShaderInfo {
+                        module_tag: hash,
+                        module,
+                        slots,
+                    })
+                    .clone())
             }
         }
     }

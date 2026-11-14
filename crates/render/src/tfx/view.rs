@@ -28,6 +28,7 @@ pub struct ShadedView {
     pub light: LightBuffer,
     pub shaded_read: RenderTarget,
 
+    pub postprocess: RenderTarget,
     pub output: RenderTarget,
     pub shadow_views: [ShadowCascade; CascadeCalculator::MAX_CASCADES],
     pub shadow_mask: RenderTarget,
@@ -46,6 +47,13 @@ impl ShadedView {
             camera_to_projective: Mat4::default(),
             gbuffer: Gbuffer::new(gpu, resolution)?,
             light: LightBuffer::new(gpu, resolution)?,
+            postprocess: RenderTarget::new(
+                gpu,
+                "postprocess",
+                vk::Format::R16G16B16A16_SFLOAT,
+                vk::Format::R16G16B16A16_SFLOAT,
+                resolution,
+            )?,
             shaded_read: RenderTarget::new(
                 gpu,
                 "shaded_read",

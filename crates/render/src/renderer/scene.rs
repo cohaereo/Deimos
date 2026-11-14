@@ -200,7 +200,10 @@ impl SceneRenderer {
 
         self.render_local_light_shadow_views(&gpu, cmd);
 
-        self.render_main_view(&gpu, cmd, visibility, debug_pipeline);
+        match debug_pipeline {
+            Some(DebugPipeline::Overdraw) => self.render_main_view_overdraw(&gpu, cmd, visibility),
+            _ => self.render_main_view(&gpu, cmd, visibility, debug_pipeline),
+        }
     }
 
     fn render_main_view(
@@ -233,16 +236,16 @@ impl SceneRenderer {
             .transition(cmd, IMAGE_STATE_DEPTH_ATTACHMENT);
 
         #[rustfmt::skip]
-        cmd.begin_rendering_rt(
-            &[
-                Some((&self.main_view.gbuffer.albedo, ColorLoadOp::Clear([0.0, 0.0, 0.0, 0.0]), StoreOp::Store)),
-                Some((&self.main_view.gbuffer.normal, ColorLoadOp::Clear([0.0, 0.0, 0.0, 0.0]), StoreOp::Store)),
-                Some((&self.main_view.gbuffer.rt3, ColorLoadOp::Clear([0.0, 0.5, 0.0, 0.0]), StoreOp::Store)),
-                Some((&self.main_view.gbuffer.rt4, ColorLoadOp::Clear([0.0, 0.0, 0.0, 0.0]), StoreOp::Store)),
-            ],
-            Some((&self.main_view.gbuffer.depth, DepthLoadOp::Clear(0.0, 0xFF), StoreOp::Store)),
-            vk::RenderingFlags::CONTENTS_SECONDARY_COMMAND_BUFFERS
-        );
+            cmd.begin_rendering_rt(
+                &[
+                    Some((&self.main_view.gbuffer.albedo, ColorLoadOp::Clear([0.0, 0.0, 0.0, 0.0]), StoreOp::Store)),
+                    Some((&self.main_view.gbuffer.normal, ColorLoadOp::Clear([0.0, 0.0, 0.0, 0.0]), StoreOp::Store)),
+                    Some((&self.main_view.gbuffer.rt3, ColorLoadOp::Clear([0.0, 0.5, 0.0, 0.0]), StoreOp::Store)),
+                    Some((&self.main_view.gbuffer.rt4, ColorLoadOp::Clear([0.0, 0.0, 0.0, 0.0]), StoreOp::Store)),
+                ],
+                Some((&self.main_view.gbuffer.depth, DepthLoadOp::Clear(0.0, 0xFF), StoreOp::Store)),
+                vk::RenderingFlags::CONTENTS_SECONDARY_COMMAND_BUFFERS
+            );
 
         {
             let _scope = gpu.profiler_scope(cmd, "node_visibility_test");
@@ -338,16 +341,16 @@ impl SceneRenderer {
         }
 
         #[rustfmt::skip]
-        cmd.begin_rendering_rt(
-            &[
-                Some((&self.main_view.gbuffer.albedo, ColorLoadOp::Load, StoreOp::Store)),
-                Some((&self.main_view.gbuffer.normal, ColorLoadOp::Load, StoreOp::Store)),
-                Some((&self.main_view.gbuffer.rt3, ColorLoadOp::Load, StoreOp::Store)),
-                Some((&self.main_view.gbuffer.rt4, ColorLoadOp::Load, StoreOp::Store)),
-            ],
-            Some((&self.main_view.gbuffer.depth, DepthLoadOp::Load, StoreOp::Store)),
-            vk::RenderingFlags::CONTENTS_SECONDARY_COMMAND_BUFFERS
-        );
+            cmd.begin_rendering_rt(
+                &[
+                    Some((&self.main_view.gbuffer.albedo, ColorLoadOp::Load, StoreOp::Store)),
+                    Some((&self.main_view.gbuffer.normal, ColorLoadOp::Load, StoreOp::Store)),
+                    Some((&self.main_view.gbuffer.rt3, ColorLoadOp::Load, StoreOp::Store)),
+                    Some((&self.main_view.gbuffer.rt4, ColorLoadOp::Load, StoreOp::Store)),
+                ],
+                Some((&self.main_view.gbuffer.depth, DepthLoadOp::Load, StoreOp::Store)),
+                vk::RenderingFlags::CONTENTS_SECONDARY_COMMAND_BUFFERS
+            );
         {
             let _scope = self.parent.gpu.profiler_scope(cmd, "submit_decals");
             self.parent.globals.scopes.decal.bind(cmd);
@@ -431,14 +434,14 @@ impl SceneRenderer {
             let _scope = self.parent.gpu.profiler_scope(cmd, "submit_cubemaps");
 
             #[rustfmt::skip]
-            cmd.begin_rendering_rt(
-                &[
-                    Some((&self.main_view.light.light_diffuse, ColorLoadOp::Clear([0.0, 0.0, 0.0, 0.0]), StoreOp::Store)),
-                    Some((&self.main_view.light.light_specular_ibl, ColorLoadOp::Clear([0.0, 0.0, 0.0, 0.0]), StoreOp::Store)),
-                ],
-                None,
-                vk::RenderingFlags::CONTENTS_SECONDARY_COMMAND_BUFFERS
-            );
+                cmd.begin_rendering_rt(
+                    &[
+                        Some((&self.main_view.light.light_diffuse, ColorLoadOp::Clear([0.0, 0.0, 0.0, 0.0]), StoreOp::Store)),
+                        Some((&self.main_view.light.light_specular_ibl, ColorLoadOp::Clear([0.0, 0.0, 0.0, 0.0]), StoreOp::Store)),
+                    ],
+                    None,
+                    vk::RenderingFlags::CONTENTS_SECONDARY_COMMAND_BUFFERS
+                );
 
             cmd.set_ffstate(FixedFunctionState::new(Some(23), Some(1), Some(3), Some(1)));
             cmd.flush_states();
@@ -451,14 +454,14 @@ impl SceneRenderer {
             let _scope = self.parent.gpu.profiler_scope(cmd, "apply_hdri_light");
 
             #[rustfmt::skip]
-            cmd.begin_rendering_rt(
-                &[
-                    Some((&self.main_view.light.light_diffuse, ColorLoadOp::Load, StoreOp::Store)),
-                    Some((&self.main_view.light.light_specular_ibl, ColorLoadOp::Load, StoreOp::Store)),
-                ],
-                None,
-                vk::RenderingFlags::empty()
-            );
+                cmd.begin_rendering_rt(
+                    &[
+                        Some((&self.main_view.light.light_diffuse, ColorLoadOp::Load, StoreOp::Store)),
+                        Some((&self.main_view.light.light_specular_ibl, ColorLoadOp::Load, StoreOp::Store)),
+                    ],
+                    None,
+                    vk::RenderingFlags::empty()
+                );
 
             self.parent.apply_hdri_light(cmd);
 
@@ -477,14 +480,14 @@ impl SceneRenderer {
             );
 
             #[rustfmt::skip]
-            cmd.begin_rendering_rt(
-                &[
-                    Some((&self.main_view.light.light_diffuse, ColorLoadOp::Load, StoreOp::Store)),
-                    Some((&self.main_view.light.light_specular, ColorLoadOp::Clear([0.0, 0.0, 0.0, 0.0]), StoreOp::Store)),
-                ],
-                None,
-                vk::RenderingFlags::CONTENTS_SECONDARY_COMMAND_BUFFERS
-            );
+                cmd.begin_rendering_rt(
+                    &[
+                        Some((&self.main_view.light.light_diffuse, ColorLoadOp::Load, StoreOp::Store)),
+                        Some((&self.main_view.light.light_specular, ColorLoadOp::Clear([0.0, 0.0, 0.0, 0.0]), StoreOp::Store)),
+                    ],
+                    None,
+                    vk::RenderingFlags::CONTENTS_SECONDARY_COMMAND_BUFFERS
+                );
 
             cmd.set_ffstate(FixedFunctionState::new(Some(2), None, Some(2), Some(2)));
             cmd.flush_states();
@@ -503,13 +506,13 @@ impl SceneRenderer {
 
         if let Some(debug_pipeline) = debug_pipeline {
             #[rustfmt::skip]
-            cmd.begin_rendering_rt(
-                &[
-                    Some((&self.main_view.output, ColorLoadOp::Clear([0.0, 0.0, 0.0, 1.0]), StoreOp::Store)),
-                ],
-                None,
-                vk::RenderingFlags::empty()
-            );
+                cmd.begin_rendering_rt(
+                    &[
+                        Some((&self.main_view.output, ColorLoadOp::Clear([0.0, 0.0, 0.0, 1.0]), StoreOp::Store)),
+                    ],
+                    None,
+                    vk::RenderingFlags::empty()
+                );
 
             let p = &self.parent.globals.pipelines;
             let technique = match debug_pipeline {
@@ -637,17 +640,17 @@ impl SceneRenderer {
             .transition(cmd, IMAGE_STATE_COLOR_ATTACHMENT);
 
         #[rustfmt::skip]
-        cmd.begin_rendering_rt(
-            &[
-                Some((&self.main_view.output, ColorLoadOp::Load, StoreOp::Store)),
-                None,
-                None,
-                None,
-                Some((&self.main_view.light.distortion, ColorLoadOp::Load, StoreOp::Store,)),
-            ],
-            Some((&self.main_view.gbuffer.depth, DepthLoadOp::Load, StoreOp::None,)),
-            vk::RenderingFlags::CONTENTS_SECONDARY_COMMAND_BUFFERS,
-        );
+            cmd.begin_rendering_rt(
+                &[
+                    Some((&self.main_view.output, ColorLoadOp::Load, StoreOp::Store)),
+                    None,
+                    None,
+                    None,
+                    Some((&self.main_view.light.distortion, ColorLoadOp::Load, StoreOp::Store,)),
+                ],
+                Some((&self.main_view.gbuffer.depth, DepthLoadOp::Load, StoreOp::None,)),
+                vk::RenderingFlags::CONTENTS_SECONDARY_COMMAND_BUFFERS,
+            );
 
         {
             self.parent.globals.scopes.transparent.bind(cmd);
@@ -657,6 +660,91 @@ impl SceneRenderer {
             self.submit_stage(cmd, view, RenderStage::Transparents);
 
             // self.parent.immediate.draw_shapes(cmd);
+        }
+        cmd.end_rendering();
+
+        self.main_view
+            .output
+            .transition(cmd, IMAGE_STATE_SHADER_READ);
+    }
+
+    fn render_main_view_overdraw(
+        &mut self,
+        gpu: &Arc<Gpu>,
+        cmd: &mut CommandList,
+        visibility: &ViewVisibility,
+    ) {
+        let _scope = gpu.profiler_scope(cmd, "render_main_view_overdraw");
+        self.parent.externs.bump_generation();
+
+        {
+            let ext = self.parent.externs.get_mut();
+            ext.view.world_to_camera = self.main_view.world_to_camera;
+            ext.view.camera_to_projective = self.main_view.camera_to_projective;
+            ext.view.derive_matrices(self.main_view.output.resolution());
+        }
+        self.parent.globals.scopes.view.bind(cmd);
+
+        self.main_view
+            .output
+            .transition(cmd, IMAGE_STATE_COLOR_ATTACHMENT);
+
+        #[rustfmt::skip]
+        cmd.begin_rendering_rt(
+            &[
+                Some((&self.main_view.output, ColorLoadOp::Clear([0.0, 0.0, 0.0, 1.0]), StoreOp::Store)),
+                None,
+                None,
+                None,
+            ],
+            None,
+            vk::RenderingFlags::CONTENTS_SECONDARY_COMMAND_BUFFERS
+        );
+
+        {
+            let _scope = gpu.profiler_scope(cmd, "node_visibility_test");
+            node_visibility_test(self, visibility, ShadedView::MAIN_VIEW_ID);
+        }
+
+        {
+            let _scope = gpu.profiler_scope(cmd, "populate_submit_nodes");
+            populate_submit_nodes(self, visibility, ShadedView::MAIN_VIEW_ID);
+        }
+
+        {
+            let _scope = self.parent.gpu.profiler_scope(cmd, "prepare_per_view");
+
+            let frame_packet = &self.frame_packet;
+            let render_objects = self.parent.objects.read();
+            let view = &self.frame_packet.views[ShadedView::MAIN_VIEW_ID];
+            for view_node in &view.view_nodes {
+                let frame_node = &frame_packet.per_frame_nodes[view_node.frame_node];
+                let obj = &render_objects[frame_node.object];
+                obj.renderer.prepare_per_view(cmd, frame_node, view_node);
+            }
+        }
+
+        let view = &self.frame_packet.views[ShadedView::MAIN_VIEW_ID];
+        {
+            let _scope = self
+                .parent
+                .gpu
+                .profiler_scope(cmd, "submit_gbuffer_generation");
+
+            cmd.set_ffstate(FixedFunctionState::new(Some(2), Some(0), Some(0), Some(0)));
+            cmd.set_ffstate_override(FixedFunctionState::new(Some(2), Some(0), Some(0), Some(0)));
+            let m = self
+                .parent
+                .globals
+                .pipelines
+                .overdraw_visualizer
+                .stage_pixel
+                .shader_info
+                .module_tag;
+
+            cmd.set_override_pixel_shader(Some(m));
+            self.submit_stage(cmd, view, RenderStage::GenerateGbuffer);
+            cmd.set_override_pixel_shader(None);
         }
         cmd.end_rendering();
 

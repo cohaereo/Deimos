@@ -48,6 +48,7 @@ pub struct CommandList {
     pub(super) current_stencil_ref: u32,
     pub(super) current_topology: vk::PrimitiveTopology,
     pub(super) bound_technique: TagHash,
+    pub(crate) pixel_shader_override: Option<TagHash>,
     smart_rebind: bool,
 
     descriptor_buffer_bound: bool,
@@ -90,6 +91,7 @@ impl CommandList {
             current_stencil_ref: 0,
             smart_rebind: false,
             bound_technique: TagHash::NONE,
+            pixel_shader_override: None,
 
             descriptor_buffer_bound: false,
             current_color_formats: Vec::new(),
@@ -120,6 +122,7 @@ impl CommandList {
             current_input_layout: self.current_input_layout,
             color_formats: self.current_color_formats.clone(),
             depth_format: self.current_depth_format,
+            pixel_shader_override: self.pixel_shader_override,
             externs: self.externs.clone(),
             smart_rebind: self.smart_rebind,
             tag: self.tag,
@@ -140,6 +143,7 @@ impl CommandList {
             current_topology: fork.current_topology,
             smart_rebind: fork.smart_rebind,
             bound_technique: TagHash::NONE,
+            pixel_shader_override: fork.pixel_shader_override,
             descriptor_buffer_bound: false,
             current_color_formats: fork.color_formats,
             current_depth_format: fork.depth_format,
@@ -269,6 +273,10 @@ impl CommandList {
 
     pub const fn get_input_layout(&self) -> usize {
         self.current_input_layout
+    }
+
+    pub fn set_override_pixel_shader(&mut self, shader: impl Into<Option<TagHash>>) {
+        self.pixel_shader_override = shader.into();
     }
 
     pub fn bind_descriptor_buffer(&mut self) {
@@ -752,6 +760,7 @@ pub struct CommandListForkState {
     current_input_layout: usize,
     color_formats: Vec<vk::Format>,
     depth_format: Option<vk::Format>,
+    pixel_shader_override: Option<TagHash>,
     externs: LocalExternContainer,
     smart_rebind: bool,
     tag: Option<u64>,

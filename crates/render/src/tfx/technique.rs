@@ -28,8 +28,8 @@ pub struct Technique {
     pub tag: TagHash,
     pub data: STechnique,
     pub layout: TechniqueLayout,
-    stage_vertex: TechniqueStage,
-    stage_pixel: TechniqueStage,
+    pub stage_vertex: TechniqueStage,
+    pub stage_pixel: TechniqueStage,
     pipeline_cache: RwLock<SmallVec<[(PipelineKey, vk::Pipeline); 4]>>,
 }
 
@@ -116,7 +116,9 @@ impl Technique {
 
         let pipeline_key = PipelineKey {
             vertex_shader: self.data.shader_vertex.shader,
-            pixel_shader: self.data.shader_pixel.shader,
+            pixel_shader: cmd
+                .pixel_shader_override
+                .unwrap_or(self.data.shader_pixel.shader),
             depth_mode: cmd.depth_mode(),
             fixed_function_state,
             topology: cmd.current_topology(),
