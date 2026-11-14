@@ -5,6 +5,7 @@ pub mod hdri;
 // pub mod immediate;
 pub mod internal;
 pub mod object;
+pub mod overdraw;
 pub mod packet;
 pub mod scene;
 pub mod shadow_mask;

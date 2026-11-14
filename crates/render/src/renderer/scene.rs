@@ -686,13 +686,13 @@ impl SceneRenderer {
         self.parent.globals.scopes.view.bind(cmd);
 
         self.main_view
-            .output
+            .postprocess
             .transition(cmd, IMAGE_STATE_COLOR_ATTACHMENT);
 
         #[rustfmt::skip]
         cmd.begin_rendering_rt(
             &[
-                Some((&self.main_view.output, ColorLoadOp::Clear([0.0, 0.0, 0.0, 1.0]), StoreOp::Store)),
+                Some((&self.main_view.postprocess, ColorLoadOp::Clear([0.0, 0.0, 0.0, 1.0]), StoreOp::Store)),
                 None,
                 None,
                 None,
@@ -746,6 +746,32 @@ impl SceneRenderer {
             self.submit_stage(cmd, view, RenderStage::GenerateGbuffer);
             cmd.set_override_pixel_shader(None);
         }
+        cmd.end_rendering();
+
+        self.main_view
+            .postprocess
+            .transition(cmd, IMAGE_STATE_SHADER_READ);
+
+        self.main_view
+            .output
+            .transition(cmd, IMAGE_STATE_COLOR_ATTACHMENT);
+
+        #[rustfmt::skip]
+        cmd.begin_rendering_rt(
+            &[
+                Some((&self.main_view.output, ColorLoadOp::Clear([0.0, 0.0, 0.0, 1.0]), StoreOp::Store)),
+            ],
+            None,
+            vk::RenderingFlags::empty(),
+        );
+
+        if let Err(e) = self
+            .parent
+            .draw_overdraw_overlay(cmd, self.main_view.postprocess.view())
+        {
+            error!("Failed to draw overdraw overlay: {e:?}");
+        }
+
         cmd.end_rendering();
 
         self.main_view

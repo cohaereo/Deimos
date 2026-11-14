@@ -8,3 +8,5 @@ dxc -Fo immediate.ps.dxil immediate.hlsl -T ps_6_0 -E mainPS
 dxc -Fo immediate.vs.dxil immediate.hlsl -T vs_6_0 -E mainVS
 dxc -Fo ssr.ps.dxil ssr.hlsl -T ps_6_0 -E mainPS
 dxc -Fo ssr.vs.dxil ssr.hlsl -T vs_6_0 -E mainVS
+dxc -Fo overdraw.ps.dxil overdraw.hlsl -T ps_6_0 -E mainPS
+dxc -Fo overdraw.vs.dxil overdraw.hlsl -T vs_6_0 -E mainVS
