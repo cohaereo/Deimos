@@ -40,7 +40,7 @@ impl Default for SsrSettings {
             intensity: 1.5,
             max_distance: 250.0,
             thickness: 0.04,
-            max_steps: 50,
+            max_steps: 75,
             smoothness_threshold: 0.5,
         }
     }
