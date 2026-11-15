@@ -37,6 +37,18 @@ pub const IMAGE_STATE_DEPTH_ATTACHMENT: (vk::ImageLayout, vk::PipelineStageFlags
     vk::AccessFlags::DEPTH_STENCIL_ATTACHMENT_WRITE,
 );
 
+pub const IMAGE_STATE_COMPUTE_STORAGE: (vk::ImageLayout, vk::PipelineStageFlags, vk::AccessFlags) = (
+    vk::ImageLayout::GENERAL,
+    vk::PipelineStageFlags::COMPUTE_SHADER,
+    vk::AccessFlags::SHADER_WRITE,
+);
+
+pub const IMAGE_STATE_COMPUTE_READ: (vk::ImageLayout, vk::PipelineStageFlags, vk::AccessFlags) = (
+    vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL,
+    vk::PipelineStageFlags::COMPUTE_SHADER,
+    vk::AccessFlags::SHADER_READ,
+);
+
 /// Native Vulkan command buffer wrapper
 #[derive(Clone)]
 pub struct CommandBuffer {
@@ -305,6 +317,12 @@ impl CommandBuffer {
     pub fn event_scope(&self, name: impl AsRef<str>, [r, g, b]: [f32; 3]) -> EventSpanGuard {
         self.begin_debug_utils_label(name.as_ref(), [r, g, b, 1.0]);
         EventSpanGuard { this: self.clone() }
+    }
+}
+
+impl CommandBuffer {
+    pub const fn native(&self) -> vk::CommandBuffer {
+        self.cmd
     }
 }
 

@@ -64,6 +64,8 @@ pub struct PipelineCache {
     builtin_shaders: HashMap<TagHash, &'static [u8]>,
     layout_cache: HashMap<(TagHash, TagHash), TechniqueLayout>,
     storage: HashMap<PipelineKey, vk::Pipeline>,
+    compute_layouts: HashMap<TagHash, TechniqueLayout>,
+    compute_pipelines: HashMap<TagHash, vk::Pipeline>,
 
     empty_layout: vk::DescriptorSetLayout,
 
@@ -94,6 +96,8 @@ impl PipelineCache {
             builtin_shaders: HashMap::default(),
             layout_cache: HashMap::default(),
             storage: HashMap::default(),
+            compute_layouts: HashMap::default(),
+            compute_pipelines: HashMap::default(),
             empty_layout,
             #[cfg(debug_assertions)]
             debug_loader: debug_utils::Device::new(instance, &device),
@@ -104,6 +108,10 @@ impl PipelineCache {
 
     pub fn shader_info(&mut self, hash: TagHash, stage: ShaderStage) -> anyhow::Result<ShaderInfo> {
         self.get_or_load_bytecode(hash, stage)
+    }
+
+    pub fn shader_info_compute(&mut self, hash: TagHash) -> anyhow::Result<ShaderInfo> {
+        self.load_bytecode(hash, SET_BASE_VERTEX)
     }
 
     pub fn register_builtin_shader_module(&mut self, hash: TagHash, data: &'static [u8]) {
@@ -130,7 +138,115 @@ impl PipelineCache {
             vs_sets[0], vs_sets[1], vs_sets[2], vs_sets[3], ps_sets[0], ps_sets[1], ps_sets[2],
             ps_sets[3],
         ];
+        let set_slots = [
+            Some(&vs_info.slots),
+            Some(&vs_info.slots),
+            Some(&vs_info.slots),
+            Some(&vs_info.slots),
+            Some(&ps_info.slots),
+            Some(&ps_info.slots),
+            Some(&ps_info.slots),
+            Some(&ps_info.slots),
+        ];
 
+        let layout = self.complete_layout(set_layouts, set_slots)?;
+
+        self.layout_cache
+            .insert((vertex_shader, pixel_shader), layout.clone());
+
+        Ok(layout)
+    }
+
+    #[profiling::function]
+    pub fn get_or_create_compute(
+        &mut self,
+        shader: TagHash,
+    ) -> anyhow::Result<(vk::Pipeline, TechniqueLayout)> {
+        let layout = self.get_or_create_compute_layout(shader)?;
+
+        if let Some(pipeline) = self.compute_pipelines.get(&shader) {
+            return Ok((*pipeline, layout));
+        }
+
+        let info = self.load_bytecode(shader, 0)?;
+        let stage = vk::PipelineShaderStageCreateInfo::default()
+            .name(c"main")
+            .stage(vk::ShaderStageFlags::COMPUTE)
+            .module(info.module);
+
+        let create_info = vk::ComputePipelineCreateInfo::default()
+            .flags(vk::PipelineCreateFlags::DESCRIPTOR_BUFFER_EXT)
+            .layout(layout.pipeline_layout)
+            .stage(stage);
+
+        let pipeline = unsafe {
+            self.device
+                .create_compute_pipelines(
+                    vk::PipelineCache::null(),
+                    std::slice::from_ref(&create_info),
+                    None,
+                )
+                .map_err(|(_, e)| e)?[0]
+        };
+
+        #[cfg(debug_assertions)]
+        {
+            let name_cstr = CString::new(format!("cs_{shader}")).unwrap();
+            let name_info = vk::DebugUtilsObjectNameInfoEXT::default()
+                .object_name(&name_cstr)
+                .object_handle(pipeline);
+
+            unsafe {
+                self.debug_loader.set_debug_utils_object_name(&name_info)?;
+            };
+        }
+
+        self.compute_pipelines.insert(shader, pipeline);
+        Ok((pipeline, layout))
+    }
+
+    pub fn get_or_create_compute_layout(
+        &mut self,
+        shader: TagHash,
+    ) -> anyhow::Result<TechniqueLayout> {
+        if let Some(layout) = self.compute_layouts.get(&shader) {
+            return Ok(layout.clone());
+        }
+
+        let info = self.load_bytecode(shader, 0)?;
+        let sets = self.build_stage_set_layouts(&info.slots, ShaderStage::Compute)?;
+        let set_layouts = [
+            sets[0],
+            sets[1],
+            sets[2],
+            sets[3],
+            self.empty_layout,
+            self.empty_layout,
+            self.empty_layout,
+            self.empty_layout,
+        ];
+        let set_slots = [
+            Some(&info.slots),
+            Some(&info.slots),
+            Some(&info.slots),
+            Some(&info.slots),
+            None,
+            None,
+            None,
+            None,
+        ];
+
+        let layout = self.complete_layout(set_layouts, set_slots)?;
+        self.compute_layouts.insert(shader, layout.clone());
+
+        Ok(layout)
+    }
+
+    fn complete_layout(
+        &self,
+        set_layouts: [vk::DescriptorSetLayout; TOTAL_SETS],
+        set_slots: [Option<&dxil2spirv::SlotUsage>; TOTAL_SETS],
+    ) -> anyhow::Result<TechniqueLayout> {
         let pipeline_layout = unsafe {
             self.device.create_pipeline_layout(
                 &vk::PipelineLayoutCreateInfo::default().set_layouts(&set_layouts),
@@ -151,11 +267,10 @@ impl PipelineCache {
                 continue;
             }
 
-            let slots = if set_index < SETS_PER_STAGE as usize {
-                &vs_info.slots
-            } else {
-                &ps_info.slots
+            let Some(slots) = set_slots[set_index] else {
+                continue;
             };
+
             let mask = match (set_index % SETS_PER_STAGE as usize) as u32 {
                 dxil2spirv::SET_CBV => slots.cbv,
                 dxil2spirv::SET_SRV => slots.srv,
@@ -171,17 +286,12 @@ impl PipelineCache {
             }
         }
 
-        let layout = TechniqueLayout {
+        Ok(TechniqueLayout {
             pipeline_layout,
             set_layouts,
             set_sizes,
             binding_offsets: Arc::new(binding_offsets),
-        };
-
-        self.layout_cache
-            .insert((vertex_shader, pixel_shader), layout.clone());
-
-        Ok(layout)
+        })
     }
 
     fn build_stage_set_layouts(
@@ -432,12 +542,19 @@ impl PipelineCache {
         hash: TagHash,
         stage: ShaderStage,
     ) -> anyhow::Result<ShaderInfo> {
+        self.load_bytecode(hash, set_base(stage))
+    }
+
+    fn load_bytecode(
+        &mut self,
+        hash: TagHash,
+        descriptor_set_base: u32,
+    ) -> anyhow::Result<ShaderInfo> {
         if hash.is_none() {
             return Ok(ShaderInfo::empty());
         }
 
-        let set_base = set_base(stage);
-        match self.bytecode_cache.entry((hash, set_base)) {
+        match self.bytecode_cache.entry((hash, descriptor_set_base)) {
             Entry::Occupied(entry) => Ok(entry.into_mut().clone()),
             Entry::Vacant(entry) => {
                 let data = if let Some(data) = self.builtin_shaders.get(&hash) {
@@ -453,7 +570,7 @@ impl PipelineCache {
                     )
                 };
 
-                let (spirv, slots) = dxil2spirv::translate(data.as_ref(), set_base)
+                let (spirv, slots) = dxil2spirv::translate(data.as_ref(), descriptor_set_base)
                     .map_err(|e| anyhow::anyhow!(e))?;
 
                 let create_info = vk::ShaderModuleCreateInfo::default().code(&spirv);

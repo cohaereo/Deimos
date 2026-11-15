@@ -16,13 +16,14 @@ use rayon::prelude::*;
 use slotmap::SlotMap;
 
 use crate::{
+    camera::Camera,
     ecs::{node_visibility_test, populate_submit_nodes},
     features::light::{LightRenderer, SHADOWMAP_RESOLUTION},
     gpu::{
         Gpu,
         command_buffer::{
-            IMAGE_STATE_COLOR_ATTACHMENT, IMAGE_STATE_DEPTH_ATTACHMENT, IMAGE_STATE_SHADER_READ,
-            IMAGE_STATE_TRANSFER_DST, IMAGE_STATE_TRANSFER_SRC,
+            IMAGE_STATE_COLOR_ATTACHMENT, IMAGE_STATE_COMPUTE_READ, IMAGE_STATE_DEPTH_ATTACHMENT,
+            IMAGE_STATE_SHADER_READ, IMAGE_STATE_TRANSFER_DST, IMAGE_STATE_TRANSFER_SRC,
         },
         command_list::{
             ColorLoadOp, CommandList, CommandListForkState, DepthLoadOp, DepthMode, StoreOp,
@@ -32,6 +33,7 @@ use crate::{
     renderer::{
         Renderer,
         cascades::CascadeCalculator,
+        cortao::{CortaoRenderer, apply_ffstate},
         object::{RenderObject, RenderObjectHandle},
         packet::{FramePacket, RenderPerFrameNode, RenderPerViewNode, SubmitNode, ViewPacket},
         ssr::{SsrConstants, SsrRenderer},
@@ -52,6 +54,7 @@ pub struct SceneRenderer {
 
     pub main_view: ShadedView,
     pub ssr: SsrRenderer,
+    pub cortao: CortaoRenderer,
 
     // TODO(cohae): Dynamically updated shadow views
     // TODO(cohae): (related to the above) we currently render a shadowmap for *every* light in the scene, even if it's not visible, which eats up a good bit of VRAM. Ideally we should only render them when they're visible
@@ -76,12 +79,14 @@ impl SceneRenderer {
     pub fn new(parent: Arc<Renderer>) -> anyhow::Result<Self> {
         let main_view = ShadedView::new(&parent.gpu, (1920, 1080))?;
         let ssr = SsrRenderer::new(&parent.gpu, main_view.shaded_read.output_format())?;
+        let cortao = CortaoRenderer::new(&parent.gpu, main_view.output.resolution())?;
 
         let mut r = Self {
             frame_packet: FramePacket::default(),
             main_view,
             settings: ViewSettings::default(),
             ssr,
+            cortao,
             shadow_views: Vec::new(),
             global_channels: parent.globals.channels.default_values(),
             unk5e_channels: [Vec4::ONE; 256],
@@ -216,6 +221,17 @@ impl SceneRenderer {
     ) {
         let _scope = gpu.profiler_scope(cmd, "render_main_view");
         self.parent.externs.bump_generation();
+
+        if self.cortao.resolution() != self.main_view.output.resolution() {
+            let settings = self.cortao.settings;
+            match CortaoRenderer::new(gpu, self.main_view.output.resolution()) {
+                Ok(mut cortao) => {
+                    cortao.settings = settings;
+                    self.cortao = cortao;
+                }
+                Err(e) => error!("Failed to resize CORTAO buffers: {e:?}"),
+            }
+        }
 
         {
             let ext = self.parent.externs.get_mut();
@@ -499,20 +515,20 @@ impl SceneRenderer {
             .light
             .transition(cmd, IMAGE_STATE_SHADER_READ);
         self.main_view
-            .output
+            .postprocess
             .transition(cmd, IMAGE_STATE_COLOR_ATTACHMENT);
 
         cmd.set_ffstate(FixedFunctionState::new(Some(0), Some(15), Some(1), Some(1)));
 
         if let Some(debug_pipeline) = debug_pipeline {
             #[rustfmt::skip]
-                cmd.begin_rendering_rt(
-                    &[
-                        Some((&self.main_view.output, ColorLoadOp::Clear([0.0, 0.0, 0.0, 1.0]), StoreOp::Store)),
-                    ],
-                    None,
-                    vk::RenderingFlags::empty()
-                );
+            cmd.begin_rendering_rt(
+                &[
+                    Some((&self.main_view.postprocess, ColorLoadOp::Clear([0.0, 0.0, 0.0, 1.0]), StoreOp::Store)),
+                ],
+                None,
+                vk::RenderingFlags::empty()
+            );
 
             let p = &self.parent.globals.pipelines;
             let technique = match debug_pipeline {
@@ -548,13 +564,13 @@ impl SceneRenderer {
                 .output
                 .transition(cmd, IMAGE_STATE_TRANSFER_DST);
 
-            cmd.copy_render_target(&self.main_view.gbuffer.albedo, &self.main_view.output);
+            cmd.copy_render_target(&self.main_view.gbuffer.albedo, &self.main_view.postprocess);
         }
 
         if use_hdri && self.settings.draw_hdri_background {
             cmd.begin_rendering_rt(
                 &[Some((
-                    &self.main_view.output,
+                    &self.main_view.postprocess,
                     ColorLoadOp::Load,
                     StoreOp::Store,
                 ))],
@@ -563,6 +579,84 @@ impl SceneRenderer {
             );
             self.parent.draw_hdri_background(cmd);
             cmd.end_rendering();
+        }
+
+        if self.cortao.settings.enabled
+            && debug_pipeline
+                .is_some_and(|pipeline| pipeline.is_shaded() || pipeline == DebugPipeline::LookDev)
+        {
+            let _scope = self.parent.gpu.profiler_scope(cmd, "submit_cortao");
+
+            self.main_view
+                .gbuffer
+                .depth_read
+                .transition(cmd, IMAGE_STATE_COMPUTE_READ);
+            self.main_view
+                .gbuffer
+                .normal
+                .transition(cmd, IMAGE_STATE_COMPUTE_READ);
+
+            let cortao_result = self.cortao.run(
+                cmd,
+                self.main_view.gbuffer.depth_read.depth_view(),
+                self.main_view.gbuffer.normal.view(),
+                self.main_view.world_to_camera,
+                self.main_view.camera_to_projective,
+                Camera::NEAR,
+                Camera::FAR,
+            );
+
+            self.main_view
+                .gbuffer
+                .depth_read
+                .transition(cmd, IMAGE_STATE_SHADER_READ);
+            self.main_view
+                .gbuffer
+                .normal
+                .transition(cmd, IMAGE_STATE_SHADER_READ);
+
+            if let Err(e) = cortao_result {
+                error!("Failed to submit CORTAO passes: {e:?}");
+            } else {
+                self.main_view
+                    .output
+                    .transition(cmd, IMAGE_STATE_SHADER_READ);
+                self.main_view
+                    .shaded_read
+                    .transition(cmd, IMAGE_STATE_COLOR_ATTACHMENT);
+
+                cmd.set_ffstate(apply_ffstate());
+                cmd.flush_states();
+                cmd.set_input_topology(PrimitiveType::TriangleStrip);
+                cmd.set_input_layout(0);
+
+                cmd.begin_rendering_rt(
+                    &[Some((
+                        &self.main_view.shaded_read,
+                        ColorLoadOp::DontCare,
+                        StoreOp::Store,
+                    ))],
+                    None,
+                    vk::RenderingFlags::empty(),
+                );
+
+                if let Err(e) = self.cortao.apply(cmd, self.main_view.postprocess.view()) {
+                    error!("Failed to submit CORTAO apply pass: {e:?}");
+                }
+
+                cmd.end_rendering();
+
+                self.main_view
+                    .output
+                    .transition(cmd, IMAGE_STATE_TRANSFER_DST);
+                self.main_view
+                    .shaded_read
+                    .transition(cmd, IMAGE_STATE_TRANSFER_SRC);
+                cmd.copy_render_target(&self.main_view.shaded_read, &self.main_view.postprocess);
+                self.main_view
+                    .output
+                    .transition(cmd, IMAGE_STATE_SHADER_READ);
+            }
         }
 
         if self.ssr.settings.enabled
@@ -604,7 +698,7 @@ impl SceneRenderer {
             if let Err(e) = self.ssr.submit(
                 cmd,
                 &constants,
-                self.main_view.output.view(),
+                self.main_view.postprocess.view(),
                 self.main_view.gbuffer.normal.view(),
                 self.main_view.gbuffer.depth_read.depth_view(),
                 self.main_view.gbuffer.rt3.view(),
@@ -615,24 +709,24 @@ impl SceneRenderer {
             cmd.end_rendering();
 
             self.main_view
-                .output
+                .postprocess
                 .transition(cmd, IMAGE_STATE_TRANSFER_DST);
             self.main_view
                 .shaded_read
                 .transition(cmd, IMAGE_STATE_TRANSFER_SRC);
-            cmd.copy_render_target(&self.main_view.shaded_read, &self.main_view.output);
+            cmd.copy_render_target(&self.main_view.shaded_read, &self.main_view.postprocess);
         }
 
         self.main_view
-            .output
+            .postprocess
             .transition(cmd, IMAGE_STATE_TRANSFER_SRC);
         self.main_view
             .shaded_read
             .transition(cmd, IMAGE_STATE_TRANSFER_DST);
-        cmd.copy_render_target(&self.main_view.output, &self.main_view.shaded_read);
+        cmd.copy_render_target(&self.main_view.postprocess, &self.main_view.shaded_read);
 
         self.main_view
-            .output
+            .postprocess
             .transition(cmd, IMAGE_STATE_COLOR_ATTACHMENT);
         self.main_view
             .light
@@ -642,7 +736,7 @@ impl SceneRenderer {
         #[rustfmt::skip]
             cmd.begin_rendering_rt(
                 &[
-                    Some((&self.main_view.output, ColorLoadOp::Load, StoreOp::Store)),
+                    Some((&self.main_view.postprocess, ColorLoadOp::Load, StoreOp::Store)),
                     None,
                     None,
                     None,
@@ -662,6 +756,46 @@ impl SceneRenderer {
             // self.parent.immediate.draw_shapes(cmd);
         }
         cmd.end_rendering();
+
+        if debug_pipeline.is_none_or(|d| d.is_shaded()) {
+            self.main_view
+                .postprocess
+                .transition(cmd, IMAGE_STATE_SHADER_READ);
+            self.main_view
+                .output
+                .transition(cmd, IMAGE_STATE_COLOR_ATTACHMENT);
+
+            self.parent.externs.get_mut().postprocess.input =
+                self.main_view.postprocess.view().into();
+
+            cmd.set_ffstate(FixedFunctionState::new(Some(0), Some(15), Some(1), Some(1)));
+
+            #[rustfmt::skip]
+            cmd.begin_rendering_rt(
+                &[
+                    Some((&self.main_view.output, ColorLoadOp::Clear([0.0, 0.0, 0.0, 1.0]), StoreOp::Store)),
+                ],
+                None,
+                vk::RenderingFlags::empty()
+            );
+
+            self.parent.execute_global_pipeline(
+                cmd,
+                &self.parent.globals.pipelines.final_combine,
+                &format!("{debug_pipeline:?}"),
+            );
+
+            cmd.end_rendering();
+        } else {
+            self.main_view
+                .postprocess
+                .transition(cmd, IMAGE_STATE_TRANSFER_SRC);
+            self.main_view
+                .output
+                .transition(cmd, IMAGE_STATE_TRANSFER_DST);
+
+            cmd.copy_render_target(&self.main_view.postprocess, &self.main_view.output);
+        }
 
         self.main_view
             .output

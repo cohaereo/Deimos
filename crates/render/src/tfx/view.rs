@@ -50,8 +50,8 @@ impl ShadedView {
             postprocess: RenderTarget::new(
                 gpu,
                 "postprocess",
-                vk::Format::R16G16B16A16_SFLOAT,
-                vk::Format::R16G16B16A16_SFLOAT,
+                vk::Format::B10G11R11_UFLOAT_PACK32,
+                vk::Format::B10G11R11_UFLOAT_PACK32,
                 resolution,
             )?,
             shaded_read: RenderTarget::new(

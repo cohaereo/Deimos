@@ -10,7 +10,7 @@ use deimos_data::tfx::{
 };
 use deimos_ecs::transform::Transform;
 use deimos_render::{
-    camera::Camera,
+    camera::{Camera, CameraProjection},
     ecs::{s_extract_frame_packet, s_update_object_channels, s_visibility_test},
     features::LOD_ENABLED,
     gpu::{command_list::CommandList, render_target::RenderTarget},
@@ -1209,6 +1209,12 @@ impl Scene {
                 .text("SSR Smoothness Threshold"),
             );
         }
+
+        ui.checkbox(
+            &mut self.scene_renderer.cortao.settings.enabled,
+            "Ambient Occlusion",
+        )
+        .setting_description_tooltip("Enables ambient occlusion.", PerformanceImpact::Medium);
 
         ui.checkbox(&mut self.umbra_enabled, "Umbra Culling")
             .setting_description_tooltip(

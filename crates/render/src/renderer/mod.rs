@@ -1,4 +1,5 @@
 pub mod cascades;
+pub mod cortao;
 mod fullscreen_pass;
 pub mod globals;
 pub mod hdri;
@@ -64,13 +65,9 @@ impl Renderer {
         self.asset_manager.shutdown();
     }
 
-    pub fn execute_global_pipeline(
-        &self,
-        cmd: &mut CommandList,
-        pipeline: &Technique,
-        _name: &str,
-    ) {
-        // cmd_event_span!(cmd, &format!("[{name}]"));
+    pub fn execute_global_pipeline(&self, cmd: &mut CommandList, pipeline: &Technique, name: &str) {
+        let _span = cmd.event_scope(name, [0.0, 0.3, 1.0]);
+
         cmd.set_input_topology(PrimitiveType::TriangleStrip);
         cmd.set_input_layout(0);
         cmd.flush_states();

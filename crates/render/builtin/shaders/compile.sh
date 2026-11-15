@@ -1,12 +1,25 @@
-dxc -Fo apply_hdri_as_background.ps.dxil apply_hdri_as_background.hlsl -T ps_6_0 -E mainPS
-dxc -Fo apply_hdri_as_background.vs.dxil apply_hdri_as_background.hlsl -T vs_6_0 -E mainVS
-dxc -Fo apply_hdri_as_light.ps.dxil apply_hdri_as_light.hlsl -T ps_6_0 -E mainPS
-dxc -Fo apply_hdri_as_light.vs.dxil apply_hdri_as_light.hlsl -T vs_6_0 -E mainVS
-dxc -Fo generate_shadow_mask.ps.dxil generate_shadow_mask.hlsl -T ps_6_0 -E mainPS
-dxc -Fo generate_shadow_mask.vs.dxil generate_shadow_mask.hlsl -T vs_6_0 -E mainVS
-dxc -Fo immediate.ps.dxil immediate.hlsl -T ps_6_0 -E mainPS
-dxc -Fo immediate.vs.dxil immediate.hlsl -T vs_6_0 -E mainVS
-dxc -Fo ssr.ps.dxil ssr.hlsl -T ps_6_0 -E mainPS
-dxc -Fo ssr.vs.dxil ssr.hlsl -T vs_6_0 -E mainVS
-dxc -Fo overdraw.ps.dxil overdraw.hlsl -T ps_6_0 -E mainPS
-dxc -Fo overdraw.vs.dxil overdraw.hlsl -T vs_6_0 -E mainVS
+compile() {
+    local name=$1
+    local stage=$2
+    local entry=$3
+    echo "Compiling ${name}.${stage}..."
+    dxc -Fo "${name}.${stage}.dxil" "${name}.hlsl" -T "${stage}_6_7" -E "${entry}"
+}
+
+compile_raster() {
+    local name=$1
+    compile "${name}" ps mainPS
+    compile "${name}" vs mainVS
+}
+
+compile_raster apply_hdri_as_background
+compile_raster apply_hdri_as_light
+compile_raster generate_shadow_mask
+compile_raster immediate
+compile_raster ssr
+compile_raster cortao_apply
+compile_raster overdraw
+
+compile cortao_prepass cs main
+compile cortao_main cs main
+compile cortao_filter cs main

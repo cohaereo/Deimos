@@ -300,6 +300,39 @@ impl CommandList {
         layouts: &[vk::DescriptorSetLayout],
         offsets: &[vk::DeviceSize],
     ) {
+        self.set_descriptor_buffer_offsets_for(
+            vk::PipelineBindPoint::GRAPHICS,
+            pipeline_layout,
+            first_set,
+            layouts,
+            offsets,
+        );
+    }
+
+    pub fn set_compute_descriptor_buffer_offsets(
+        &self,
+        pipeline_layout: vk::PipelineLayout,
+        first_set: u32,
+        layouts: &[vk::DescriptorSetLayout],
+        offsets: &[vk::DeviceSize],
+    ) {
+        self.set_descriptor_buffer_offsets_for(
+            vk::PipelineBindPoint::COMPUTE,
+            pipeline_layout,
+            first_set,
+            layouts,
+            offsets,
+        );
+    }
+
+    fn set_descriptor_buffer_offsets_for(
+        &self,
+        bind_point: vk::PipelineBindPoint,
+        pipeline_layout: vk::PipelineLayout,
+        first_set: u32,
+        layouts: &[vk::DescriptorSetLayout],
+        offsets: &[vk::DeviceSize],
+    ) {
         debug_assert_eq!(layouts.len(), offsets.len());
         debug_assert!(layouts.len() <= 8);
 
@@ -309,7 +342,7 @@ impl CommandList {
                 .descriptor_buffer
                 .cmd_set_descriptor_buffer_offsets(
                     *self.cmd,
-                    vk::PipelineBindPoint::GRAPHICS,
+                    bind_point,
                     pipeline_layout,
                     first_set,
                     &buffer_indices[..layouts.len()],
@@ -327,6 +360,21 @@ impl CommandList {
                 vk::StencilFaceFlags::FRONT_AND_BACK,
                 self.current_stencil_ref,
             );
+        }
+    }
+
+    pub fn bind_compute_pipeline(&self, pipeline: vk::Pipeline) {
+        unsafe {
+            self.gpu
+                .cmd_bind_pipeline(*self.cmd, vk::PipelineBindPoint::COMPUTE, pipeline);
+        }
+    }
+
+    pub fn dispatch(&self, group_counts: [u32; 3]) {
+        self.gpu().num_drawcalls.fetch_add(1, Ordering::Relaxed);
+        unsafe {
+            self.gpu
+                .cmd_dispatch(*self.cmd, group_counts[0], group_counts[1], group_counts[2]);
         }
     }
 
@@ -742,14 +790,6 @@ impl StageResources {
     pub fn get_uav_buffer(&self, slot: u32) -> Option<BufferResource> {
         self.uav_buffers.get(slot as usize).cloned().flatten()
     }
-}
-
-#[macro_export]
-macro_rules! cmd_event_span {
-    ($cmd:ident, $name:expr) => {
-        profiling::scope!(&format!("cmd-{}", $name));
-        let _gpu_span = $cmd.begin_event_span($name);
-    };
 }
 
 #[derive(Clone)]
