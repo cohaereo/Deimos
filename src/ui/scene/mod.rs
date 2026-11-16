@@ -789,8 +789,9 @@ impl Scene {
                 Frustum::from_view_and_projection(view.world_to_camera, view.camera_to_projective);
         }
 
+        let is_orthographic = matches!(self.camera.projection, CameraProjection::Orthographic);
         let vis = ViewVisibility {
-            enabled: true,
+            enabled: !is_orthographic,
             culling_frustum: self.camera.culling_frustum.clone(),
             far_plane: Camera::FAR,
             position: self.camera.position,
@@ -799,6 +800,11 @@ impl Scene {
             visible_cluster_bounds,
             render_stages: RenderStageSubscription::STANDARD_VIEW,
         };
+
+        // TODO(cohae): CORTAO does support orthographic views, but that needs an extra shader variant
+        if is_orthographic {
+            self.scene_renderer.cortao.settings.enabled = false;
+        }
 
         {
             let _scope = self.renderer.gpu.profiler_scope(&cmd, "visibility_test");
