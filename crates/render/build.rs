@@ -14,7 +14,12 @@ const RASTER_SHADERS: &[&str] = &[
     "overdraw",
 ];
 
-const COMPUTE_SHADERS: &[&str] = &["cortao_prepass", "cortao_main", "cortao_filter"];
+const COMPUTE_SHADERS: &[&str] = &[
+    "cortao_prepass",
+    "cortao_main",
+    "cortao_filter",
+    "cortao_temporal",
+];
 
 fn main() {
     println!("cargo:rerun-if-changed={}", SHADER_DIR);

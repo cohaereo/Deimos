@@ -28,12 +28,14 @@ const MAIN_SHADER: TagHash = TagHash(0x87000011);
 const FILTER_SHADER: TagHash = TagHash(0x87000012);
 const APPLY_VERTEX_SHADER: TagHash = TagHash(0x87000013);
 const APPLY_PIXEL_SHADER: TagHash = TagHash(0x87000014);
+const TEMPORAL_SHADER: TagHash = TagHash(0x87000015);
 
 const PREPASS_BYTECODE: &[u8] = include_bytes!("../../builtin/shaders/cortao_prepass.cs.dxil");
 const MAIN_BYTECODE: &[u8] = include_bytes!("../../builtin/shaders/cortao_main.cs.dxil");
 const FILTER_BYTECODE: &[u8] = include_bytes!("../../builtin/shaders/cortao_filter.cs.dxil");
 const APPLY_VERTEX_BYTECODE: &[u8] = include_bytes!("../../builtin/shaders/cortao_apply.vs.dxil");
 const APPLY_PIXEL_BYTECODE: &[u8] = include_bytes!("../../builtin/shaders/cortao_apply.ps.dxil");
+const TEMPORAL_BYTECODE: &[u8] = include_bytes!("../../builtin/shaders/cortao_temporal.cs.dxil");
 
 const OCCLUDER_TABLE: &[u8] =
     include_bytes!("../../builtin/shaders/cortao/24x24x16x16_R16_UINT.bin");
@@ -56,6 +58,7 @@ pub struct CortaoSettings {
     pub backface_boost: f32,
     pub depth_sensitivity: f32,
     pub normal_sensitivity: f32,
+    pub temporal_alpha: f32,
 }
 
 impl Default for CortaoSettings {
@@ -68,8 +71,9 @@ impl Default for CortaoSettings {
             max_slope_compensation: 4.0,
             backface_threshold: 0.5,
             backface_boost: 0.5,
-            depth_sensitivity: 512.0,
+            depth_sensitivity: 64.0,
             normal_sensitivity: 16.0,
+            temporal_alpha: 0.1,
         }
     }
 }
@@ -111,6 +115,19 @@ struct FilterConstants {
     depth_sensitivity: f32,
     normal_sensitivity: f32,
     _padding: u32,
+}
+
+#[repr(C)]
+#[derive(Clone, Copy, Pod, Zeroable)]
+struct TemporalConstants {
+    packed_resolution: u32,
+    temporal_alpha: f32,
+    depth_reject_threshold: f32,
+    _padding0: u32,
+    unproject_params: Vec4,
+    cur_inv_world_to_camera: Mat4,
+    prev_world_to_camera: Mat4,
+    prev_projection_params: Vec4,
 }
 
 struct CortaoPass {
@@ -261,6 +278,7 @@ pub struct CortaoRenderer {
     prepass: CortaoPass,
     main: CortaoPass,
     filter: CortaoPass,
+    temporal: CortaoPass,
 
     apply: FullscreenPass,
 
@@ -270,12 +288,19 @@ pub struct CortaoRenderer {
 
     occlusion: StorageImage,
     filtered: StorageImage,
+    history: [StorageImage; 2],
+    history_index: usize,
+    prev_packed: StorageImage,
+    first_frame: bool,
+    prev_world_to_camera: Mat4,
+    prev_projection_params: Vec4,
 
     _occluder_table: Image,
     occluder_view: vk::ImageView,
 
     border_sampler: vk::Sampler,
     clamp_sampler: vk::Sampler,
+    linear_clamp_sampler: vk::Sampler,
 }
 
 impl CortaoRenderer {
@@ -284,6 +309,7 @@ impl CortaoRenderer {
         cache.register_builtin_shader_module(PREPASS_SHADER, PREPASS_BYTECODE);
         cache.register_builtin_shader_module(MAIN_SHADER, MAIN_BYTECODE);
         cache.register_builtin_shader_module(FILTER_SHADER, FILTER_BYTECODE);
+        cache.register_builtin_shader_module(TEMPORAL_SHADER, TEMPORAL_BYTECODE);
         cache.register_builtin_shader_module(APPLY_VERTEX_SHADER, APPLY_VERTEX_BYTECODE);
         cache.register_builtin_shader_module(APPLY_PIXEL_SHADER, APPLY_PIXEL_BYTECODE);
         drop(cache);
@@ -291,6 +317,7 @@ impl CortaoRenderer {
         let prepass = CortaoPass::new(gpu, PREPASS_SHADER)?;
         let main = CortaoPass::new(gpu, MAIN_SHADER)?;
         let filter = CortaoPass::new(gpu, FILTER_SHADER)?;
+        let temporal = CortaoPass::new(gpu, TEMPORAL_SHADER)?;
         let apply = FullscreenPass::new(
             gpu,
             APPLY_VERTEX_SHADER,
@@ -330,6 +357,20 @@ impl CortaoRenderer {
             )
         }?;
 
+        let linear_clamp_sampler = unsafe {
+            gpu.create_sampler(
+                &vk::SamplerCreateInfo::default()
+                    .mag_filter(vk::Filter::LINEAR)
+                    .min_filter(vk::Filter::LINEAR)
+                    .mipmap_mode(vk::SamplerMipmapMode::NEAREST)
+                    .address_mode_u(vk::SamplerAddressMode::CLAMP_TO_EDGE)
+                    .address_mode_v(vk::SamplerAddressMode::CLAMP_TO_EDGE)
+                    .address_mode_w(vk::SamplerAddressMode::CLAMP_TO_EDGE)
+                    .max_lod(0.0),
+                None,
+            )
+        }?;
+
         let (occluder_table, occluder_view) = load_occluder_table(gpu)?;
 
         let renderer = Self {
@@ -338,6 +379,7 @@ impl CortaoRenderer {
             prepass,
             main,
             filter,
+            temporal,
             apply,
             packed_data,
             packed_views,
@@ -354,10 +396,25 @@ impl CortaoRenderer {
                 vk::Format::R32_SFLOAT,
                 resolution,
             )?,
+            history: [
+                StorageImage::new(gpu, "cortao_history_a", vk::Format::R16_SFLOAT, resolution)?,
+                StorageImage::new(gpu, "cortao_history_b", vk::Format::R16_SFLOAT, resolution)?,
+            ],
+            history_index: 0,
+            prev_packed: StorageImage::new(
+                gpu,
+                "cortao_prev_packed",
+                vk::Format::R32_UINT,
+                resolution,
+            )?,
+            first_frame: true,
+            prev_world_to_camera: Mat4::ZERO,
+            prev_projection_params: Vec4::ZERO,
             _occluder_table: occluder_table,
             occluder_view,
             border_sampler,
             clamp_sampler,
+            linear_clamp_sampler,
         };
 
         Ok(renderer)
@@ -378,10 +435,10 @@ impl CortaoRenderer {
         near: f32,
         far: f32,
     ) -> anyhow::Result<()> {
-        // Random seed is only relevant for temporal filtering solutions like TAA
-        let random_seed = 0; // fastrand::u32(0..u32::MAX);
-
         let gpu = cmd.gpu().clone();
+
+        let random_seed = (gpu.frame_index() as u32).wrapping_mul(0x9E3779B9);
+
         let (width, height) = self.resolution;
         let packed_resolution = width | (height << 16);
 
@@ -395,52 +452,9 @@ impl CortaoRenderer {
             world_to_camera,
         };
 
-        let inverse_projection = camera_to_projective.inverse();
-        let projection = &camera_to_projective;
-        let inverse = &inverse_projection;
-
-        let proj_x = projection.x_axis.x;
-        let proj_y = projection.y_axis.y;
-        let proj_offset_x = projection.z_axis.x;
-        let proj_offset_y = projection.z_axis.y;
-
-        let inv_x = inverse.x_axis.x;
-        let inv_y = inverse.y_axis.y;
-        let inv_offset_x = inverse.w_axis.x;
-        let inv_offset_y = inverse.w_axis.y;
-
-        let flip_y = true;
-        let (unproject_params, projection_params) = if flip_y {
-            (
-                Vec4::new(
-                    2.0 * inv_x,
-                    -2.0 * inv_y,
-                    -inv_x + inv_offset_x,
-                    inv_y + inv_offset_y,
-                ),
-                Vec4::new(
-                    0.5 * proj_x,
-                    -0.5 * proj_y,
-                    0.5f32.mul_add(proj_offset_x, -0.5),
-                    0.5f32.mul_add(-proj_offset_y, -0.5),
-                ),
-            )
-        } else {
-            (
-                Vec4::new(
-                    2.0 * inv_x,
-                    2.0 * inv_y,
-                    -inv_x + inv_offset_x,
-                    -inv_y + inv_offset_y,
-                ),
-                Vec4::new(
-                    0.5 * proj_x,
-                    0.5 * proj_y,
-                    0.5f32.mul_add(proj_offset_x, -0.5),
-                    0.5f32.mul_add(proj_offset_y, -0.5),
-                ),
-            )
-        };
+        let (unproject_params, projection_params) = projection_params(&camera_to_projective);
+        let inv_x = unproject_params.x * 0.5;
+        let inv_y = -unproject_params.y * 0.5;
 
         let max_apparent_circle_radius = inv_y * self.settings.max_screenspace_radius * 2.0;
         let main_constants = MainConstants {
@@ -454,7 +468,7 @@ impl CortaoRenderer {
                 / max_apparent_circle_radius
                     .mul_add(max_apparent_circle_radius, 1.0)
                     .sqrt(),
-            mip_bias: (proj_y * height as f32 * 0.5).log2() + self.settings.mip_bias,
+            mip_bias: (projection_params.y * height as f32 * 0.5).log2() + self.settings.mip_bias,
             inverse_max_slope_compensation: 1.0 / self.settings.max_slope_compensation,
             backface_threshold: self.settings.backface_threshold,
             backface_boost: self.settings.backface_boost,
@@ -467,6 +481,25 @@ impl CortaoRenderer {
             depth_sensitivity: self.settings.depth_sensitivity,
             normal_sensitivity: self.settings.normal_sensitivity,
             _padding: 0,
+        };
+
+        // First frame has no history to blend with
+        let temporal_alpha = if self.first_frame {
+            1.0
+        } else {
+            self.settings.temporal_alpha
+        };
+        self.first_frame = false;
+
+        let temporal_constants = TemporalConstants {
+            packed_resolution,
+            temporal_alpha,
+            depth_reject_threshold: 0.1,
+            _padding0: 0,
+            unproject_params,
+            cur_inv_world_to_camera: world_to_camera.inverse(),
+            prev_world_to_camera: self.prev_world_to_camera,
+            prev_projection_params: self.prev_projection_params,
         };
 
         let prepass_upload = gpu
@@ -484,6 +517,11 @@ impl CortaoRenderer {
             .upload
             .upload_bytes(bytemuck::bytes_of(&filter_constants))
             .context("Failed to upload CORTAO filter constants")?;
+        let temporal_upload = gpu
+            .frame()
+            .upload
+            .upload_bytes(bytemuck::bytes_of(&temporal_constants))
+            .context("Failed to upload CORTAO temporal constants")?;
         let packed_view = self.packed_full_view;
         let packed_mips = self.packed_views;
         let occluder_view = self.occluder_view;
@@ -518,7 +556,6 @@ impl CortaoRenderer {
             vk::ImageAspectFlags::COLOR,
             IMAGE_STATE_COMPUTE_READ,
         );
-
         self.occlusion.clear(&gpu, cmd, [1.0; 4]);
         self.occlusion.image.layout_barrier(
             cmd.native(),
@@ -576,14 +613,105 @@ impl CortaoRenderer {
         self.filtered.image.layout_barrier(
             cmd.native(),
             vk::ImageAspectFlags::COLOR,
-            IMAGE_STATE_SHADER_READ,
+            IMAGE_STATE_COMPUTE_READ,
         );
+        {
+            let _scope = gpu.profiler_scope(cmd, "cortao_temporal");
+            let prev_packed_view = self.prev_packed.view;
+            let read_index = self.history_index;
+            let write_index = 1 - read_index;
+            let history_read_view = self.history[read_index].view;
+            let history_write_view = self.history[write_index].view;
+            self.history[write_index].image.layout_barrier(
+                cmd.native(),
+                vk::ImageAspectFlags::COLOR,
+                IMAGE_STATE_COMPUTE_STORAGE,
+            );
+            self.history[read_index].image.layout_barrier(
+                cmd.native(),
+                vk::ImageAspectFlags::COLOR,
+                IMAGE_STATE_COMPUTE_READ,
+            );
+            self.prev_packed.image.layout_barrier(
+                cmd.native(),
+                vk::ImageAspectFlags::COLOR,
+                IMAGE_STATE_COMPUTE_READ,
+            );
+            cmd.set_shader_resource_view(ShaderStage::Compute, 0, Some(self.filtered.view));
+            cmd.set_shader_resource_view(ShaderStage::Compute, 1, Some(packed_view));
+            cmd.set_shader_resource_view(ShaderStage::Compute, 2, Some(prev_packed_view));
+            cmd.set_shader_resource_view(ShaderStage::Compute, 3, Some(history_read_view));
+            cmd.set_shader_sampler(ShaderStage::Compute, 0, Some(self.clamp_sampler));
+            cmd.set_shader_sampler(ShaderStage::Compute, 1, Some(self.border_sampler));
+            cmd.set_shader_sampler(ShaderStage::Compute, 2, Some(self.linear_clamp_sampler));
+            cmd.set_unordered_access_view(ShaderStage::Compute, 0, Some(history_write_view));
+
+            self.temporal.dispatch(
+                &gpu,
+                cmd,
+                ConstantBufferView {
+                    addr: temporal_upload.virtual_address(),
+                    size: temporal_upload.len() as u64,
+                },
+                [width.div_ceil(8), height.div_ceil(8), 1],
+            )?;
+            self.history[write_index].image.layout_barrier(
+                cmd.native(),
+                vk::ImageAspectFlags::COLOR,
+                IMAGE_STATE_SHADER_READ,
+            );
+            self.history_index = write_index;
+        }
+
+        {
+            let _scope = gpu.profiler_scope(cmd, "cortao_prev_depth_copy");
+            self.packed_data.layout_barrier(
+                cmd.native(),
+                vk::ImageAspectFlags::COLOR,
+                IMAGE_STATE_COMPUTE_STORAGE,
+            );
+            self.prev_packed.image.layout_barrier(
+                cmd.native(),
+                vk::ImageAspectFlags::COLOR,
+                IMAGE_STATE_COMPUTE_STORAGE,
+            );
+            cmd.copy_image(
+                &self.packed_data,
+                &self.prev_packed.image,
+                &[vk::ImageCopy::default()
+                    .src_subresource(
+                        vk::ImageSubresourceLayers::default()
+                            .aspect_mask(vk::ImageAspectFlags::COLOR)
+                            .mip_level(0)
+                            .layer_count(1),
+                    )
+                    .dst_subresource(
+                        vk::ImageSubresourceLayers::default()
+                            .aspect_mask(vk::ImageAspectFlags::COLOR)
+                            .mip_level(0)
+                            .layer_count(1),
+                    )
+                    .extent(vk::Extent3D {
+                        width,
+                        height,
+                        depth: 1,
+                    })],
+            );
+            self.prev_packed.image.layout_barrier(
+                cmd.native(),
+                vk::ImageAspectFlags::COLOR,
+                IMAGE_STATE_COMPUTE_READ,
+            );
+        }
+
+        self.prev_world_to_camera = world_to_camera;
+        self.prev_projection_params = projection_params;
 
         Ok(())
     }
 
     pub const fn occlusion_view(&self) -> vk::ImageView {
-        self.filtered.view
+        self.history[self.history_index].view
     }
 
     pub fn apply(&self, cmd: &mut CommandList, scene_color: vk::ImageView) -> anyhow::Result<()> {
@@ -591,7 +719,11 @@ impl CortaoRenderer {
         let fixed_function_state = apply_ffstate();
 
         cmd.set_shader_resource_view(ShaderStage::Pixel, 0, Some(scene_color));
-        cmd.set_shader_resource_view(ShaderStage::Pixel, 1, Some(self.filtered.view));
+        cmd.set_shader_resource_view(
+            ShaderStage::Pixel,
+            1,
+            Some(self.history[self.history_index].view),
+        );
 
         let pipeline = self.apply.get_pipeline(&gpu, cmd, fixed_function_state)?;
         self.apply.bind(&gpu, cmd, pipeline)?;
@@ -599,6 +731,30 @@ impl CortaoRenderer {
 
         Ok(())
     }
+}
+
+fn projection_params(camera_to_projective: &Mat4) -> (Vec4, Vec4) {
+    let inverse = camera_to_projective.inverse();
+    let (inv_x, inv_y) = (inverse.x_axis.x, inverse.y_axis.y);
+    let (inv_offset_x, inv_offset_y) = (inverse.w_axis.x, inverse.w_axis.y);
+    let (proj_x, proj_y) = (camera_to_projective.x_axis.x, camera_to_projective.y_axis.y);
+    let (proj_offset_x, proj_offset_y) =
+        (camera_to_projective.z_axis.x, camera_to_projective.z_axis.y);
+
+    (
+        Vec4::new(
+            2.0 * inv_x,
+            -2.0 * inv_y,
+            -inv_x + inv_offset_x,
+            inv_y + inv_offset_y,
+        ),
+        Vec4::new(
+            0.5 * proj_x,
+            -0.5 * proj_y,
+            0.5f32.mul_add(proj_offset_x, -0.5),
+            0.5f32.mul_add(-proj_offset_y, -0.5),
+        ),
+    )
 }
 
 pub fn apply_ffstate() -> FixedFunctionState {
@@ -626,7 +782,9 @@ fn create_packed_data(
         array_layers: 1,
         samples: vk::SampleCountFlags::TYPE_1,
         tiling: vk::ImageTiling::OPTIMAL,
-        usage: vk::ImageUsageFlags::STORAGE | vk::ImageUsageFlags::SAMPLED,
+        usage: vk::ImageUsageFlags::STORAGE
+            | vk::ImageUsageFlags::SAMPLED
+            | vk::ImageUsageFlags::TRANSFER_SRC,
         sharing_mode: vk::SharingMode::EXCLUSIVE,
         initial_layout: vk::ImageLayout::UNDEFINED,
         location: gpu_allocator::MemoryLocation::GpuOnly,

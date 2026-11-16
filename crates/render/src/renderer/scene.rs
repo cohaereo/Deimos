@@ -619,7 +619,7 @@ impl SceneRenderer {
                 error!("Failed to submit CORTAO passes: {e:?}");
             } else {
                 self.main_view
-                    .output
+                    .postprocess
                     .transition(cmd, IMAGE_STATE_SHADER_READ);
                 self.main_view
                     .shaded_read
@@ -647,14 +647,14 @@ impl SceneRenderer {
                 cmd.end_rendering();
 
                 self.main_view
-                    .output
+                    .postprocess
                     .transition(cmd, IMAGE_STATE_TRANSFER_DST);
                 self.main_view
                     .shaded_read
                     .transition(cmd, IMAGE_STATE_TRANSFER_SRC);
                 cmd.copy_render_target(&self.main_view.shaded_read, &self.main_view.postprocess);
                 self.main_view
-                    .output
+                    .postprocess
                     .transition(cmd, IMAGE_STATE_SHADER_READ);
             }
         }
