@@ -16,7 +16,7 @@ anyhow.workspace = true
 bit_field = "0.10.3"
 bitflags = "2.11.0"
 bumpalo = { version = "3.20.2", features = ["allocator-api2"] }
-bytemuck = { version = "1", features = ["derive"] }
+bytemuck.workspace = true
 glam.workspace = true
 gpu-allocator = { version = "0.28.0", default-features = false, features = [
     "vulkan",
