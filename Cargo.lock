@@ -772,7 +772,6 @@ dependencies = [
  "egui-ash-renderer",
  "egui-sdl3-platform",
  "egui_commonmark",
- "egui_dock",
  "egui_extras",
  "ehttp",
  "embed-resource",
@@ -974,17 +973,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "duplicate"
-version = "2.0.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "8e92f10a49176cbffacaedabfaa11d51db1ea0f80a83c26e1873b43cd1742c24"
-dependencies = [
- "heck",
- "proc-macro2",
- "proc-macro2-diagnostics 0.10.1",
-]
-
-[[package]]
 name = "dxil2spirv"
 version = "0.1.0"
 dependencies = [
@@ -1067,18 +1055,6 @@ dependencies = [
  "egui",
  "egui_extras",
  "pulldown-cmark",
-]
-
-[[package]]
-name = "egui_dock"
-version = "0.21.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "2d9f668eb59ff0ab130c8bce71a513135e1d3017fb3103fb8758e9eea99d759f"
-dependencies = [
- "duplicate",
- "egui",
- "paste",
- "thiserror 2.0.21",
 ]
 
 [[package]]
@@ -1696,7 +1672,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "98e2fe9fba0e74e6b4cbc96a06d473ee6f2dd675f4b26ef6391a4973060c7ed1"
 dependencies = [
  "proc-macro2",
- "proc-macro2-diagnostics 0.11.0",
+ "proc-macro2-diagnostics",
  "quote",
  "syn 3.0.10",
 ]
@@ -2456,18 +2432,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "985e7ec9bb745e6ce6535b544d84d6cd6f7ad8bd711c398938ae983b91a766d9"
 dependencies = [
  "unicode-ident",
-]
-
-[[package]]
-name = "proc-macro2-diagnostics"
-version = "0.10.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "af066a9c399a26e020ada66a034357a868728e72cd426f3adcd35f80d88d88c8"
-dependencies = [
- "proc-macro2",
- "quote",
- "syn 2.0.119",
- "version_check",
 ]
 
 [[package]]

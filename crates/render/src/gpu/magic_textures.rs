@@ -2,7 +2,7 @@ use ahash::HashMap;
 use anyhow::Context;
 use ash::vk;
 use deimos_data::tfx::{ExternIndex, texture::DxgiFormat};
-use parking_lot::{RwLock, RwLockUpgradableReadGuard, RwLockWriteGuard};
+use parking_lot::{RwLock, RwLockUpgradableReadGuard};
 use rand_chacha::ChaCha8Rng;
 use rand_core::{Rng, SeedableRng};
 use std::collections::hash_map::DefaultHasher;

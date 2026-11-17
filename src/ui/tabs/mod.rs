@@ -12,10 +12,9 @@ pub mod static_list;
 // pub mod tag_lookup;
 // pub mod test_scene;
 
-use std::{fmt::Display, sync::Arc};
+use std::sync::Arc;
 
 use egui::Margin;
-use egui_dock::{DockState, TabPath};
 use google_material_symbols::GoogleMaterialSymbols;
 use home::HomeTab;
 
@@ -63,11 +62,9 @@ impl Tab {
             // Tab::TagLookup(_) => 0,
         }
     }
-}
 
-impl Display for Tab {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        let s = match self {
+    pub fn title(&self) -> String {
+        match self {
             Self::Settings => GoogleMaterialSymbols::Settings.to_string(),
             Self::Home => format!("{} Home", GoogleMaterialSymbols::Home),
             Self::EntityList(_) => format!("{} Entities", GoogleMaterialSymbols::ChessPawn),
@@ -83,9 +80,7 @@ impl Display for Tab {
             Self::Activity(tab) => format!("{} ({})", tab.name, tab.tag),
             // Tab::TestScene(_) => format!("{} Test Scene", GoogleMaterialSymbols::Experiment),
             // Tab::TagLookup(_) => format!("{} Tag Lookup", GoogleMaterialSymbols::Search),
-        };
-
-        f.write_str(&s)
+        }
     }
 }
 
@@ -95,18 +90,8 @@ pub struct TabViewer<'a> {
     pub shared_state: &'a Arc<crate::app::SharedState>,
 }
 
-impl<'a> egui_dock::TabViewer for TabViewer<'a> {
-    type Tab = Tab;
-
-    fn id(&mut self, tab: &mut Self::Tab) -> egui::Id {
-        egui::Id::new(format!("{}_{}", tab.key(), self.title(tab).text()))
-    }
-
-    fn title(&mut self, tab: &mut Self::Tab) -> egui::WidgetText {
-        tab.to_string().into()
-    }
-
-    fn ui(&mut self, ui: &mut egui::Ui, tab: &mut Self::Tab) {
+impl<'a> TabViewer<'a> {
+    pub fn ui(&mut self, ui: &mut egui::Ui, tab: &mut Tab) {
         egui::Frame::new()
             .outer_margin(if tab.is_fixed() {
                 Margin::symmetric(127, 64)
@@ -153,14 +138,6 @@ impl<'a> egui_dock::TabViewer for TabViewer<'a> {
                 });
             });
     }
-
-    fn allowed_in_windows(&self, tab: &mut Self::Tab) -> bool {
-        !tab.is_fixed()
-    }
-
-    fn is_closeable(&self, tab: &Self::Tab) -> bool {
-        !tab.is_fixed()
-    }
 }
 
 impl<'a> TabViewer<'a> {
@@ -169,30 +146,6 @@ impl<'a> TabViewer<'a> {
             TabResult::Continue => {}
             TabResult::Open(tab) => self.added_nodes.push(tab),
         }
-    }
-}
-
-pub trait DockStateExt<Tab> {
-    fn find_tab(&self, predicate: impl Fn(&Tab) -> bool) -> Option<TabPath>;
-}
-
-impl<Tab> DockStateExt<Tab> for DockState<Tab> {
-    fn find_tab(&self, predicate: impl Fn(&Tab) -> bool) -> Option<TabPath> {
-        for (si, surface) in self.iter_surfaces().enumerate() {
-            for (ni, node) in surface.iter_nodes().enumerate() {
-                for (ti, tab) in node.iter_tabs().enumerate() {
-                    if predicate(tab) {
-                        return Some(TabPath {
-                            surface: si.into(),
-                            node: ni.into(),
-                            tab: ti.into(),
-                        });
-                    }
-                }
-            }
-        }
-
-        None
     }
 }
 

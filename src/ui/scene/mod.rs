@@ -125,10 +125,10 @@ impl Scene {
         self
     }
 
-    pub const fn with_render_mode(mut self, render_mode: RenderMode) -> Self {
-        self.render_mode = render_mode;
-        self
-    }
+    // pub const fn with_render_mode(mut self, render_mode: RenderMode) -> Self {
+    //     self.render_mode = render_mode;
+    //     self
+    // }
 
     pub fn set_world(&mut self, world: World) {
         self.world = world;
@@ -175,319 +175,323 @@ impl Scene {
             });
         }
 
-        egui::CentralPanel::default().show(ui, |ui| {
-            let panel_rect = ui.available_rect_before_wrap();
+        egui::CentralPanel::default()
+            .frame(egui::Frame::default().inner_margin(0).outer_margin(0))
+            .show(ui, |ui| {
+                let panel_rect = ui.available_rect_before_wrap();
 
-            let size = size.min(panel_rect.size());
-            // let r = ui.allocate_response(size, Sense::CLICK | Sense::DRAG | Sense::HOVER);
-            let r = ui
-                .image(SizedTexture {
-                    id: renderer.add_user_texture(self.scene_renderer.main_view.output.view()),
-                    size,
-                })
-                .interact(Sense::CLICK | Sense::DRAG | Sense::HOVER);
+                let size = size.min(panel_rect.size());
+                // let r = ui.allocate_response(size, Sense::CLICK | Sense::DRAG | Sense::HOVER);
+                let r = ui
+                    .image(SizedTexture {
+                        id: renderer.add_user_texture(self.scene_renderer.main_view.output.view()),
+                        size,
+                    })
+                    .interact(Sense::CLICK | Sense::DRAG | Sense::HOVER);
 
-            if !ui.is_rect_visible(r.rect) {
-                return;
-            }
-
-            let size_pixels = size * ui.ctx().pixels_per_point();
-            let resolution = (size_pixels.x as u32, size_pixels.y as u32);
-
-            self.controller.update(&mut self.camera, ui, &r, delta_time);
-            self.camera.aspect_ratio = resolution.0 as f32 / resolution.1 as f32;
-            self.controller.update_rotation(&mut self.camera);
-            self.camera.update();
-
-            if self.draw_gizmos {
-                self.draw_gizmos(ui, r.rect);
-            }
-
-            if self.animate_time_of_day {
-                self.time_of_day += delta_time;
-                self.time_of_day = self.time_of_day.rem_euclid(3600.0);
-            }
-
-            if r.dragged_by(egui::PointerButton::Middle) {
-                let delta_adjusted = r.drag_delta() / 4.0;
-                if ui.input(|i| i.modifiers.shift) {
-                    self.sun_light_elevation += delta_adjusted.y / 100.0;
-                    self.sun_light_elevation = self.sun_light_elevation.clamp(0.0, 1.0);
-                } else {
-                    self.sun_light_angle += delta_adjusted.x;
-                    self.sun_light_angle = self.sun_light_angle.rem_euclid(360.0);
+                if !ui.is_rect_visible(r.rect) {
+                    return;
                 }
-            }
 
-            let sun_light_direction = if self.render_mode == RenderMode::Lookdev {
-                vec3(0.510, 0.317, 0.799).normalize()
-            } else {
-                vec3(
-                    self.sun_light_angle.to_radians().cos(),
-                    self.sun_light_angle.to_radians().sin(),
-                    self.sun_light_elevation,
-                )
-                .normalize()
-            };
+                let size_pixels = size * ui.ctx().pixels_per_point();
+                let resolution = (size_pixels.x as u32, size_pixels.y as u32);
 
-            let mut bar_rect = r.rect;
-            bar_rect.set_height(32.0);
-            ui.painter().rect_filled(
-                bar_rect,
-                0.0,
-                egui::Color32::from_black_alpha(if ui.rect_contains_pointer(bar_rect) {
-                    160
-                } else {
-                    64
-                }),
-            );
-            ui.scope_builder(UiBuilder::new().max_rect(bar_rect), |ui| {
-                egui::MenuBar::new().ui(ui, |ui| {
-                    self.show_toolbar(ui);
-                })
-            });
+                self.controller.update(&mut self.camera, ui, &r, delta_time);
+                self.camera.aspect_ratio = resolution.0 as f32 / resolution.1 as f32;
+                self.controller.update_rotation(&mut self.camera);
+                self.camera.update();
 
-            let fps_rect = ui.painter_at(panel_rect).text(
-                panel_rect.right_top() + Vec2::new(0.0, 3.0) + Vec2::splat(1.0),
-                egui::Align2::RIGHT_TOP,
-                format!("{} ", (1. / delta_time_average).round()),
-                egui::FontId::monospace(16.0),
-                egui::Color32::BLACK,
-            );
+                if self.draw_gizmos {
+                    self.draw_gizmos(ui, r.rect);
+                }
 
-            ui.painter_at(panel_rect).text(
-                panel_rect.right_top() + Vec2::new(0.0, 3.0),
-                egui::Align2::RIGHT_TOP,
-                format!("{} ", (1. / delta_time_average).round()),
-                egui::FontId::monospace(16.0),
-                egui::Color32::GREEN,
-            );
+                if self.animate_time_of_day {
+                    self.time_of_day += delta_time;
+                    self.time_of_day = self.time_of_day.rem_euclid(3600.0);
+                }
 
-            let memory_stats = self.renderer.gpu.memory_stats();
-            let mut vram_text = format_bytes(memory_stats.total_bytes_used as usize);
-            let mut vram_color = Color32::GREEN;
-            if !memory_stats.errors.is_empty() || memory_stats.high_water {
-                vram_text = format!("{} {}", GoogleMaterialSymbols::Error, vram_text);
-                vram_color = Color32::RED;
-            } else if !memory_stats.warnings.is_empty() {
-                vram_text = format!("{} {}", GoogleMaterialSymbols::Warning, vram_text);
-                vram_color = Color32::YELLOW;
-            }
-
-            let vram_rect = ui.painter_at(panel_rect).text(
-                panel_rect.right_top() + Vec2::new(-8.0, 23.0) + Vec2::splat(1.0),
-                egui::Align2::RIGHT_TOP,
-                &vram_text,
-                egui::FontId::monospace(16.0),
-                egui::Color32::BLACK,
-            );
-
-            ui.painter_at(panel_rect).text(
-                panel_rect.right_top() + Vec2::new(-8.0, 23.0),
-                egui::Align2::RIGHT_TOP,
-                vram_text,
-                egui::FontId::monospace(16.0),
-                vram_color,
-            );
-
-            ui.scope_builder(
-                egui::UiBuilder::new().max_rect(panel_rect.shrink2(vec2(12.0, 4.0))),
-                |ui| {
-                    ui.with_layout(egui::Layout::bottom_up(egui::Align::Min), |ui| {
-                        if let Some(last_speed_change) = ui.memory(|m| {
-                            m.data.get_temp::<Instant>("scene_last_speed_change".into())
-                        }) && last_speed_change.elapsed().as_secs_f32() <= 2.0
-                        {
-                            ui.label(format!(
-                                "{} Camera Speed: {:.1}m/s",
-                                GoogleMaterialSymbols::Speed,
-                                self.controller.speed()
-                            ));
-                        }
-
-                        if self.umbra_result == QueryErrorCode::OutsideScene {
-                            ui.label(
-                                RichText::new(format!(
-                                    "{} Outside Scene",
-                                    GoogleMaterialSymbols::Warning
-                                ))
-                                .color(Color32::YELLOW)
-                                .size(16.0),
-                            );
-                        }
-
-                        if self.world.is_empty() {
-                            ui.label(
-                                RichText::new(format!(
-                                    "{} Scene is empty",
-                                    GoogleMaterialSymbols::Warning
-                                ))
-                                .color(Color32::YELLOW)
-                                .size(16.0),
-                            );
-                        }
-
-                        if self.renderer.asset_manager.count_loading() > 0 {
-                            ui.label(
-                                RichText::new(format!(
-                                    "{} Loading assets... ({} in progress)",
-                                    GoogleMaterialSymbols::HardDrive,
-                                    self.renderer.asset_manager.count_loading()
-                                ))
-                                .size(16.0),
-                            );
-                        }
-                    });
-                },
-            );
-
-            ui.style_mut().spacing.tooltip_width = 4096.0;
-            // Renderer::instance().profiler.set_enabled(false);
-            ui.interact(
-                vram_rect,
-                "vram_report_profiler_tooltip".into(),
-                Sense::hover(),
-            )
-            .on_hover_ui(|ui| {
-                ui.style_mut().spacing.item_spacing = vec2(0.0, 0.0);
-                // ui.monospace(format!("{} allocations", memory_stats.num_allocations));
-                ui.monospace(format!(
-                    "Bytes Allocated: {}",
-                    format_bytes(memory_stats.total_bytes_used as usize)
-                ));
-                // ui.monospace(format!(
-                //     "Descriptor Heap: {}/{} ({:.0}%)",
-                //     memory_stats.descriptor_heap_used,
-                //     memory_stats.descriptor_heap_capacity,
-                //     memory_stats.descriptor_heap_used as f32
-                //         / memory_stats.descriptor_heap_capacity as f32
-                //         * 100.0
-                // ));
-                ui.separator();
-                ui.monospace(format!(
-                    "Upload Ring:  {}/{} ({})",
-                    format_bytes(memory_stats.upload_ring_used),
-                    format_bytes(memory_stats.upload_ring_capacity),
-                    memory_stats.num_upload_ring_allocations
-                ));
-                ui.capacity_bar(
-                    memory_stats.upload_ring_capacity,
-                    memory_stats.upload_ring_used,
-                );
-                ui.monospace(format!(
-                    "Descriptor Ring:  {}/{} ({})",
-                    format_bytes(memory_stats.descriptor_ring_used),
-                    format_bytes(memory_stats.descriptor_ring_capacity),
-                    memory_stats.num_descriptor_ring_allocations
-                ));
-                ui.capacity_bar(
-                    memory_stats.descriptor_ring_capacity,
-                    memory_stats.descriptor_ring_used,
-                );
-
-                ui.separator();
-
-                // ui.monospace(format!(
-                //     "Buffers: {}",
-                //     format_bytes(
-                //         self.renderer
-                //             .gpu
-                //             .num_bytes_allocated_for_buffers
-                //             .load(Ordering::Relaxed)
-                //     )
-                // ));
-
-                // ui.monospace(format!(
-                //     "Upload/Download Buffers: {}",
-                //     format_bytes(
-                //         self.renderer
-                //             .gpu
-                //             .num_bytes_allocated_for_transfer_buffers
-                //             .load(Ordering::Relaxed)
-                //     )
-                // ));
-
-                // ui.monospace(format!(
-                //     "Render Targets: {}",
-                //     format_bytes(
-                //         self.renderer
-                //             .gpu
-                //             .num_bytes_allocated_for_render_targets
-                //             .load(Ordering::Relaxed)
-                //     )
-                // ));
-
-                // ui.monospace(format!(
-                //     "Textures: {}",
-                //     format_bytes(
-                //         self.renderer
-                //             .gpu
-                //             .num_bytes_allocated_for_textures
-                //             .load(Ordering::Relaxed)
-                //     )
-                // ));
-
-                if !memory_stats.errors.is_empty() {
-                    ui.separator();
-                    ui.colored_label(Color32::RED, "Errors:");
-                    for error in memory_stats.errors.iter() {
-                        ui.monospace(format!(" - {error:?}"));
+                if r.dragged_by(egui::PointerButton::Middle) {
+                    let delta_adjusted = r.drag_delta() / 4.0;
+                    if ui.input(|i| i.modifiers.shift) {
+                        self.sun_light_elevation += delta_adjusted.y / 100.0;
+                        self.sun_light_elevation = self.sun_light_elevation.clamp(0.0, 1.0);
+                    } else {
+                        self.sun_light_angle += delta_adjusted.x;
+                        self.sun_light_angle = self.sun_light_angle.rem_euclid(360.0);
                     }
+                }
+
+                let sun_light_direction = if self.render_mode == RenderMode::Lookdev {
+                    vec3(0.510, 0.317, 0.799).normalize()
+                } else {
+                    vec3(
+                        self.sun_light_angle.to_radians().cos(),
+                        self.sun_light_angle.to_radians().sin(),
+                        self.sun_light_elevation,
+                    )
+                    .normalize()
+                };
+
+                let mut bar_rect = r.rect;
+                bar_rect.set_height(32.0);
+                ui.painter().rect_filled(
+                    bar_rect,
+                    0.0,
+                    egui::Color32::from_black_alpha(if ui.rect_contains_pointer(bar_rect) {
+                        160
+                    } else {
+                        64
+                    }),
+                );
+                ui.scope_builder(UiBuilder::new().max_rect(bar_rect), |ui| {
+                    egui::MenuBar::new().ui(ui, |ui| {
+                        self.show_toolbar(ui);
+                    })
+                });
+
+                let fps_rect = ui.painter_at(panel_rect).text(
+                    panel_rect.right_top() + Vec2::new(0.0, 3.0) + Vec2::splat(1.0),
+                    egui::Align2::RIGHT_TOP,
+                    format!("{} ", (1. / delta_time_average).round()),
+                    egui::FontId::monospace(16.0),
+                    egui::Color32::BLACK,
+                );
+
+                ui.painter_at(panel_rect).text(
+                    panel_rect.right_top() + Vec2::new(0.0, 3.0),
+                    egui::Align2::RIGHT_TOP,
+                    format!("{} ", (1. / delta_time_average).round()),
+                    egui::FontId::monospace(16.0),
+                    egui::Color32::GREEN,
+                );
+
+                let memory_stats = self.renderer.gpu.memory_stats();
+                let mut vram_text = format_bytes(memory_stats.total_bytes_used as usize);
+                let mut vram_color = Color32::GREEN;
+                if !memory_stats.errors.is_empty() || memory_stats.high_water {
+                    vram_text = format!("{} {}", GoogleMaterialSymbols::Error, vram_text);
+                    vram_color = Color32::RED;
                 } else if !memory_stats.warnings.is_empty() {
-                    ui.separator();
-                    ui.colored_label(Color32::YELLOW, "Warnings:");
-                    for warning in memory_stats.warnings.iter() {
-                        ui.monospace(format!(" - {warning:?}"));
-                    }
+                    vram_text = format!("{} {}", GoogleMaterialSymbols::Warning, vram_text);
+                    vram_color = Color32::YELLOW;
                 }
+
+                let vram_rect = ui.painter_at(panel_rect).text(
+                    panel_rect.right_top() + Vec2::new(-8.0, 23.0) + Vec2::splat(1.0),
+                    egui::Align2::RIGHT_TOP,
+                    &vram_text,
+                    egui::FontId::monospace(16.0),
+                    egui::Color32::BLACK,
+                );
+
+                ui.painter_at(panel_rect).text(
+                    panel_rect.right_top() + Vec2::new(-8.0, 23.0),
+                    egui::Align2::RIGHT_TOP,
+                    vram_text,
+                    egui::FontId::monospace(16.0),
+                    vram_color,
+                );
+
+                ui.scope_builder(
+                    egui::UiBuilder::new().max_rect(panel_rect.shrink2(vec2(12.0, 4.0))),
+                    |ui| {
+                        ui.with_layout(egui::Layout::bottom_up(egui::Align::Min), |ui| {
+                            if let Some(last_speed_change) = ui.memory(|m| {
+                                m.data.get_temp::<Instant>("scene_last_speed_change".into())
+                            }) && last_speed_change.elapsed().as_secs_f32() <= 2.0
+                            {
+                                ui.label(format!(
+                                    "{} Camera Speed: {:.1}m/s",
+                                    GoogleMaterialSymbols::Speed,
+                                    self.controller.speed()
+                                ));
+                            }
+
+                            if self.umbra_result == QueryErrorCode::OutsideScene {
+                                ui.label(
+                                    RichText::new(format!(
+                                        "{} Outside Scene",
+                                        GoogleMaterialSymbols::Warning
+                                    ))
+                                    .color(Color32::YELLOW)
+                                    .size(16.0),
+                                );
+                            }
+
+                            if self.world.is_empty() {
+                                ui.label(
+                                    RichText::new(format!(
+                                        "{} Scene is empty",
+                                        GoogleMaterialSymbols::Warning
+                                    ))
+                                    .color(Color32::YELLOW)
+                                    .size(16.0),
+                                );
+                            }
+
+                            if self.renderer.asset_manager.count_loading() > 0 {
+                                ui.label(
+                                    RichText::new(format!(
+                                        "{} Loading assets... ({} in progress)",
+                                        GoogleMaterialSymbols::HardDrive,
+                                        self.renderer.asset_manager.count_loading()
+                                    ))
+                                    .size(16.0),
+                                );
+                            }
+                        });
+                    },
+                );
+
+                ui.style_mut().spacing.tooltip_width = 4096.0;
+                // Renderer::instance().profiler.set_enabled(false);
+                ui.interact(
+                    vram_rect,
+                    "vram_report_profiler_tooltip".into(),
+                    Sense::hover(),
+                )
+                .on_hover_ui(|ui| {
+                    ui.style_mut().spacing.item_spacing = vec2(0.0, 0.0);
+                    // ui.monospace(format!("{} allocations", memory_stats.num_allocations));
+                    ui.monospace(format!(
+                        "Bytes Allocated: {}",
+                        format_bytes(memory_stats.total_bytes_used as usize)
+                    ));
+                    // ui.monospace(format!(
+                    //     "Descriptor Heap: {}/{} ({:.0}%)",
+                    //     memory_stats.descriptor_heap_used,
+                    //     memory_stats.descriptor_heap_capacity,
+                    //     memory_stats.descriptor_heap_used as f32
+                    //         / memory_stats.descriptor_heap_capacity as f32
+                    //         * 100.0
+                    // ));
+                    ui.separator();
+                    ui.monospace(format!(
+                        "Upload Ring:  {}/{} ({})",
+                        format_bytes(memory_stats.upload_ring_used),
+                        format_bytes(memory_stats.upload_ring_capacity),
+                        memory_stats.num_upload_ring_allocations
+                    ));
+                    ui.capacity_bar(
+                        memory_stats.upload_ring_capacity,
+                        memory_stats.upload_ring_used,
+                    );
+                    ui.monospace(format!(
+                        "Descriptor Ring:  {}/{} ({})",
+                        format_bytes(memory_stats.descriptor_ring_used),
+                        format_bytes(memory_stats.descriptor_ring_capacity),
+                        memory_stats.num_descriptor_ring_allocations
+                    ));
+                    ui.capacity_bar(
+                        memory_stats.descriptor_ring_capacity,
+                        memory_stats.descriptor_ring_used,
+                    );
+
+                    ui.separator();
+
+                    // ui.monospace(format!(
+                    //     "Buffers: {}",
+                    //     format_bytes(
+                    //         self.renderer
+                    //             .gpu
+                    //             .num_bytes_allocated_for_buffers
+                    //             .load(Ordering::Relaxed)
+                    //     )
+                    // ));
+
+                    // ui.monospace(format!(
+                    //     "Upload/Download Buffers: {}",
+                    //     format_bytes(
+                    //         self.renderer
+                    //             .gpu
+                    //             .num_bytes_allocated_for_transfer_buffers
+                    //             .load(Ordering::Relaxed)
+                    //     )
+                    // ));
+
+                    // ui.monospace(format!(
+                    //     "Render Targets: {}",
+                    //     format_bytes(
+                    //         self.renderer
+                    //             .gpu
+                    //             .num_bytes_allocated_for_render_targets
+                    //             .load(Ordering::Relaxed)
+                    //     )
+                    // ));
+
+                    // ui.monospace(format!(
+                    //     "Textures: {}",
+                    //     format_bytes(
+                    //         self.renderer
+                    //             .gpu
+                    //             .num_bytes_allocated_for_textures
+                    //             .load(Ordering::Relaxed)
+                    //     )
+                    // ));
+
+                    if !memory_stats.errors.is_empty() {
+                        ui.separator();
+                        ui.colored_label(Color32::RED, "Errors:");
+                        for error in memory_stats.errors.iter() {
+                            ui.monospace(format!(" - {error:?}"));
+                        }
+                    } else if !memory_stats.warnings.is_empty() {
+                        ui.separator();
+                        ui.colored_label(Color32::YELLOW, "Warnings:");
+                        for warning in memory_stats.warnings.iter() {
+                            ui.monospace(format!(" - {warning:?}"));
+                        }
+                    }
+                });
+
+                self.scene_renderer.set_global_channel_by_name(
+                    "sun_light_direction",
+                    sun_light_direction.extend(0.0),
+                );
+
+                let ssr_enabled = self.scene_renderer.ssr.settings.enabled;
+
+                self.scene_renderer.set_global_channel_by_id(
+                    0x471E28F2,
+                    // TODO(cohae): This blocks sky reflections as well
+                    if ssr_enabled {
+                        Vec4::splat(0.0)
+                    } else {
+                        Vec4::splat(0.5)
+                    },
+                );
+
+                self.scene_renderer
+                    .set_global_channel_by_id(0x2C53817A, Vec4::splat(1.0 - self.raininess));
+                self.scene_renderer
+                    .set_unk5e_channel_by_id(0x324AD09D, Vec4::splat(self.raininess));
+                self.scene_renderer
+                    .set_unk5e_channel_by_name("rain_amount", Vec4::splat(self.raininess * 100.0));
+
+                self.scene_renderer
+                    .set_unk5e_channel_by_id(0x798A4399, Vec4::splat(self.heat_cascade));
+
+                self.render(delta_time, resolution);
+
+                ui.interact(
+                    fps_rect,
+                    "frame_counter_profiler_tooltip".into(),
+                    Sense::hover(),
+                )
+                .on_hover_ui(|ui| {
+                    let gpu = &self.renderer.gpu;
+                    ui.monospace(format!(
+                        "{} Drawcalls",
+                        gpu.num_drawcalls.load(Ordering::Relaxed)
+                    ));
+                    ui.monospace(format!(
+                        "{} Static Instances",
+                        gpu.num_static_instances.load(Ordering::Relaxed)
+                    ));
+                    let profiler_results = gpu.frame().profiler.get_results_string();
+                    ui.add(egui::Label::new(RichText::new(profiler_results).monospace()).extend());
+                });
             });
-
-            self.scene_renderer
-                .set_global_channel_by_name("sun_light_direction", sun_light_direction.extend(0.0));
-
-            let ssr_enabled = self.scene_renderer.ssr.settings.enabled;
-
-            self.scene_renderer.set_global_channel_by_id(
-                0x471E28F2,
-                // TODO(cohae): This blocks sky reflections as well
-                if ssr_enabled {
-                    Vec4::splat(0.0)
-                } else {
-                    Vec4::splat(0.5)
-                },
-            );
-
-            self.scene_renderer
-                .set_global_channel_by_id(0x2C53817A, Vec4::splat(1.0 - self.raininess));
-            self.scene_renderer
-                .set_unk5e_channel_by_id(0x324AD09D, Vec4::splat(self.raininess));
-            self.scene_renderer
-                .set_unk5e_channel_by_name("rain_amount", Vec4::splat(self.raininess * 100.0));
-
-            self.scene_renderer
-                .set_unk5e_channel_by_id(0x798A4399, Vec4::splat(self.heat_cascade));
-
-            self.render(delta_time, resolution);
-
-            ui.interact(
-                fps_rect,
-                "frame_counter_profiler_tooltip".into(),
-                Sense::hover(),
-            )
-            .on_hover_ui(|ui| {
-                let gpu = &self.renderer.gpu;
-                ui.monospace(format!(
-                    "{} Drawcalls",
-                    gpu.num_drawcalls.load(Ordering::Relaxed)
-                ));
-                ui.monospace(format!(
-                    "{} Static Instances",
-                    gpu.num_static_instances.load(Ordering::Relaxed)
-                ));
-                let profiler_results = gpu.frame().profiler.get_results_string();
-                ui.add(egui::Label::new(RichText::new(profiler_results).monospace()).extend());
-            });
-        });
     }
 
     #[profiling::function]
@@ -1779,6 +1783,8 @@ impl SettingDescriptionTooltipExt for Response {
         })
     }
 }
+
+#[allow(unused)]
 #[derive(Debug)]
 enum PerformanceImpact {
     None,

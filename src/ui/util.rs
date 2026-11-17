@@ -187,10 +187,10 @@ impl<'a> DButton<'a> {
         self
     }
 
-    pub const fn fill(mut self, color: Color32) -> Self {
-        self.fill_color = color;
-        self
-    }
+    // pub const fn fill(mut self, color: Color32) -> Self {
+    //     self.fill_color = color;
+    //     self
+    // }
 }
 
 pub fn format_bytes(bytes: usize) -> String {

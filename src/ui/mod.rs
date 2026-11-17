@@ -2,15 +2,15 @@ use std::{collections::BTreeMap, mem::discriminant, rc::Rc, sync::Arc, thread::J
 
 use ash::vk;
 use deimos_render::gpu::Gpu;
-use egui::{Align2, Color32, FontFamily, FontId, Margin};
-use egui_dock::{DockArea, DockState, TabInteractionStyle};
+use egui::{Align2, Color32, FontFamily, FontId, LayerId, Margin, Vec2, pos2, vec2};
 use google_material_symbols::GoogleMaterialSymbols;
 
 use crate::{
     app::SharedState,
     task::Task,
     ui::{
-        tabs::{DockStateExt, Tab, TabViewer},
+        colors::MARATHON_GREEN,
+        tabs::{Tab, TabViewer},
         util::UiExt,
     },
     updater::{AvailableUpdate, check_stable_release, execute_update},
@@ -30,9 +30,10 @@ pub struct Gui {
 
     pub renderer: GuiRenderer,
     pub egui_sdl3: egui_sdl3_platform::Platform,
-    tree: DockState<Tab>,
 
-    added_nodes: Vec<Tab>,
+    tabs: Vec<Tab>,
+    added_tabs: Vec<Tab>,
+    active_tab: usize,
 
     // sodi: SodiVow,
     update_check: Task<Option<AvailableUpdate>>,
@@ -182,18 +183,20 @@ impl Gui {
 
         egui_extras::install_image_loaders(egui_sdl3.context());
 
-        let mut tree = DockState::new(vec![Tab::Settings, Tab::Home]);
-        if let Some(tab_ref) = tree.find_tab(|t| matches!(t, Tab::Home)) {
-            tree.set_active_tab(tab_ref);
-        }
+        let tabs = vec![Tab::Settings, Tab::Home];
+        let active_tab = tabs
+            .iter()
+            .position(|t| matches!(t, Tab::Home))
+            .unwrap_or(0);
 
         Ok(Self {
             window,
             sdl,
             renderer: GuiRenderer::new(gpu.clone(), renderer)?,
             egui_sdl3,
-            tree,
-            added_nodes: Vec::new(),
+            tabs,
+            added_tabs: vec![],
+            active_tab,
             // sodi: SodiVow::default(),
             update_check: Task::new("updater".to_string(), || match check_stable_release() {
                 Ok(Some(update)) => Some(update),
@@ -210,7 +213,7 @@ impl Gui {
     }
 
     pub fn add_tab(&mut self, tab: Tab) {
-        self.added_nodes.push(tab);
+        self.added_tabs.push(tab);
     }
 
     pub fn draw_ui(&mut self, shared_state: &Arc<SharedState>) -> egui::FullOutput {
@@ -219,83 +222,168 @@ impl Gui {
             .begin_frame(self.window.size_in_pixels(), self.window.display_scale());
         ctx.global_style_mut(|s| s.visuals.panel_fill = Color32::from_black_alpha(96));
 
+        if self.active_tab >= self.tabs.len() {
+            self.active_tab = self.tabs.len().saturating_sub(1);
+        }
+
+        let mut remove_tab = None;
         let output = ctx.run_ui(raw_input, |ui| {
-            DockArea::new(&mut self.tree)
-                .show_add_buttons(false)
-                .style({
-                    let mut style = egui_dock::Style::from_egui(ctx.global_style().as_ref());
-                    // style.tab_bar.fill_tab_bar = true;
-                    style.tab_bar.height = 32.0;
-                    style.tab_bar.bg_fill = Color32::from_gray(4);
+            ui.layer_painter(egui::LayerId::background()).rect_filled(
+                ui.content_rect(),
+                0,
+                ui.style().visuals.window_fill,
+            );
 
-                    let inactive = TabInteractionStyle {
-                        outline_color: Color32::TRANSPARENT,
-                        corner_radius: egui::CornerRadius::ZERO,
-                        bg_fill: Color32::BLACK,
-                        text_color: Color32::WHITE,
+            let old_spacing = ui.style_mut().spacing.item_spacing;
+            ui.style_mut().spacing.item_spacing = egui::Vec2::ZERO;
+            ui.horizontal_wrapped(|ui| {
+                const TAB_PADDING: Vec2 = vec2(8.0, 0.0);
+                const TAB_FONT: FontId = FontId::proportional(20.0);
+                const TAB_LED_HEIGHT: f32 = 3.0;
+                const TAB_CLOSE_BUTTON_WIDTH: f32 = 16.0;
+
+                let tab_bar_painter =
+                    ui.layer_painter(LayerId::new(egui::Order::Foreground, "tab_bar".into()));
+
+                for (index, tab) in self.tabs.iter().enumerate() {
+                    let title = tab.title();
+                    let title_layout =
+                        ui.painter()
+                            .layout(title.clone(), TAB_FONT, Color32::WHITE, f32::INFINITY);
+
+                    let mut width_padded = title_layout.rect.width() + TAB_PADDING.x * 2.0;
+                    if !tab.is_fixed() {
+                        width_padded += TAB_CLOSE_BUTTON_WIDTH;
+                    }
+                    let height_padded =
+                        title_layout.rect.height() + TAB_PADDING.y * 2.0 + TAB_LED_HEIGHT;
+
+                    let (rect, resp) = ui.allocate_exact_size(
+                        vec2(width_padded, height_padded),
+                        egui::Sense::click(),
+                    );
+
+                    let tab_bg = if index == self.active_tab || resp.hovered() {
+                        Color32::from_gray(64)
+                    } else {
+                        Color32::from_gray(32)
                     };
+                    tab_bar_painter.rect_filled(rect, 0, tab_bg);
+                    if index == self.active_tab {
+                        tab_bar_painter.rect_filled(
+                            rect.with_max_y(rect.min.y + TAB_LED_HEIGHT),
+                            0,
+                            MARATHON_GREEN,
+                        );
+                    }
 
-                    let hovered = TabInteractionStyle {
-                        outline_color: Color32::from_gray(127),
-                        bg_fill: ctx.global_style().visuals.window_fill().gamma_multiply(0.5),
-                        ..inactive
-                    };
-
-                    let active = TabInteractionStyle {
-                        bg_fill: ctx.global_style().visuals.window_fill(),
-                        ..hovered
-                    };
-
-                    let focused = TabInteractionStyle {
-                        outline_color: Color32::WHITE,
-                        bg_fill: ctx.global_style().visuals.window_fill(),
-                        ..inactive
-                    };
-
-                    style.tab = egui_dock::TabStyle {
-                        active: active.clone(),
-                        inactive: inactive.clone(),
-                        focused: focused.clone(),
-                        hovered,
-                        inactive_with_kb_focus: inactive,
-                        active_with_kb_focus: active,
-                        focused_with_kb_focus: focused,
-                        tab_body: egui_dock::TabBodyStyle {
-                            inner_margin: ctx.global_style().spacing.window_margin,
-                            stroke: ctx.global_style().visuals.widgets.noninteractive.bg_stroke,
-                            corner_radius: ctx.global_style().visuals.widgets.active.corner_radius,
-                            bg_fill: ctx.global_style().visuals.window_fill(),
-                            // bg_fill: Color32::from_black_alpha(128),
-                            hidden_tab_bar_drag_height: None,
+                    let rect = rect.with_min_y(rect.min.y + TAB_LED_HEIGHT);
+                    tab_bar_painter.text(
+                        pos2(rect.min.x + TAB_PADDING.x, rect.min.y + rect.height() / 2.0),
+                        egui::Align2::LEFT_CENTER,
+                        title,
+                        TAB_FONT,
+                        if index == self.active_tab {
+                            Color32::WHITE
+                        } else if resp.hovered() {
+                            Color32::from_gray(226)
+                        } else {
+                            Color32::from_gray(196)
                         },
-                        hline_below_active_tab_name: false,
-                        ..Default::default()
-                    };
-                    style
-                })
-                .show_leaf_collapse_buttons(false)
-                .show_leaf_close_all_buttons(false)
-                .draggable_tabs(false)
-                .allowed_splits(egui_dock::AllowedSplits::None)
-                .show_inside(
-                    ui,
-                    &mut TabViewer {
-                        added_nodes: &mut self.added_nodes,
-                        renderer: &mut self.renderer,
-                        shared_state,
-                    },
-                );
+                    );
+
+                    if !tab.is_fixed() && resp.hovered() {
+                        let close_pos = pos2(
+                            rect.max.x - TAB_CLOSE_BUTTON_WIDTH / 2.0 - TAB_PADDING.x / 2.0,
+                            rect.center().y,
+                        );
+                        let close_rect = egui::Rect::from_center_size(
+                            close_pos,
+                            vec2(TAB_CLOSE_BUTTON_WIDTH, TAB_CLOSE_BUTTON_WIDTH),
+                        );
+                        tab_bar_painter.text(
+                            close_pos,
+                            egui::Align2::CENTER_CENTER,
+                            "×",
+                            FontId::proportional(20.0),
+                            Color32::from_gray(196),
+                        );
+
+                        if let Some(cursor_pos) = ui.pointer_hover_pos()
+                            && close_rect.contains(cursor_pos)
+                        {
+                            let clicked =
+                                ui.input(|i| i.pointer.button_down(egui::PointerButton::Primary));
+                            tab_bar_painter.rect_filled(
+                                close_rect,
+                                2,
+                                if clicked {
+                                    Color32::from_white_alpha(64)
+                                } else {
+                                    Color32::from_white_alpha(128)
+                                },
+                            );
+
+                            if ui.input(|i| i.pointer.button_released(egui::PointerButton::Primary))
+                            {
+                                remove_tab = Some(index);
+                            }
+                        }
+                    }
+
+                    resp.context_menu(|ui| {
+                        if ui.button("Close").clicked() {
+                            remove_tab = Some(index);
+                        }
+                    });
+                    if resp.clicked_by(egui::PointerButton::Middle) {
+                        remove_tab = Some(index);
+                    }
+
+                    if resp.clicked() {
+                        self.active_tab = index;
+                    }
+                }
+            });
+
+            let tab_end_height = ui.cursor().min.y;
+
+            ui.layer_painter(egui::LayerId::background()).rect_filled(
+                ui.content_rect().with_max_y(tab_end_height),
+                0,
+                Color32::from_gray(16),
+            );
+
+            let mut tab_viewer = TabViewer {
+                added_nodes: &mut self.added_tabs,
+                renderer: &mut self.renderer,
+                shared_state,
+            };
+
+            let active_tab = self.active_tab;
+            if let Some(tab) = self.tabs.get_mut(active_tab) {
+                ui.style_mut().spacing.item_spacing = old_spacing;
+                tab_viewer.ui(ui, tab);
+            }
         });
 
-        for tab in self.added_nodes.drain(..) {
+        if let Some(index) = remove_tab
+            && !self.tabs[index].is_fixed()
+        {
+            self.tabs.remove(index);
+        }
+
+        for tab in self.added_tabs.drain(..) {
             // Is the tab unique and does it already exist? Then switch to it instead of adding it again.
-            if let Some(tab_ref) = self
-                .tree
-                .find_tab(|t| discriminant(t) == discriminant(&tab) && t.key() == tab.key())
+            if let Some(tab_index) = self
+                .tabs
+                .iter()
+                .position(|t| discriminant(t) == discriminant(&tab) && t.key() == tab.key())
             {
-                self.tree.set_active_tab(tab_ref);
+                self.active_tab = tab_index;
             } else {
-                self.tree.push_to_focused_leaf(tab);
+                self.tabs.push(tab);
+                self.active_tab = self.tabs.len() - 1;
             }
         }
 
@@ -486,7 +574,9 @@ impl GuiRenderer {
         }
 
         for id in output.textures_delta.free.drain() {
-            self.renderer.free_texture(id);
+            if let Err(e) = self.renderer.free_texture(id) {
+                error!("Failed to free egui texture: {:?}", e);
+            }
         }
 
         for id in self.temporary_textures.drain(..) {

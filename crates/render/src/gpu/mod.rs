@@ -26,7 +26,7 @@ use ahash::HashMap;
 use anyhow::{Context, bail};
 use ash::{
     ext::{debug_utils, descriptor_buffer, memory_budget},
-    khr::{maintenance4, surface, swapchain},
+    khr::{surface, swapchain},
     vk::{
         self, DebugUtilsMessageSeverityFlagsEXT, DebugUtilsMessageTypeFlagsEXT,
         DebugUtilsMessengerCallbackDataEXT, QueueFlags,

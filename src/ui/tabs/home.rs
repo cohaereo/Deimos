@@ -94,7 +94,7 @@ impl HomeTab {
                     ui.image_link(
                         egui::include_image!("../../../assets/ui/github.svg"),
                         vec2(64.0, 64.0),
-                        "https://github.com/cohaereo/Deimos-Public",
+                        "https://github.com/cohaereo/Deimos",
                     );
 
                     ui.image_link(
