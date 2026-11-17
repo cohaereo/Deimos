@@ -2,7 +2,7 @@ use std::sync::Arc;
 
 use ahash::HashMap;
 use deimos_data::map::{SBubbleParent, SBubbleParentShallow};
-use egui::{FontId, Margin, TextStyle, Ui, vec2};
+use egui::{FontId, Margin, RichText, Stroke, TextStyle, Ui, vec2};
 use tiger_parse::{PackageManagerExt, TigerReadable};
 use tiger_pkg::{TagHash, package_manager};
 
@@ -10,6 +10,7 @@ use super::TabResult;
 use crate::{
     app::SharedState,
     ui::{
+        colors::MARATHON_GREEN,
         tabs::{Tab, map::MapTab},
         util::DButton,
     },
@@ -88,7 +89,20 @@ impl MapListTab {
                         egui::ScrollArea::vertical()
                             .auto_shrink([true, false])
                             .id_salt("map_list_packages")
+                            .max_width(512.0)
                             .show(ui, |ui| {
+                                egui::Frame::new()
+                                    .outer_margin(0).inner_margin(8)
+                                    .corner_radius(8)
+                                    .fill(MARATHON_GREEN.gamma_multiply(0.1))
+                                    .stroke(Stroke::new(2.0, MARATHON_GREEN))
+                                    .show(ui, |ui| {
+                                        ui.style_mut()
+                                            .text_styles
+                                            .insert(TextStyle::Body, FontId::proportional(16.0));
+                                        ui.label(RichText::new("Maps only include the base map data!\nIf you are looking for things like enemy spawns, objectives, collectibles, etc. you'll want to load the map from the activities menu instead.").italics());
+                                    });
+
                                 for (i, (package_name, _map_tags)) in
                                     self.map_tags_by_package.iter().enumerate()
                                 {
