@@ -22,7 +22,7 @@ use tiger_pkg::{TagHash, package_manager};
 
 use super::TabResult;
 use crate::{
-    app::SharedState,
+    app::SharedData,
     ui::{
         GuiRenderer,
         scene::{
@@ -57,11 +57,11 @@ pub struct ModelListBase<P: ModelProvider> {
     only_show_used_channels: bool,
 
     provider: P,
-    shared: Arc<SharedState>,
+    shared: Arc<SharedData>,
 }
 
 impl<P: ModelProvider> ModelListBase<P> {
-    pub fn new(renderer: &Arc<Renderer>, shared: &Arc<SharedState>, provider: P) -> Self {
+    pub fn new(renderer: &Arc<Renderer>, shared: &Arc<SharedData>, provider: P) -> Self {
         let mut thumbnail_scene = Scene::new(
             renderer,
             shared,

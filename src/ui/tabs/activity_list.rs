@@ -9,7 +9,7 @@ use tiger_parse::TigerReadable;
 use tiger_pkg::{TagHash, package_manager};
 
 use crate::{
-    app::SharedState,
+    app::SharedData,
     ui::{
         tabs::{Tab, TabResult, activity::ActivityTab},
         util::DButton,
@@ -17,7 +17,7 @@ use crate::{
 };
 
 pub struct ActivityListTab {
-    shared_state: Arc<SharedState>,
+    shared_state: Arc<SharedData>,
     root_node: ActivityTreeNode,
 
     all_nodes: Vec<ActivityTreeNode>,
@@ -28,7 +28,7 @@ pub struct ActivityListTab {
 }
 
 impl ActivityListTab {
-    pub fn new(shared_state: &Arc<SharedState>) -> Self {
+    pub fn new(shared_state: &Arc<SharedData>) -> Self {
         let mut destination_nodes = HashMap::<String, Vec<ActivityTreeNode>>::default();
         let mut expedition_nodes = vec![];
 

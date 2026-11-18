@@ -16,7 +16,7 @@ use tiger_pkg::{TagHash, package_manager};
 
 use super::TabResult;
 use crate::{
-    app::SharedState,
+    app::SharedData,
     ui::{
         GuiRenderer,
         tabs::model_list::{ModelEntry, ModelListBase, ModelProvider},
@@ -29,9 +29,13 @@ pub struct EntityListTab {
 }
 
 impl EntityListTab {
-    pub fn new(renderer: &Arc<Renderer>, state: &Arc<SharedState>) -> Self {
+    pub fn new(renderer: &Arc<Renderer>, shared: &Arc<SharedData>) -> Self {
         Self {
-            base: ModelListBase::new(renderer, state, EntityModelProvider::new(renderer.clone())),
+            base: ModelListBase::new(
+                renderer,
+                shared,
+                EntityModelProvider::new(renderer.clone(), shared.clone()),
+            ),
         }
     }
 
@@ -41,13 +45,14 @@ impl EntityListTab {
 }
 
 struct EntityModelProvider {
+    shared: Arc<SharedData>,
     renderer: Arc<Renderer>,
     package_keys: Vec<u16>,
     packages: BTreeMap<u16, (Vec<ModelEntry>, usize)>,
 }
 
 impl EntityModelProvider {
-    fn new(renderer: Arc<Renderer>) -> Self {
+    fn new(renderer: Arc<Renderer>, shared: Arc<SharedData>) -> Self {
         let packages: BTreeMap<u16, _> = package_manager()
             .package_paths
             .keys()
@@ -66,6 +71,7 @@ impl EntityModelProvider {
             .collect();
 
         Self {
+            shared,
             renderer,
             package_keys: packages.keys().cloned().collect(),
             packages,
@@ -105,13 +111,22 @@ impl ModelProvider for EntityModelProvider {
         hash: TagHash,
         world: &mut hecs::World,
     ) -> anyhow::Result<hecs::Entity> {
+        let shared = self.shared.clone();
         spawn_pattern(
             world,
             hash,
             None,
             None,
             |world, entity, pattern, data, component| {
-                load_component(&self.renderer, world, entity, pattern, data, component)
+                load_component(
+                    &self.renderer,
+                    &shared,
+                    world,
+                    entity,
+                    pattern,
+                    data,
+                    component,
+                )
             },
         )
     }
@@ -124,6 +139,7 @@ impl ModelProvider for EntityModelProvider {
             return;
         }
 
+        let shared = self.shared.clone();
         *entries = package_manager().lookup.tag32_entries_by_pkg[&pkg_id]
             .iter()
             .enumerate()
@@ -138,7 +154,15 @@ impl ModelProvider for EntityModelProvider {
                                   pattern: &SPattern,
                                   data: &ComponentData,
                                   component: &TagRef<SComponent>| {
-                            load_component(&self.renderer, world, entity, pattern, data, component)
+                            load_component(
+                                &self.renderer,
+                                &shared,
+                                world,
+                                entity,
+                                pattern,
+                                data,
+                                component,
+                            )
                         };
 
                         let mut world = hecs::World::new();

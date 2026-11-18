@@ -7,7 +7,7 @@ use anyhow::Context;
 use deimos_data::{
     hash::FNV1_BASE,
     map::{ComponentData, S808085E3},
-    pattern::{SComponent, SPattern},
+    pattern::{SComponent, SInvestmentItemPickupComponent, SPattern, SPingableComponent},
     tag::{OptionalTagRef, TagRef},
     tfx::{
         TfxFeatureRenderer,
@@ -34,6 +34,8 @@ use itertools::multizip;
 use tiger_parse::{PackageManagerExt, TigerReadable};
 use tiger_pkg::package_manager;
 
+use crate::app::SharedData;
+
 #[macro_export]
 macro_rules! once {
     () => {{
@@ -44,6 +46,7 @@ macro_rules! once {
 
 pub fn load_component(
     renderer: &Arc<Renderer>,
+    shared: &SharedData,
     world: &mut hecs::World,
     entity: hecs::Entity,
     _pattern: &SPattern,
@@ -422,6 +425,23 @@ pub fn load_component(
             let tome = umbra::Tome::load_from_buffer(&tome0_data);
 
             world.insert_one(entity, tome)?;
+        }
+        0x80802976 => {
+            let mut cur = Cursor::new(package_manager().read_tag(component.taghash())?);
+            cur.seek(SeekFrom::Start(component.definition.offset))?;
+            let ping: SPingableComponent =
+                TigerReadable::read_ds(&mut cur).context("while reading pingable component")?;
+
+            world.insert_one(entity, Label(shared.get_string_by_reference(&ping.label)))?;
+            world.insert_one(entity, ping)?;
+        }
+        0x808035BF => {
+            let mut cur = Cursor::new(package_manager().read_tag(component.taghash())?);
+            cur.seek(SeekFrom::Start(component.definition.offset))?;
+            let item: SInvestmentItemPickupComponent = TigerReadable::read_ds(&mut cur)
+                .context("while reading investment item pickup component")?;
+
+            world.insert_one(entity, item)?;
         }
         _u => return Ok(ComponentLoadResult::Skipped),
     }

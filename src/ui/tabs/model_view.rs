@@ -8,7 +8,7 @@ use google_material_symbols::GoogleMaterialSymbols;
 use tiger_pkg::TagHash;
 
 use crate::{
-    app::SharedState,
+    app::SharedData,
     task::Task,
     ui::{
         GuiRenderer,
@@ -29,10 +29,11 @@ pub struct ModelViewTab {
 impl ModelViewTab {
     pub fn new_pattern(
         renderer: &Arc<Renderer>,
-        shared: &Arc<SharedState>,
+        shared: &Arc<SharedData>,
         tag: TagHash,
     ) -> anyhow::Result<Self> {
         let renderer_clone = renderer.clone();
+        let shared_clone = shared.clone();
 
         Ok(Self {
             load_task: Task::new(format!("load_pattern({tag})"), move || {
@@ -43,7 +44,15 @@ impl ModelViewTab {
                     None,
                     None,
                     |world, entity, pattern, data, component| {
-                        load_component(&renderer_clone, world, entity, pattern, data, component)
+                        load_component(
+                            &renderer_clone,
+                            &shared_clone,
+                            world,
+                            entity,
+                            pattern,
+                            data,
+                            component,
+                        )
                     },
                 )
                 .expect("Failed to load map into world");

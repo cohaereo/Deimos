@@ -33,7 +33,7 @@ use itertools::Itertools;
 use umbra::QueryErrorCode;
 
 use crate::{
-    app::SharedState,
+    app::SharedData,
     ui::{
         GuiRenderer, icons,
         scene::controller::CameraController,
@@ -81,7 +81,7 @@ pub struct Scene {
 impl Scene {
     pub fn new(
         renderer: &Arc<Renderer>,
-        shared: &SharedState,
+        shared: &SharedData,
         camera: Camera,
     ) -> anyhow::Result<Self> {
         let mut scene_renderer = SceneRenderer::new(renderer.clone())?;

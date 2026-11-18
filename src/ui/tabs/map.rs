@@ -8,7 +8,7 @@ use google_material_symbols::GoogleMaterialSymbols;
 use tiger_pkg::TagHash;
 
 use crate::{
-    app::SharedState,
+    app::SharedData,
     task::Task,
     ui::{
         GuiRenderer,
@@ -30,11 +30,12 @@ pub struct MapTab {
 impl MapTab {
     pub fn new(
         renderer: &Arc<Renderer>,
-        state: &Arc<SharedState>,
+        state: &Arc<SharedData>,
         tag: TagHash,
         name: String,
     ) -> anyhow::Result<Self> {
         let renderer_clone = renderer.clone();
+        let state_clone = state.clone();
         let camera = Camera {
             position: Vec3::Z * 10.0,
             ..Default::default()
@@ -53,7 +54,15 @@ impl MapTab {
                     tag,
                     &mut world,
                     |world, entity, pattern, data, component| {
-                        load_component(&renderer_clone, world, entity, pattern, data, component)
+                        load_component(
+                            &renderer_clone,
+                            &state_clone,
+                            world,
+                            entity,
+                            pattern,
+                            data,
+                            component,
+                        )
                     },
                 )
                 .expect("Failed to load map into world");

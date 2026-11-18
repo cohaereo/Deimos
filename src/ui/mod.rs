@@ -6,7 +6,7 @@ use egui::{Align2, Color32, FontFamily, FontId, LayerId, Margin, Vec2, pos2, vec
 use google_material_symbols::GoogleMaterialSymbols;
 
 use crate::{
-    app::SharedState,
+    app::SharedData,
     task::Task,
     ui::{
         colors::MARATHON_GREEN,
@@ -216,7 +216,7 @@ impl Gui {
         self.added_tabs.push(tab);
     }
 
-    pub fn draw_ui(&mut self, shared_state: &Arc<SharedState>) -> egui::FullOutput {
+    pub fn draw_ui(&mut self, shared_state: &Arc<SharedData>) -> egui::FullOutput {
         let (ctx, raw_input) = self
             .egui_sdl3
             .begin_frame(self.window.size_in_pixels(), self.window.display_scale());
@@ -357,7 +357,7 @@ impl Gui {
             let mut tab_viewer = TabViewer {
                 added_nodes: &mut self.added_tabs,
                 renderer: &mut self.renderer,
-                shared_state,
+                shared_data: shared_state,
             };
 
             let active_tab = self.active_tab;

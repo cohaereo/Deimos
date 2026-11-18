@@ -1,11 +1,11 @@
 use egui::{FontId, TextStyle, Ui};
 
-use crate::app::SharedState;
+use crate::app::SharedData;
 
 pub struct SettingsTab;
 
 impl SettingsTab {
-    pub fn ui(ui: &mut Ui, state: &SharedState) {
+    pub fn ui(ui: &mut Ui, state: &SharedData) {
         ui.style_mut()
             .text_styles
             .insert(TextStyle::Button, FontId::proportional(16.0));

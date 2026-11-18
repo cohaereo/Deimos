@@ -14,7 +14,8 @@ use ahash::HashMap;
 use anyhow::Context;
 use ash::vk;
 use deimos_data::{
-    strings::{StringContainer, StringContainerShared},
+    activity::SDestination,
+    strings::{SStringReference, StringContainer, StringContainerShared},
     tag::WideHash,
 };
 use deimos_render::{
@@ -44,7 +45,7 @@ pub struct App {
     pub gui: Gui,
     pub running: bool,
 
-    shared_state: Arc<SharedState>,
+    shared_state: Arc<SharedData>,
 
     // _spinner: FullscreenSpinner,
     last_frame_time: Instant,
@@ -61,7 +62,7 @@ impl App {
         *gpu.extern_source.write() =
             deimos_render::tfx::externs::BaseExternSource::Renderer(renderer.clone());
 
-        let shared_state: Arc<_> = SharedState::new(renderer.clone())
+        let shared_state: Arc<_> = SharedData::new(renderer.clone())
             .context("Failed to create shared state")?
             .into();
         if let Err(e) = gpu.set_vsync(shared_state.config.read().vsync) {
@@ -280,17 +281,19 @@ impl Drop for App {
     }
 }
 
-pub struct SharedState {
+pub struct SharedData {
     pub strings: StringContainerShared,
     pub strings_by_package: HashMap<String, StringContainer>,
+    string_container_cache: RwLock<HashMap<WideHash, StringContainer>>,
+
     pub config: RwLock<AppConfig>,
     pub renderer: Arc<Renderer>,
 }
 
-impl SharedState {
+impl SharedData {
     pub fn new(renderer: Arc<Renderer>) -> anyhow::Result<Self> {
         let mut strings_by_package = HashMap::default();
-        for (name, tag) in package_manager().get_named_tags_by_class(0x80808E8B) {
+        for (name, tag) in package_manager().get_named_tags_by_class(SDestination::ID.unwrap()) {
             let Ok(data) = package_manager().read_tag(tag) else {
                 continue;
             };
@@ -306,6 +309,7 @@ impl SharedState {
         let s = Self {
             strings: StringContainer::load_all_global().into(),
             strings_by_package,
+            string_container_cache: RwLock::new(HashMap::default()),
             config: RwLock::new(AppConfig::default()),
             renderer,
         };
@@ -346,5 +350,24 @@ impl SharedState {
             .get(package)
             .and_then(|s| s.try_get(hash))
             .unwrap_or_else(|| self.get_string(hash))
+    }
+
+    pub fn get_string_by_reference(&self, reference: &SStringReference) -> String {
+        let mut cache = self.string_container_cache.upgradable_read();
+        if let Some(container) = cache.get(&reference.string_container) {
+            return container
+                .try_get(reference.hash)
+                .unwrap_or_else(|| self.get_string(reference.hash));
+        }
+
+        let container = StringContainer::load(reference.string_container).unwrap_or_default();
+        let string = container
+            .try_get(reference.hash)
+            .unwrap_or_else(|| self.get_string(reference.hash));
+
+        cache.with_upgraded(|cache| {
+            cache.insert(reference.string_container, container);
+        });
+        string
     }
 }

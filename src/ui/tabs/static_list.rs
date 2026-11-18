@@ -20,7 +20,7 @@ use tiger_pkg::{TagHash, package_manager};
 
 use super::TabResult;
 use crate::{
-    app::SharedState,
+    app::SharedData,
     ui::{
         GuiRenderer,
         tabs::model_list::{ModelEntry, ModelListBase, ModelProvider},
@@ -32,7 +32,7 @@ pub struct StaticListTab {
 }
 
 impl StaticListTab {
-    pub fn new(renderer: &Arc<Renderer>, state: &Arc<SharedState>) -> Self {
+    pub fn new(renderer: &Arc<Renderer>, state: &Arc<SharedData>) -> Self {
         Self {
             base: ModelListBase::new(renderer, state, StaticModelProvider::new(renderer)),
         }

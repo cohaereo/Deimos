@@ -8,7 +8,7 @@ use tiger_pkg::{TagHash, package_manager};
 
 use super::TabResult;
 use crate::{
-    app::SharedState,
+    app::SharedData,
     ui::{
         colors::MARATHON_GREEN,
         tabs::{Tab, map::MapTab},
@@ -21,11 +21,11 @@ pub struct MapListTab {
     /// Indexes into `map_tags_by_package`
     current_package_index: Option<usize>,
 
-    state: Arc<SharedState>,
+    state: Arc<SharedData>,
 }
 
 impl MapListTab {
-    pub fn new(state: &Arc<SharedState>) -> Self {
+    pub fn new(state: &Arc<SharedData>) -> Self {
         let map_tags: Vec<(TagHash, String)> = package_manager()
             .get_all_by_reference(SBubbleParent::ID.unwrap())
             .into_iter()

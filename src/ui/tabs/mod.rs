@@ -18,12 +18,15 @@ use egui::Margin;
 use google_material_symbols::GoogleMaterialSymbols;
 use home::HomeTab;
 
-use crate::ui::{
-    GuiRenderer,
-    tabs::{
-        activity::ActivityTab, activity_list::ActivityListTab, entity_list::EntityListTab,
-        map::MapTab, map_list::MapListTab, model_view::ModelViewTab, settings::SettingsTab,
-        static_list::StaticListTab,
+use crate::{
+    app::SharedData,
+    ui::{
+        GuiRenderer,
+        tabs::{
+            activity::ActivityTab, activity_list::ActivityListTab, entity_list::EntityListTab,
+            map::MapTab, map_list::MapListTab, model_view::ModelViewTab, settings::SettingsTab,
+            static_list::StaticListTab,
+        },
     },
 };
 
@@ -87,7 +90,7 @@ impl Tab {
 pub struct TabViewer<'a> {
     pub added_nodes: &'a mut Vec<Tab>,
     pub renderer: &'a mut GuiRenderer,
-    pub shared_state: &'a Arc<crate::app::SharedState>,
+    pub shared_data: &'a Arc<SharedData>,
 }
 
 impl<'a> TabViewer<'a> {
@@ -101,10 +104,10 @@ impl<'a> TabViewer<'a> {
             .show(ui, |ui| {
                 ui.with_layout(egui::Layout::top_down(egui::Align::Min), |ui| match tab {
                     Tab::Home => {
-                        self.process_result(HomeTab.ui(ui, self.shared_state));
+                        self.process_result(HomeTab.ui(ui, self.shared_data));
                     }
                     Tab::Settings => {
-                        SettingsTab::ui(ui, self.shared_state);
+                        SettingsTab::ui(ui, self.shared_data);
                     }
                     Tab::EntityList(tab) => {
                         let res = tab.ui(ui, self.renderer);

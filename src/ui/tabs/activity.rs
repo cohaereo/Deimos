@@ -15,7 +15,7 @@ use tiger_parse::PackageManagerExt;
 use tiger_pkg::{TagHash, package_manager};
 
 use crate::{
-    app::SharedState,
+    app::SharedData,
     task::Task,
     ui::{
         GuiRenderer,
@@ -27,7 +27,7 @@ use crate::{
 
 pub struct ActivityTab {
     renderer: Arc<Renderer>,
-    _state: Arc<SharedState>,
+    shared: Arc<SharedData>,
     _activity: Arc<SActivity>,
     maps: Vec<ActivityMap>,
     current_map_index: usize,
@@ -38,7 +38,7 @@ pub struct ActivityTab {
 }
 
 impl ActivityTab {
-    pub fn new(state: &Arc<SharedState>, tag: TagHash, name: String) -> anyhow::Result<Self> {
+    pub fn new(shared: &Arc<SharedData>, tag: TagHash, name: String) -> anyhow::Result<Self> {
         let activity: SActivity = package_manager()
             .read_tag_struct(tag)
             .context("Failed to read SActivity")?;
@@ -49,7 +49,7 @@ impl ActivityTab {
             maps.push(ActivityMap {
                 activity: activity.clone(),
                 index: maps.len(),
-                name: state.get_string_by_package(
+                name: shared.get_string_by_package(
                     &package_manager().package_paths[&tag.pkg_id()].name,
                     map.bubble_name,
                 ),
@@ -59,19 +59,19 @@ impl ActivityTab {
             });
         }
         if let Some(map) = maps.first_mut() {
-            map.start_load(state.renderer.clone());
+            map.start_load(shared.renderer.clone(), shared.clone());
         }
 
         Ok(Self {
-            renderer: state.renderer.clone(),
-            _state: state.clone(),
+            renderer: shared.renderer.clone(),
+            shared: shared.clone(),
             _activity: activity,
             current_map_index: 0,
             maps,
             tag,
             name,
             scene: Box::new(
-                Scene::new(&state.renderer.clone(), state, Camera::default())?
+                Scene::new(&shared.renderer.clone(), shared, Camera::default())?
                     .with_controller(CameraController::new_first_person()),
             ),
         })
@@ -103,7 +103,7 @@ impl ActivityTab {
 
                             if btn.min_size(vec2(384.0, 32.0)).ui(ui).clicked() {
                                 self.current_map_index = i;
-                                map.start_load(self.renderer.clone());
+                                map.start_load(self.renderer.clone(), self.shared.clone());
                             }
                         }
                     });
@@ -177,7 +177,7 @@ struct ActivityMap {
 }
 
 impl ActivityMap {
-    fn start_load(&mut self, renderer: Arc<Renderer>) {
+    fn start_load(&mut self, renderer: Arc<Renderer>, shared: Arc<SharedData>) {
         if matches!(self.state, ActivityLoadState::Unloaded) {
             self.state = ActivityLoadState::Loading;
             let activity = self.activity.clone();
@@ -192,7 +192,7 @@ impl ActivityMap {
                     map_hash.hash32(),
                     &mut world,
                     |world, entity, pattern, data, component| {
-                        load_component(&renderer, world, entity, pattern, data, component)
+                        load_component(&renderer, &shared, world, entity, pattern, data, component)
                     },
                 )
                 .expect("Failed to load map");
@@ -203,7 +203,9 @@ impl ActivityMap {
                         activity_map.bubble_name,
                         &mut world,
                         |world, entity, pattern, data, component| {
-                            load_component(&renderer, world, entity, pattern, data, component)
+                            load_component(
+                                &renderer, &shared, world, entity, pattern, data, component,
+                            )
                         },
                     )
                 {
@@ -215,7 +217,9 @@ impl ActivityMap {
                         unk,
                         &mut world,
                         |world, entity, pattern, data, component| {
-                            load_component(&renderer, world, entity, pattern, data, component)
+                            load_component(
+                                &renderer, &shared, world, entity, pattern, data, component,
+                            )
                         },
                     ) {
                         error!(

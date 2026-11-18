@@ -9,6 +9,17 @@ use rayon::iter::{IntoParallelRefIterator, ParallelIterator};
 use tiger_parse::{tiger_type, FnvHash, PackageManagerExt, Pointer, TigerReadable};
 use tiger_pkg::{package_manager, TagHash};
 
+use crate::tag::WideHash;
+
+#[tiger_type(size = 0x20)]
+pub struct SStringReference {
+    pub hash: FnvHash,
+    pub unk4: u32,
+    pub unk8: u32,
+    pub unkc: u32,
+    pub string_container: WideHash,
+}
+
 #[derive(Debug)]
 #[tiger_type(id = 0x8080B9B8)]
 pub struct SLocalizedStrings {

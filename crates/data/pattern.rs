@@ -1,7 +1,10 @@
 use tiger_parse::{tiger_type, FnvHash, Padding, ResourcePointer, ResourcePointerWithClass};
 use tiger_pkg::TagHash;
 
-use crate::{map::SComponentDataListPtr, tag::WideHash, tfx::sequencer::SExpression};
+use crate::{
+    map::SComponentDataListPtr, strings::SStringReference, tag::WideHash,
+    tfx::sequencer::SExpression,
+};
 
 #[tiger_type(id = 0x8080BAAD)]
 pub struct SPattern {
@@ -66,4 +69,19 @@ pub struct S8080A322 {
     pub bone: FnvHash,
     pub unk4: u32,
     pub pattern: WideHash,
+}
+
+#[tiger_type(id = 0x80802975, size = 0x88)]
+pub struct SPingableComponent {
+    #[tiger(offset = 0x58)]
+    pub label: SStringReference,
+}
+
+#[tiger_type(id = 0x808035C2, size = 0x2E0)]
+pub struct SInvestmentItemPickupComponent {
+    #[tiger(offset = 0x1A0)]
+    pub action1: SStringReference,
+    pub action2: SStringReference,
+    pub action3: SStringReference,
+    pub item_id: FnvHash,
 }

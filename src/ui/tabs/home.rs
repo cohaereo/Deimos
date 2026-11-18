@@ -4,7 +4,7 @@ use egui::{TextStyle, Ui, vec2};
 use google_material_symbols::GoogleMaterialSymbols;
 
 use crate::{
-    app::SharedState,
+    app::SharedData,
     ui::{
         tabs::{
             Tab, TabResult, activity_list::ActivityListTab, entity_list::EntityListTab,
@@ -18,7 +18,7 @@ pub struct HomeTab;
 
 impl HomeTab {
     #[allow(clippy::unused_self)]
-    pub fn ui(&self, ui: &mut Ui, shared_state: &Arc<SharedState>) -> TabResult {
+    pub fn ui(&self, ui: &mut Ui, shared_data: &Arc<SharedData>) -> TabResult {
         let mut result = TabResult::Continue;
 
         #[cfg(debug_assertions)]
@@ -51,21 +51,21 @@ impl HomeTab {
                 ))
                 .clicked()
             {
-                result = TabResult::Open(Tab::ActivityList(ActivityListTab::new(shared_state)));
+                result = TabResult::Open(Tab::ActivityList(ActivityListTab::new(shared_data)));
             }
             if uis[0]
                 .d_button(format!("{} MAPS", GoogleMaterialSymbols::Map))
                 .clicked()
             {
-                result = TabResult::Open(Tab::MapList(MapListTab::new(shared_state)));
+                result = TabResult::Open(Tab::MapList(MapListTab::new(shared_data)));
             }
             if uis[0]
                 .d_button(format!("{} ENTITIES", GoogleMaterialSymbols::ChessPawn))
                 .clicked()
             {
                 result = TabResult::Open(Tab::EntityList(Box::new(EntityListTab::new(
-                    &shared_state.renderer,
-                    shared_state,
+                    &shared_data.renderer,
+                    shared_data,
                 ))));
             }
             if uis[0]
@@ -73,8 +73,8 @@ impl HomeTab {
                 .clicked()
             {
                 result = TabResult::Open(Tab::StaticList(Box::new(StaticListTab::new(
-                    &shared_state.renderer,
-                    shared_state,
+                    &shared_data.renderer,
+                    shared_data,
                 ))));
             }
 
