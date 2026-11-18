@@ -15,11 +15,11 @@ use deimos_data::{
 use glam::{Vec4, vec4};
 use itertools::Itertools;
 use tiger_parse::{FnvHash, PackageManagerExt, TigerReadable};
-use tiger_pkg::{TagHash, package_manager};
+use tiger_pkg::{TagHash, TagHash64, package_manager};
 use tracing::{debug, error, info};
 
 use crate::{
-    Label, PatternSource, TempAudioMarker, UnimplementedTigerComponent,
+    Icon, Label, PatternSource, TempAudioMarker, UnimplementedTigerComponent,
     UnimplementedTigerComponents,
     interactibles::Pingable,
     object::{ObjectChannel, ObjectChannels},
@@ -37,7 +37,7 @@ macro_rules! once {
 
 pub fn spawn_pattern<F>(
     world: &mut hecs::World,
-    pattern_tag: TagHash,
+    pattern_tag: WideHash,
     map_data_list: Option<&SComponentDataListPtr>,
     transform: Option<Transform>,
     callback: F,
@@ -56,7 +56,7 @@ where
 
 fn spawn_pattern_internal<F>(
     world: &mut hecs::World,
-    pattern_tag: TagHash,
+    pattern_tag: WideHash,
     map_data_list: Option<&SComponentDataListPtr>,
     transform: Option<Transform>,
     callback: &F,
@@ -82,6 +82,11 @@ where
         Some(pattern_tag),
     )?;
 
+    // TODO(cohae): This *probably* shouldn't be hardcoded, but I cant find a good way to single out the outpost destroyed wing fuses, and they aren't labeled.
+    if pattern_tag == WideHash::Hash64(TagHash64(0xE8034792E3E80000)) {
+        world.insert(e, (Label("Destroyed Wing Fuse".to_string()), Icon("fuse")))?;
+    }
+
     Ok(e)
 }
 
@@ -91,7 +96,7 @@ pub fn spawn_pattern_from_header<F>(
     map_data_list: Option<&SComponentDataListPtr>,
     transform: Option<Transform>,
     callback: &F,
-    pattern_tag: Option<TagHash>,
+    pattern_tag: Option<WideHash>,
 ) -> anyhow::Result<hecs::Entity>
 where
     F: Fn(
@@ -108,7 +113,12 @@ where
     }
 
     if let Some(pattern_tag) = pattern_tag {
-        world.insert_one(entity, PatternSource { tag: pattern_tag })?;
+        world.insert_one(
+            entity,
+            PatternSource {
+                tag: pattern_tag.hash32(),
+            },
+        )?;
     }
     // if let Some(ps) = pattern_tag {
     //     world.insert_one(entity, Label(format!("Unknown {}", ps)))?;
@@ -255,16 +265,10 @@ where
                             continue;
                         }
 
-                        spawn_pattern_internal(
-                            world,
-                            u2.pattern.hash32(),
-                            None,
-                            transform,
-                            callback,
-                        )
-                        .with_context(|| {
-                            format!("failed to spawn attached pattern for bone {:08X}", u2.bone)
-                        })?;
+                        spawn_pattern_internal(world, u2.pattern, None, transform, callback)
+                            .with_context(|| {
+                                format!("failed to spawn attached pattern for bone {:08X}", u2.bone)
+                            })?;
                     }
                 }
             }
@@ -280,7 +284,7 @@ where
                     if Some(entry.reference) == SPattern::ID
                         && loaded_patterns.insert(taghash.hash32())
                     {
-                        spawn_pattern_internal(world, taghash.hash32(), None, None, callback)?;
+                        spawn_pattern_internal(world, taghash, None, None, callback)?;
                     }
                 }
                 info!(

@@ -58,7 +58,7 @@ impl Tab {
             | Self::ActivityList(_)
             | Self::EntityList(_)
             | Self::StaticList(_) => 0,
-            Self::ModelView(tab) => tab.tag.0 as u64,
+            Self::ModelView(tab) => tab.tag.key(),
             Self::Map(tab) => tab.tag.0 as u64,
             Self::Activity(tab) => tab.tag.0 as u64,
             // Tab::TestScene(_) => 0,

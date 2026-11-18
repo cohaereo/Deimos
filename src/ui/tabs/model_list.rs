@@ -1,6 +1,6 @@
 use std::{str::FromStr, sync::Arc, time::Instant};
 
-use deimos_data::tfx::geometry::AxisAlignedBBox;
+use deimos_data::{tag::WideHash, tfx::geometry::AxisAlignedBBox};
 use deimos_ecs::object::{self, OPTION_KEY_INVALID, ObjectChannels, PermutationConfig};
 use deimos_render::{
     camera::{Camera, CameraProjection},
@@ -790,7 +790,7 @@ impl<P: ModelProvider> ModelListBase<P> {
                                     match ModelViewTab::new_pattern(
                                         &self.renderer,
                                         &self.shared,
-                                        model.hash,
+                                        model.hash.into(),
                                     ) {
                                         Ok(o) => {
                                             result = TabResult::Open(
@@ -814,7 +814,10 @@ impl<P: ModelProvider> ModelListBase<P> {
                 });
 
             if let Some(model_hash) = load_model {
-                match self.provider.load_model(model_hash, &mut self.scene.world) {
+                match self
+                    .provider
+                    .load_model(model_hash.into(), &mut self.scene.world)
+                {
                     Ok(_entity) => {
                         let bb = self
                             .scene
@@ -855,7 +858,7 @@ pub trait ModelProvider {
 
     fn num_models(&self, pkg_id: u16) -> usize;
 
-    fn load_model(&mut self, hash: TagHash, world: &mut hecs::World) -> anyhow::Result<Entity>;
+    fn load_model(&mut self, hash: WideHash, world: &mut hecs::World) -> anyhow::Result<Entity>;
     fn load_package(&mut self, pkg_id: u16);
     fn unload_package(&mut self, pkg_id: u16);
 }

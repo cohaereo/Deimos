@@ -205,3 +205,11 @@ pub fn format_bytes(bytes: usize) -> String {
 
     format!("{:.2} {}", bytes, units[unit_index])
 }
+
+pub fn remap(value: f32, min: f32, max: f32) -> f32 {
+    (value - min) / (max - min).clamp(0.0, f32::MAX)
+}
+
+pub fn step(value: f32, step: f32) -> f32 {
+    (value / step).round() * step
+}

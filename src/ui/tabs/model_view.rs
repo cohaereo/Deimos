@@ -1,5 +1,6 @@
 use std::sync::Arc;
 
+use deimos_data::tag::WideHash;
 use deimos_ecs::world::pattern::spawn_pattern;
 use deimos_render::{camera::Camera, renderer::Renderer};
 use egui::{Color32, Rect, Vec2, vec2};
@@ -19,7 +20,7 @@ use crate::{
 };
 
 pub struct ModelViewTab {
-    pub tag: TagHash,
+    pub tag: WideHash,
     load_task: Task<hecs::World>,
     scene: Box<Scene>,
 
@@ -30,7 +31,7 @@ impl ModelViewTab {
     pub fn new_pattern(
         renderer: &Arc<Renderer>,
         shared: &Arc<SharedData>,
-        tag: TagHash,
+        tag: WideHash,
     ) -> anyhow::Result<Self> {
         let renderer_clone = renderer.clone();
         let shared_clone = shared.clone();

@@ -359,7 +359,7 @@ pub fn load_component(
                     bb,
                     // shadowmap,
                     Icon("light"),
-                    Label(format!("Deferred Light {}", data.light.taghash())),
+                    // Label(format!("Deferred Light {}", data.light.taghash())),
                 ),
             )?;
         }
@@ -432,7 +432,31 @@ pub fn load_component(
             let ping: SPingableComponent =
                 TigerReadable::read_ds(&mut cur).context("while reading pingable component")?;
 
-            world.insert_one(entity, Label(shared.get_string_by_reference(&ping.label)))?;
+            let label = shared.get_string_by_reference(&ping.label);
+            match label.to_lowercase().as_str() {
+                "claymore mine" => world.insert_one(entity, Icon("claymore"))?,
+                "door" => world.insert_one(entity, Icon("door"))?,
+                "locked door" => world.insert_one(entity, Icon("door_locked"))?,
+                "vent" => world.insert_one(entity, Icon("vent"))?,
+                "tad" => world.insert_one(entity, Icon("radar"))?,
+                "exfil site" => world.insert_one(entity, Icon("exfil"))?,
+                "skrac flock" => world.insert_one(entity, Icon("skrac"))?,
+                "felini unit" => world.insert_one(entity, Icon("felini"))?,
+                "uesc dropship" => world.insert_one(entity, Icon("uesc_ship"))?,
+                "uesc teleporter" => world.insert_one(entity, Icon("uesc_teleporter"))?,
+                "contract objective" => world.insert_one(entity, Icon("goal"))?,
+                "tick nest" => world.insert_one(entity, Icon("tick"))?,
+                "panel" => world.insert_one(entity, Icon("panel"))?,
+                "proximity drone" => world.insert_one(entity, Icon("proximity_drone"))?,
+                "folio" | "trunk" | "high-end strongbox" | "crash cart" | "foot locker"
+                | "arms locker" | "core storage" | "coffer" | "bioprinter" | "cache duffel"
+                | "cache case" | "cache" | "uesc crate" | "munitions crate" | "medical cabinet"
+                | "tool cart" | "pinnacle strongbox" | "wall safe" | "strongbox" => {
+                    world.insert_one(entity, Icon("treasure_chest"))?;
+                }
+                _ => {}
+            }
+            world.insert_one(entity, Label(label))?;
             world.insert_one(entity, ping)?;
         }
         0x808035BF => {
@@ -453,6 +477,18 @@ pub fn load_component(
                 entity,
                 Label(item_str.unwrap_or_else(|| format!("Unknown Item {:08X}", item.item_id))),
             )?;
+            match item.item_id {
+                // quest.dynamic_events.outpost.v100.scavenger_hunt_key_a
+                0xAC2AD1E5 => world.insert_one(entity, Icon("outpost_key_1"))?,
+                // quest.dynamic_events.outpost.v100.scavenger_hunt_key_b
+                0xAC2AD1E6 => world.insert_one(entity, Icon("outpost_key_2"))?,
+                // quest.dynamic_events.outpost.v100.scavenger_hunt_key_c
+                0xAC2AD1E7 => world.insert_one(entity, Icon("outpost_key_3"))?,
+                // quest.run_objectives.cryo.vault_objectives.security_item0
+                0x0EB57CAD => world.insert_one(entity, Icon("cryo_clearance_key"))?,
+                0x792d2837 => world.insert_one(entity, Icon("battery"))?,
+                _ => {}
+            }
             world.insert_one(entity, item)?;
         }
         _u => return Ok(ComponentLoadResult::Skipped),

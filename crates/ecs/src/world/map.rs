@@ -272,7 +272,7 @@ where
 
         if let Err(e) = spawn_pattern(
             world,
-            node.entity.hash32(),
+            node.entity,
             Some(&node.component_data),
             Some(transform),
             callback,

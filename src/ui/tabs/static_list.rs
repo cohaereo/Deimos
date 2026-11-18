@@ -1,9 +1,12 @@
 use std::{collections::BTreeMap, sync::Arc};
 
 use anyhow::Context;
-use deimos_data::tfx::{
-    TfxFeatureRenderer,
-    features::statics::{SStaticInstanceTransform, SStaticMesh},
+use deimos_data::{
+    tag::WideHash,
+    tfx::{
+        TfxFeatureRenderer,
+        features::statics::{SStaticInstanceTransform, SStaticMesh},
+    },
 };
 use deimos_ecs::transform::Transform;
 use deimos_render::{
@@ -103,8 +106,9 @@ impl ModelProvider for StaticModelProvider {
             .map_or(0, |&(_, num_models)| num_models)
     }
 
-    fn load_model(&mut self, hash: TagHash, world: &mut hecs::World) -> anyhow::Result<Entity> {
-        load_static_mesh(&self.renderer, hash, world).context("Failed to load static model")
+    fn load_model(&mut self, hash: WideHash, world: &mut hecs::World) -> anyhow::Result<Entity> {
+        load_static_mesh(&self.renderer, hash.hash32(), world)
+            .context("Failed to load static model")
     }
 
     fn load_package(&mut self, pkg_id: u16) {

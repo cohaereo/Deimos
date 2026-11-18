@@ -20,5 +20,7 @@ pub struct PatternSource {
 
 pub struct TempAudioMarker;
 
+#[derive(Clone)]
 pub struct Icon(pub &'static str);
+#[derive(Clone)]
 pub struct Label(pub String);

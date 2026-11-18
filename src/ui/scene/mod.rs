@@ -1,4 +1,5 @@
 use std::{
+    ops::Range,
     sync::{Arc, atomic::Ordering},
     time::Instant,
 };
@@ -37,7 +38,7 @@ use crate::{
     ui::{
         GuiRenderer, icons,
         scene::controller::CameraController,
-        util::{ExternalDataWidgetExt, UiExt, format_bytes},
+        util::{ExternalDataWidgetExt, UiExt, format_bytes, remap, step},
     },
 };
 
@@ -837,18 +838,57 @@ impl Scene {
     }
 
     fn draw_gizmos(&self, ui: &Ui, viewport_rect: Rect) {
+        const SHRINK_RANGE: Range<f32> = 25.0..200.0;
+        const FADE_RANGE: Range<f32> = 25.0..150.0;
+
+        let mut gizmos = vec![];
+
         for (_entity, (transform, icon, label)) in
             &mut self.world.query::<(&Transform, Option<&Icon>, &Label)>()
         {
+            let distance = self.camera.position.distance(transform.translation);
+            if distance > SHRINK_RANGE.end {
+                continue;
+            }
+
+            gizmos.push((
+                distance,
+                transform.translation,
+                icon.cloned(),
+                label.clone(),
+            ));
+        }
+
+        gizmos.sort_by(|a, b| b.0.partial_cmp(&a.0).unwrap_or(std::cmp::Ordering::Equal));
+
+        for (distance, position, icon, label) in gizmos {
             let icon = match icon {
                 Some(Icon("light")) => icons::LIGHT,
+                Some(Icon("outpost_key_1")) => icons::OUTPOST_KEY_1,
+                Some(Icon("outpost_key_2")) => icons::OUTPOST_KEY_2,
+                Some(Icon("outpost_key_3")) => icons::OUTPOST_KEY_3,
+                Some(Icon("door")) => icons::DOOR,
+                Some(Icon("door_locked")) => icons::DOOR_LOCKED,
+                Some(Icon("goal")) => icons::GOAL,
+                Some(Icon("tick")) => icons::TICK,
+                Some(Icon("panel")) => icons::PANEL,
+                Some(Icon("proximity_drone")) => icons::PROXIMITY_DRONE,
+                Some(Icon("uesc_teleporter")) => icons::UESC_TELEPORTER,
+                Some(Icon("vent")) => icons::VENT,
+                Some(Icon("claymore")) => icons::CLAYMORE,
+                Some(Icon("exfil")) => icons::EXFIL,
+                Some(Icon("felini")) => icons::FELINI,
+                Some(Icon("skrac")) => icons::SKRAC,
+                Some(Icon("uesc_ship")) => icons::UESC_SHIP,
+                Some(Icon("cryo_clearance_key")) => icons::CRYO_CLEARANCE_KEY,
+                Some(Icon("battery")) => icons::BATTERY,
+                Some(Icon("treasure_chest")) => icons::TREASURE_CHEST,
+                Some(Icon("radar")) => icons::RADAR,
+                Some(Icon("fuse")) => icons::FUSE,
                 _ => icons::UNKNOWN,
             };
 
-            let clip_pos = self
-                .camera
-                .world_to_projective
-                .project_point3(transform.translation);
+            let clip_pos = self.camera.world_to_projective.project_point3(position);
             if clip_pos.z <= 0.0 {
                 continue;
             }
@@ -861,15 +901,73 @@ impl Scene {
             );
 
             if viewport_rect.contains(screen_pos) {
-                egui::Image::new(icon)
-                    .paint_at(ui, Rect::from_center_size(screen_pos, vec2(32.0, 32.0)));
+                let scale =
+                    1.0 - remap(distance, SHRINK_RANGE.start, SHRINK_RANGE.end).clamp(0.0, 1.0);
+                // cohae: scale is highly variable, and each unique FontId is rendered out separately. Limit to a reasonable number to prevent slowdowns by snapping the scale
+                let font_scale = step(scale, 0.05);
 
+                let alpha_raw = remap(distance, FADE_RANGE.start, FADE_RANGE.end).clamp(0.0, 1.0);
+                // let alpha_f32 = 1.0 - (alpha_raw * alpha_raw).clamp(0.0, 1.0);
+                let alpha_f32 = 1.0 - alpha_raw.clamp(0.0, 1.0);
+                let alpha = ((alpha_f32 * alpha_f32) * 255.0) as u8;
+
+                let font_id = egui::FontId::proportional(16.0 * font_scale);
+                let text_pos = screen_pos + vec2(20.0, 0.0) * scale;
+
+                let text_rect = ui
+                    .painter()
+                    .layout(
+                        label.0.clone(),
+                        font_id.clone(),
+                        Color32::WHITE,
+                        f32::INFINITY,
+                    )
+                    .rect;
+
+                // ui.painter().rect_filled(
+                //     Rect::from_center_size(
+                //         text_pos + vec2(text_rect.center().x - 16.0, 0.0),
+                //         vec2(text_rect.width(), 16.0 * scale),
+                //     )
+                //     .expand2(vec2(22.0, 8.0)),
+                //     2,
+                //     Color32::from_black_alpha((alpha as f32 * 0.8) as u8),
+                // );
+
+                // Icon Shadow
+                egui::Image::new(icon.clone())
+                    .tint(Color32::from_black_alpha(alpha))
+                    .paint_at(
+                        ui,
+                        Rect::from_center_size(
+                            screen_pos + vec2(2.0, 2.0),
+                            vec2(32.0, 32.0) * scale,
+                        ),
+                    );
+
+                // Icon Color
+                egui::Image::new(icon)
+                    .tint(Color32::from_white_alpha(alpha))
+                    .paint_at(
+                        ui,
+                        Rect::from_center_size(screen_pos, vec2(32.0, 32.0) * scale),
+                    );
+
+                // Text Shadow
                 ui.painter().text(
-                    screen_pos + vec2(20.0, 0.0),
+                    text_pos + vec2(2.0, 2.0),
                     egui::Align2::LEFT_CENTER,
                     &label.0,
-                    egui::FontId::proportional(16.0),
-                    egui::Color32::WHITE,
+                    egui::FontId::proportional(16.0 * font_scale),
+                    Color32::from_black_alpha(alpha),
+                );
+                // Text
+                ui.painter().text(
+                    text_pos,
+                    egui::Align2::LEFT_CENTER,
+                    &label.0,
+                    font_id,
+                    Color32::from_white_alpha(alpha),
                 );
             }
         }

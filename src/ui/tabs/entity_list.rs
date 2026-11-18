@@ -3,7 +3,7 @@ use std::{collections::BTreeMap, sync::Arc};
 use deimos_data::{
     map::ComponentData,
     pattern::{SComponent, SPattern},
-    tag::TagRef,
+    tag::{TagRef, WideHash},
 };
 use deimos_ecs::{
     transform::Transform,
@@ -108,7 +108,7 @@ impl ModelProvider for EntityModelProvider {
 
     fn load_model(
         &mut self,
-        hash: TagHash,
+        hash: WideHash,
         world: &mut hecs::World,
     ) -> anyhow::Result<hecs::Entity> {
         let shared = self.shared.clone();
@@ -172,7 +172,7 @@ impl ModelProvider for EntityModelProvider {
                             None,
                             Some(Transform::default()),
                             &cb,
-                            Some(hash),
+                            Some(hash.into()),
                         ) {
                             error!("Failed to load pattern {hash}: {e:?}");
                         }
