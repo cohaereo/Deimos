@@ -46,6 +46,7 @@ tracing = { version = "0.1" }
 deimos-core = { path = "./crates/core" }
 deimos-data = { path = "./crates/data" }
 deimos-ecs = { path = "./crates/ecs" }
+deimos-investment = { path = "./crates/investment" }
 deimos-render = { path = "./crates/render" }
 egui-sdl3-platform = { path = "./crates/egui-sdl3-platform" }
 umbra = { path = "./crates/umbra3" }

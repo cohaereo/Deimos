@@ -5,8 +5,9 @@ use crate::{
     tag::{TagRef, WideHash},
 };
 
-#[tiger_type(id = 0x80806408, size = 0xD58)]
+#[tiger_type(id = 0x80806408, size = 0xE18)]
 pub struct SInvestmentGlobals {
+    pub file_size: u64,
     #[tiger(offset = 0x6D0)]
     pub items: TagRef<SInvestmentItemTable>,
     #[tiger(offset = 0x898)]

@@ -767,6 +767,7 @@ dependencies = [
  "deimos-core",
  "deimos-data",
  "deimos-ecs",
+ "deimos-investment",
  "deimos-render",
  "egui",
  "egui-ash-renderer",
@@ -849,6 +850,7 @@ dependencies = [
 name = "deimos-investment"
 version = "0.0.0"
 dependencies = [
+ "ahash",
  "anyhow",
  "deimos-core",
  "deimos-data",

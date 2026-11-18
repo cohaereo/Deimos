@@ -18,6 +18,7 @@ use deimos_data::{
     strings::{SStringReference, StringContainer, StringContainerShared},
     tag::WideHash,
 };
+use deimos_investment::Investment;
 use deimos_render::{
     gpu::{Gpu, PresentStatus},
     renderer::Renderer,
@@ -282,6 +283,7 @@ impl Drop for App {
 }
 
 pub struct SharedData {
+    pub investment: Investment,
     pub strings: StringContainerShared,
     pub strings_by_package: HashMap<String, StringContainer>,
     string_container_cache: RwLock<HashMap<WideHash, StringContainer>>,
@@ -307,6 +309,7 @@ impl SharedData {
         }
 
         let s = Self {
+            investment: Investment::load().context("Failed to load investment data")?,
             strings: StringContainer::load_all_global().into(),
             strings_by_package,
             string_container_cache: RwLock::new(HashMap::default()),

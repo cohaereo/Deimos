@@ -1,6 +1,7 @@
+use ahash::HashMap;
 use anyhow::Context;
 use deimos_data::{
-    investment::{SIndexedString, globals::SInvestmentGlobals},
+    investment::{SIndexedString, globals::SInvestmentGlobals, item::SInvestmentItem},
     strings::StringContainer,
 };
 use tiger_parse::{PackageManagerExt, TigerReadable};
@@ -10,6 +11,7 @@ pub struct Investment {
     pub globals: SInvestmentGlobals,
 
     string_tables: Vec<StringContainer>,
+    item_id_to_index: HashMap<u32, u16>,
 }
 
 impl Investment {
@@ -27,9 +29,15 @@ impl Investment {
             strings.push(string_table);
         }
 
+        let mut item_id_to_index = HashMap::default();
+        for (index, item) in globals.items.table.iter().enumerate() {
+            item_id_to_index.insert(item.id, index as u16);
+        }
+
         Ok(Self {
             globals,
             string_tables: strings,
+            item_id_to_index,
         })
     }
 
@@ -37,5 +45,11 @@ impl Investment {
         self.string_tables
             .get(index.table_index as usize)?
             .try_get(index.string_id)
+    }
+
+    pub fn get_item(&self, item_id: u32) -> Option<&SInvestmentItem> {
+        self.item_id_to_index
+            .get(&item_id)
+            .and_then(|&index| self.globals.items.table.get(index as usize))
     }
 }

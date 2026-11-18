@@ -441,6 +441,18 @@ pub fn load_component(
             let item: SInvestmentItemPickupComponent = TigerReadable::read_ds(&mut cur)
                 .context("while reading investment item pickup component")?;
 
+            let item_str = if let Some(item) = shared.investment.get_item(item.item_id) {
+                shared
+                    .investment
+                    .get_string(item.definition.display_properties.name)
+            } else {
+                None
+            };
+
+            world.insert_one(
+                entity,
+                Label(item_str.unwrap_or_else(|| format!("Unknown Item {:08X}", item.item_id))),
+            )?;
             world.insert_one(entity, item)?;
         }
         _u => return Ok(ComponentLoadResult::Skipped),
