@@ -933,6 +933,7 @@ impl SceneRenderer {
                 (
                     ViewVisibility {
                         enabled: true,
+                        lods_enabled: false,
                         position: Vec3::ZERO,
                         far_plane: 500.0,
                         culling_frustum: shadow_view.frustum.clone(),
@@ -1032,6 +1033,7 @@ impl SceneRenderer {
                 (
                     ViewVisibility {
                         enabled: true,
+                        lods_enabled: false,
                         position: Vec3::ZERO,
                         far_plane: shadow_view.far_plane,
                         culling_frustum: shadow_view.frustum.clone(),

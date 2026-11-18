@@ -7,6 +7,7 @@ pub mod frustum;
 pub struct ViewVisibility {
     /// If false, visibility checks will always return true.
     pub enabled: bool,
+    pub lods_enabled: bool,
     pub position: glam::Vec3,
     pub far_plane: f32,
     pub culling_frustum: frustum::Frustum,

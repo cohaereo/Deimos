@@ -19,3 +19,6 @@ pub struct PatternSource {
 }
 
 pub struct TempAudioMarker;
+
+pub struct Icon(pub &'static str);
+pub struct Label(pub String);

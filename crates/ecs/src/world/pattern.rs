@@ -19,7 +19,8 @@ use tiger_pkg::{TagHash, package_manager};
 use tracing::{debug, error, info};
 
 use crate::{
-    PatternSource, TempAudioMarker, UnimplementedTigerComponent, UnimplementedTigerComponents,
+    Label, PatternSource, TempAudioMarker, UnimplementedTigerComponent,
+    UnimplementedTigerComponents,
     interactibles::Pingable,
     object::{ObjectChannel, ObjectChannels},
     transform::Transform,
@@ -72,9 +73,14 @@ where
     let header = package_manager()
         .read_tag_struct::<SPattern>(pattern_tag)
         .context("Failed to read SPattern")?;
-    let e = spawn_pattern_from_header(world, &header, map_data_list, transform, callback)?;
-
-    world.insert_one(e, PatternSource { tag: pattern_tag });
+    let e = spawn_pattern_from_header(
+        world,
+        &header,
+        map_data_list,
+        transform,
+        callback,
+        Some(pattern_tag),
+    )?;
 
     Ok(e)
 }
@@ -85,6 +91,7 @@ pub fn spawn_pattern_from_header<F>(
     map_data_list: Option<&SComponentDataListPtr>,
     transform: Option<Transform>,
     callback: &F,
+    pattern_tag: Option<TagHash>,
 ) -> anyhow::Result<hecs::Entity>
 where
     F: Fn(
@@ -99,6 +106,13 @@ where
     if let Some(transform) = transform {
         world.insert_one(entity, transform)?;
     }
+
+    if let Some(pattern_tag) = pattern_tag {
+        world.insert_one(entity, PatternSource { tag: pattern_tag })?;
+    }
+    // if let Some(ps) = pattern_tag {
+    //     world.insert_one(entity, Label(format!("Unknown {}", ps)))?;
+    // }
 
     for e in &header.components {
         let mut cur = Cursor::new(package_manager().read_tag(e.component)?);

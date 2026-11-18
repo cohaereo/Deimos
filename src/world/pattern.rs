@@ -18,7 +18,7 @@ use deimos_data::{
     },
 };
 use deimos_ecs::{
-    object::PermutationConfig, transform::Transform, world::map::ComponentLoadResult,
+    Icon, Label, object::PermutationConfig, transform::Transform, world::map::ComponentLoadResult,
 };
 use deimos_render::{
     ecs::render_objects::{DynamicRenderObject, StaticRenderObject},
@@ -33,8 +33,6 @@ use glam::{Vec3, Vec4Swizzles};
 use itertools::multizip;
 use tiger_parse::{PackageManagerExt, TigerReadable};
 use tiger_pkg::package_manager;
-
-use crate::world::{Icon, Label};
 
 #[macro_export]
 macro_rules! once {

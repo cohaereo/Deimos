@@ -8,7 +8,7 @@ use deimos_data::tfx::{
     FeatureRendererSubscription, features::dynamic::RenderStageSubscription,
     geometry::AxisAlignedBBox,
 };
-use deimos_ecs::transform::Transform;
+use deimos_ecs::{Icon, Label, transform::Transform};
 use deimos_render::{
     camera::{Camera, CameraProjection},
     ecs::{s_extract_frame_packet, s_update_object_channels, s_visibility_test},
@@ -39,7 +39,6 @@ use crate::{
         scene::controller::CameraController,
         util::{ExternalDataWidgetExt, UiExt, format_bytes},
     },
-    world::{Icon, Label},
 };
 
 pub mod controller;
@@ -795,7 +794,8 @@ impl Scene {
 
         let is_orthographic = matches!(self.camera.projection, CameraProjection::Orthographic);
         let vis = ViewVisibility {
-            enabled: !is_orthographic,
+            enabled: true,
+            lods_enabled: !is_orthographic,
             culling_frustum: self.camera.culling_frustum.clone(),
             far_plane: Camera::FAR,
             position: self.camera.position,

@@ -474,12 +474,13 @@ impl FeatureRenderer for DynamicModel {
         let (scale, _, _) = data.local_to_world.to_scale_rotation_translation();
         let center = data.local_to_world.transform_point3(center);
         let radius = radius * scale.max_element();
-        let lod = if LOD_ENABLED.load(std::sync::atomic::Ordering::Relaxed) {
-            lod_for_sphere(center, radius, visibility.position, self.max_lod)
-                .clamp(self.min_lod, self.max_lod)
-        } else {
-            self.min_lod
-        };
+        let lod =
+            if LOD_ENABLED.load(std::sync::atomic::Ordering::Relaxed) && visibility.lods_enabled {
+                lod_for_sphere(center, radius, visibility.position, self.max_lod)
+                    .clamp(self.min_lod, self.max_lod)
+            } else {
+                self.min_lod
+            };
 
         submit_node_blocks.broadcast(
             self.subscribed_stages & visibility.render_stages,
