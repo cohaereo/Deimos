@@ -7,13 +7,13 @@ use crate::{
 
 #[tiger_type(id = 0x80806408, size = 0xD58)]
 pub struct SInvestmentGlobals {
-    #[tiger(offset = 0x658)]
+    #[tiger(offset = 0x6D0)]
     pub items: TagRef<SInvestmentItemTable>,
-    #[tiger(offset = 0x808)]
+    #[tiger(offset = 0x898)]
     pub codex: TagRef<S808029D1>,
-    #[tiger(offset = 0xBC8)]
+    #[tiger(offset = 0xC70)]
     pub traits: TagRef<SInvestmentTraitTable>,
-    #[tiger(offset = 0xC58)]
+    #[tiger(offset = 0xD00)]
     pub string_tables: TagRef<SInvestmentStringTables>,
 }
 
