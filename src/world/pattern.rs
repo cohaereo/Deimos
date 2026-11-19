@@ -487,6 +487,7 @@ pub fn load_component(
                 // quest.run_objectives.cryo.vault_objectives.security_item0
                 0x0EB57CAD => world.insert_one(entity, Icon("cryo_clearance_key"))?,
                 0x792d2837 => world.insert_one(entity, Icon("battery"))?,
+                0xFAD39BB3 => world.insert_one(entity, Icon("conveyance_request"))?,
                 _ => {}
             }
             world.insert_one(entity, item)?;

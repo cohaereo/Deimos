@@ -4,6 +4,7 @@ use std::{
     time::Instant,
 };
 
+use ahash::{HashMap, HashSet};
 use ash::vk;
 use deimos_data::tfx::{
     FeatureRendererSubscription, features::dynamic::RenderStageSubscription,
@@ -74,6 +75,9 @@ pub struct Scene {
     show_channel_editor: bool,
     only_show_used_channels: bool,
     draw_gizmos: bool,
+    draw_gizmo_labels: bool,
+    gizmos_fade: bool,
+    hidden_gizmos: HashSet<String>,
 
     umbra_enabled: bool,
     umbra_result: QueryErrorCode,
@@ -114,6 +118,9 @@ impl Scene {
             show_channel_editor: false,
             only_show_used_channels: true,
             draw_gizmos: false,
+            draw_gizmo_labels: true,
+            gizmos_fade: true,
+            hidden_gizmos: HashSet::default(),
 
             umbra_result: QueryErrorCode::Ok,
             umbra_enabled: true,
@@ -173,6 +180,14 @@ impl Scene {
             egui::Panel::right("channel_editor").show(ui, |ui| {
                 self.show_channel_editor(ui);
             });
+        }
+
+        if self.draw_gizmos {
+            egui::Panel::right("gizmo_list")
+                .default_size(512.0)
+                .show(ui, |ui| {
+                    self.show_gizmo_list(ui);
+                });
         }
 
         egui::CentralPanel::default()
@@ -847,7 +862,11 @@ impl Scene {
             &mut self.world.query::<(&Transform, Option<&Icon>, &Label)>()
         {
             let distance = self.camera.position.distance(transform.translation);
-            if distance > SHRINK_RANGE.end {
+            if distance > SHRINK_RANGE.end && self.gizmos_fade {
+                continue;
+            }
+
+            if self.hidden_gizmos.contains(&label.0) {
                 continue;
             }
 
@@ -862,31 +881,7 @@ impl Scene {
         gizmos.sort_by(|a, b| b.0.partial_cmp(&a.0).unwrap_or(std::cmp::Ordering::Equal));
 
         for (distance, position, icon, label) in gizmos {
-            let icon = match icon {
-                Some(Icon("light")) => icons::LIGHT,
-                Some(Icon("outpost_key_1")) => icons::OUTPOST_KEY_1,
-                Some(Icon("outpost_key_2")) => icons::OUTPOST_KEY_2,
-                Some(Icon("outpost_key_3")) => icons::OUTPOST_KEY_3,
-                Some(Icon("door")) => icons::DOOR,
-                Some(Icon("door_locked")) => icons::DOOR_LOCKED,
-                Some(Icon("goal")) => icons::GOAL,
-                Some(Icon("tick")) => icons::TICK,
-                Some(Icon("panel")) => icons::PANEL,
-                Some(Icon("proximity_drone")) => icons::PROXIMITY_DRONE,
-                Some(Icon("uesc_teleporter")) => icons::UESC_TELEPORTER,
-                Some(Icon("vent")) => icons::VENT,
-                Some(Icon("claymore")) => icons::CLAYMORE,
-                Some(Icon("exfil")) => icons::EXFIL,
-                Some(Icon("felini")) => icons::FELINI,
-                Some(Icon("skrac")) => icons::SKRAC,
-                Some(Icon("uesc_ship")) => icons::UESC_SHIP,
-                Some(Icon("cryo_clearance_key")) => icons::CRYO_CLEARANCE_KEY,
-                Some(Icon("battery")) => icons::BATTERY,
-                Some(Icon("treasure_chest")) => icons::TREASURE_CHEST,
-                Some(Icon("radar")) => icons::RADAR,
-                Some(Icon("fuse")) => icons::FUSE,
-                _ => icons::UNKNOWN,
-            };
+            let icon = icon.map_or(icons::UNKNOWN, |i| icons::from_name(i.0));
 
             let clip_pos = self.camera.world_to_projective.project_point3(position);
             if clip_pos.z <= 0.0 {
@@ -901,28 +896,35 @@ impl Scene {
             );
 
             if viewport_rect.contains(screen_pos) {
-                let scale =
-                    1.0 - remap(distance, SHRINK_RANGE.start, SHRINK_RANGE.end).clamp(0.0, 1.0);
-                // cohae: scale is highly variable, and each unique FontId is rendered out separately. Limit to a reasonable number to prevent slowdowns by snapping the scale
-                let font_scale = step(scale, 0.05);
+                let (scale, font_scale, alpha) = if self.gizmos_fade {
+                    let scale =
+                        1.0 - remap(distance, SHRINK_RANGE.start, SHRINK_RANGE.end).clamp(0.0, 1.0);
+                    // cohae: scale is highly variable, and each unique FontId is rendered out separately. Limit to a reasonable number to prevent slowdowns by snapping the scale
+                    let font_scale = step(scale, 0.05);
 
-                let alpha_raw = remap(distance, FADE_RANGE.start, FADE_RANGE.end).clamp(0.0, 1.0);
-                // let alpha_f32 = 1.0 - (alpha_raw * alpha_raw).clamp(0.0, 1.0);
-                let alpha_f32 = 1.0 - alpha_raw.clamp(0.0, 1.0);
-                let alpha = ((alpha_f32 * alpha_f32) * 255.0) as u8;
+                    let alpha_raw =
+                        remap(distance, FADE_RANGE.start, FADE_RANGE.end).clamp(0.0, 1.0);
+                    // let alpha_f32 = 1.0 - (alpha_raw * alpha_raw).clamp(0.0, 1.0);
+                    let alpha_f32 = 1.0 - alpha_raw.clamp(0.0, 1.0);
+                    let alpha = ((alpha_f32 * alpha_f32) * 255.0) as u8;
+
+                    (scale, font_scale, alpha)
+                } else {
+                    (1.0, 1.0, 255)
+                };
 
                 let font_id = egui::FontId::proportional(16.0 * font_scale);
                 let text_pos = screen_pos + vec2(20.0, 0.0) * scale;
 
-                let text_rect = ui
-                    .painter()
-                    .layout(
-                        label.0.clone(),
-                        font_id.clone(),
-                        Color32::WHITE,
-                        f32::INFINITY,
-                    )
-                    .rect;
+                // let text_rect = ui
+                //     .painter()
+                //     .layout(
+                //         label.0.clone(),
+                //         font_id.clone(),
+                //         Color32::WHITE,
+                //         f32::INFINITY,
+                //     )
+                //     .rect;
 
                 // ui.painter().rect_filled(
                 //     Rect::from_center_size(
@@ -953,22 +955,24 @@ impl Scene {
                         Rect::from_center_size(screen_pos, vec2(32.0, 32.0) * scale),
                     );
 
-                // Text Shadow
-                ui.painter().text(
-                    text_pos + vec2(2.0, 2.0),
-                    egui::Align2::LEFT_CENTER,
-                    &label.0,
-                    egui::FontId::proportional(16.0 * font_scale),
-                    Color32::from_black_alpha(alpha),
-                );
-                // Text
-                ui.painter().text(
-                    text_pos,
-                    egui::Align2::LEFT_CENTER,
-                    &label.0,
-                    font_id,
-                    Color32::from_white_alpha(alpha),
-                );
+                if self.draw_gizmo_labels {
+                    // Text Shadow
+                    ui.painter().text(
+                        text_pos + vec2(2.0, 2.0),
+                        egui::Align2::LEFT_CENTER,
+                        &label.0,
+                        egui::FontId::proportional(16.0 * font_scale),
+                        Color32::from_black_alpha(alpha),
+                    );
+                    // Text
+                    ui.painter().text(
+                        text_pos,
+                        egui::Align2::LEFT_CENTER,
+                        &label.0,
+                        font_id,
+                        Color32::from_white_alpha(alpha),
+                    );
+                }
             }
         }
     }
@@ -1352,6 +1356,107 @@ impl Scene {
         //                 PerformanceImpact::High,
         //             );
         //     });
+    }
+
+    fn show_gizmo_list(&mut self, ui: &mut Ui) {
+        ui.style_mut()
+            .text_styles
+            .insert(TextStyle::Body, FontId::proportional(16.0));
+        ui.style_mut()
+            .text_styles
+            .insert(TextStyle::Button, FontId::proportional(16.0));
+
+        let mut gizmo_count = HashMap::<String, (Option<Icon>, usize)>::default();
+
+        for (_entity, (icon, label)) in &mut self.world.query::<(Option<&Icon>, &Label)>() {
+            let label = label.0.replace("\n", " ");
+
+            let count = gizmo_count
+                .entry(label)
+                .or_insert_with(|| (icon.cloned(), 0));
+            count.1 += 1;
+        }
+
+        let mut gizmo_count = gizmo_count.into_iter().collect::<Vec<_>>();
+        gizmo_count.sort_by(|(a1, (_, a2)), (b1, (_, b2))| {
+            let cmp = b2.cmp(a2);
+            if cmp == std::cmp::Ordering::Equal {
+                a1.cmp(b1)
+            } else {
+                cmp
+            }
+        });
+
+        ui.checkbox(&mut self.gizmos_fade, "Fade out far away items");
+        ui.checkbox(&mut self.draw_gizmo_labels, "Show labels");
+
+        ui.horizontal(|ui| {
+            if ui.button("Show all").clicked() {
+                self.hidden_gizmos.clear();
+            }
+
+            if ui.button("Hide all").clicked() {
+                for (label, _) in &gizmo_count {
+                    self.hidden_gizmos.insert(label.clone());
+                }
+            }
+        });
+
+        egui::ScrollArea::vertical().show(ui, |ui| {
+            for (label, (icon, count)) in gizmo_count {
+                let icon = icon.map_or(icons::UNKNOWN, |i| icons::from_name(i.0));
+
+                let (rect, mut resp) = ui.allocate_exact_size(vec2(352.0, 48.0), Sense::click());
+                resp = resp.on_hover_cursor(egui::CursorIcon::PointingHand);
+                let stroke = egui::Stroke::new(
+                    1.0,
+                    if resp.hovered() {
+                        Color32::WHITE
+                    } else {
+                        Color32::WHITE.gamma_multiply(0.6)
+                    },
+                );
+                ui.painter().rect(
+                    rect,
+                    1,
+                    Color32::TRANSPARENT,
+                    stroke,
+                    egui::StrokeKind::Outside,
+                );
+
+                egui::Image::new(icon).paint_at(
+                    ui,
+                    Rect::from_min_max(rect.min, rect.min + vec2(rect.height(), rect.height()))
+                        .shrink(8.0),
+                );
+
+                let text_base = rect.min + vec2(rect.height(), rect.height() / 2.0);
+                ui.painter().text(
+                    text_base + vec2(0.0, 2.0),
+                    egui::Align2::LEFT_BOTTOM,
+                    format!("{} (x{})", label, count),
+                    FontId::proportional(16.0),
+                    Color32::WHITE,
+                );
+
+                let hidden = self.hidden_gizmos.contains(&label);
+                ui.painter().text(
+                    text_base - vec2(0.0, 2.0),
+                    egui::Align2::LEFT_TOP,
+                    if hidden { "Hidden" } else { "Shown" },
+                    FontId::proportional(16.0),
+                    if hidden { Color32::RED } else { Color32::GREEN },
+                );
+
+                if resp.clicked() {
+                    if hidden {
+                        self.hidden_gizmos.remove(&label);
+                    } else {
+                        self.hidden_gizmos.insert(label);
+                    }
+                }
+            }
+        });
     }
 
     fn show_channel_editor(&mut self, ui: &mut Ui) {

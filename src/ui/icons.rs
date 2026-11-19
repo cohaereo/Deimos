@@ -27,4 +27,34 @@ include_icon!(PANEL, "panel.png");
 include_icon!(PROXIMITY_DRONE, "proximity_drone.png");
 include_icon!(RADAR, "radar.png");
 include_icon!(FUSE, "fuse.png");
+include_icon!(CONVEYANCE_REQUEST, "conveyance_request.png");
 include_icon!(UNKNOWN, "unknown.png");
+
+pub fn from_name(name: &str) -> egui::ImageSource<'static> {
+    match name {
+        "light" => LIGHT,
+        "outpost_key_1" => OUTPOST_KEY_1,
+        "outpost_key_2" => OUTPOST_KEY_2,
+        "outpost_key_3" => OUTPOST_KEY_3,
+        "door" => DOOR,
+        "door_locked" => DOOR_LOCKED,
+        "goal" => GOAL,
+        "tick" => TICK,
+        "panel" => PANEL,
+        "proximity_drone" => PROXIMITY_DRONE,
+        "conveyance_request" => CONVEYANCE_REQUEST,
+        "uesc_teleporter" => UESC_TELEPORTER,
+        "vent" => VENT,
+        "claymore" => CLAYMORE,
+        "exfil" => EXFIL,
+        "felini" => FELINI,
+        "skrac" => SKRAC,
+        "uesc_ship" => UESC_SHIP,
+        "cryo_clearance_key" => CRYO_CLEARANCE_KEY,
+        "battery" => BATTERY,
+        "treasure_chest" => TREASURE_CHEST,
+        "radar" => RADAR,
+        "fuse" => FUSE,
+        _ => UNKNOWN,
+    }
+}

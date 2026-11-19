@@ -82,9 +82,9 @@ where
         Some(pattern_tag),
     )?;
 
-    // TODO(cohae): This *probably* shouldn't be hardcoded, but I cant find a good way to single out the outpost destroyed wing fuses, and they aren't labeled.
+    // TODO(cohae): This *probably* shouldn't be hardcoded, but I cant find a good way to single out the outpost door fuses, and they aren't labeled.
     if pattern_tag == WideHash::Hash64(TagHash64(0xE8034792E3E80000)) {
-        world.insert(e, (Label("Destroyed Wing Fuse".to_string()), Icon("fuse")))?;
+        world.insert(e, (Label("Door Fuse".to_string()), Icon("fuse")))?;
     }
 
     Ok(e)
